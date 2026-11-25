@@ -2681,7 +2681,7 @@ func _lobby_set(f: Font, hov) -> void:
 			"lmute": _btn(f, r, "음소거 켜짐" if SV.mute else "음소거", hov == it or SV.mute, 14)
 			"lbgm":
 				var b: String = str(SV.get("bgm", "auto"))
-				var nm := "자동 (장착한 테마 곡)" if b == "auto" else ("기본 배경음" if b == "base" else item(b).get("n", b) + " 테마곡")
+				var nm: String = "자동 (장착한 테마 곡)" if b == "auto" else ("기본 배경음" if b == "base" else item(b).get("n", b) + " 테마곡")
 				_btn(f, r, "배경음: " + nm + "  ▸", hov == it, 14)
 			"lkeys": _btn(f, r, "조작법 전체 보기", hov == it, 14)
 			"lwipe": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", hov == it, 14, Color("#ffb0a0"))
