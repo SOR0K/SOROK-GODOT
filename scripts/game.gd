@@ -84,6 +84,7 @@ func _ready() -> void:
 	sb_dis = _sb(Color(0.06, 0.07, 0.09, 0.85), Color(0.3, 0.34, 0.4))
 	sb_panel = _sb(PANEL, Color(0.79, 0.64, 0.33, 0.7))
 	rng.randomize()
+	RenderingServer.set_default_clear_color(FOG)
 	cam = Camera2D.new()
 	add_child(cam)
 	cam.make_current()
@@ -821,6 +822,7 @@ func _clamp_cam() -> void:
 	var half := vsize() / zm / 2.0
 	var w := float(MAPW)
 	cam.position = Vector2(clampf(cam.position.x, half.x, w - half.x), clampf(cam.position.y, half.y, w - half.y))
+	cam.force_update_scroll()
 
 func set_zoom(nz: float, anchor: Vector2) -> void:
 	var wp := s2w(anchor)
