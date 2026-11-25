@@ -1626,6 +1626,8 @@ func _hud(f: Font) -> void:
 
 # ═════════ 자동 점검 (GitHub에서만 돌아가요) ═════════
 func _shot(name: String) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var dir := ProjectSettings.globalize_path("res://shots")
 	DirAccess.make_dir_recursive_absolute(dir)
