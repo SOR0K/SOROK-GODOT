@@ -97,6 +97,12 @@ var shop_open := false
 var shop_tab := "prod"
 var shop_desc := ""
 var paused := false
+var skn := {}
+var bsk := {}
+var thm := {}
+var kro_s := {}
+var tkro_s := {}
+var tn_cols: Array = []
 var parts: Array = []
 var wfx: Array = []
 var vig_tex: Texture2D = null
@@ -550,7 +556,7 @@ func hit(a: Dictionary, b: Dictionary, dmg: float) -> void:
 	else:
 		b.hp -= dmg
 		fx.append({"k": "imp", "p": b.p, "t": 0.18, "c": Color("#fff6d6") if a.team == 0 else Color("#ff7a66")})
-		boom(b.p, Color("#fff6d6") if a.team == 0 else Color("#ff7a66"))
+		boom(b.p, Color("#fff6d6") if a.team == 0 else Color("#ff7a66"), KRO() if a.team == 0 else TKRO())
 
 func hit_base(u: Dictionary) -> void:
 	sfx("basehit")
@@ -1989,13 +1995,19 @@ func _hud(f: Font) -> void:
 	draw_circle(pr.get_center(), 40.0, Color("#16222e"))
 	if su != null:
 		var col: Color = UT[su.t].col
-		if su.ev > 0:
+		var acc: Color = UT[su.t].acc
+		var pat := ""
+		if not skn.is_empty():
+			col = C(skn.c)
+			acc = C(skn.a)
+			pat = skn.pt
+		elif su.ev > 0:
 			col = [Color("#a98ae0"), Color("#9462e0"), Color("#7d3fdc")][su.ev - 1]
 		_ui_tf(pr.get_center(), -0.5, 2.6)
-		art_bot(self, su.t, col, UT[su.t].acc, t)
+		art_bot_s(self, su.t, col, acc, t, pat)
 	else:
 		_ui_tf(pr.get_center() + Vector2(0, 2), 0.0, 0.62)
-		art_base(self, Vector2.ZERO, t, inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(0.0, Vector2(0.62, 0.62), 0.0, pr.get_center() + Vector2(0, 2)))
+		art_base(self, Vector2.ZERO, t, inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(0.0, Vector2(0.62, 0.62), 0.0, pr.get_center() + Vector2(0, 2)), bsk)
 	_ui_reset()
 	var badge := ("x" + str(s.size())) if s.size() > 1 else (("Lv " + str(su.lv)) if su != null else "기지")
 	sb_badge.draw(get_canvas_item(), Rect2(pr.get_center().x - 26.0, pr.end.y - 4.0, 52.0, 18.0))
@@ -2078,7 +2090,10 @@ func _hud(f: Font) -> void:
 				if q.t == k:
 					n += 1
 			_ui_tf(r.get_center() + Vector2(-2, 0), 0.0, 1.15)
-			art_bot(self, k, UT[k].col, UT[k].acc, t)
+			if skn.is_empty():
+				art_bot(self, k, UT[k].col, UT[k].acc, t)
+			else:
+				art_bot_s(self, k, C(skn.c), C(skn.a), t, skn.pt)
 			_ui_reset()
 			draw_string(f, r.position + Vector2(3, 11), str(ORDER.find(k) + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 1, 1, 0.6))
 			draw_string(f, r.position + Vector2(0, 31), str(n), HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 4.0, 11, Color.WHITE)
@@ -2171,6 +2186,7 @@ func sv_load() -> void:
 		var d = f.get_var()
 		if d is Dictionary:
 			SV.merge(d, true)
+	_sv_defaults()
 	_apply_sv()
 
 func sv_save() -> void:
@@ -2307,7 +2323,7 @@ func end_game(retry: bool = false) -> void:
 	var g := cs_gain() if ok else 0
 	SV.cs = int(SV.cs) + g
 	var bx := int(t0 / 60.0) * 10 + int(SS.kills) * 2 + captured() * 30 + raid_wins * 50
-	SV.bpxp = mini(15000, int(SV.bpxp) + bx)
+	SV.bp.xp = mini(15000, int(SV.bp.xp) + bx)
 	sv_save()
 	del_save()
 	won = false
@@ -2496,6 +2512,9 @@ func _lobby_w() -> float:
 	return minf(1000.0, ui_size().x - 40.0)
 
 func _build_lobby() -> void:
+	if not box_res.is_empty() or lsec in ["shop", "store", "pass"]:
+		_build_cos()
+		return
 	var u := ui_size()
 	var W := _lobby_w()
 	var x0 := (u.x - W) / 2.0
@@ -2563,12 +2582,16 @@ func _lobby(f: Font) -> void:
 		draw_string(f, r.position + Vector2(0, 25), chips[i][1], HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12.0, 18, chips[i][2])
 	if lmsg != "":
 		draw_string(f, Vector2(0, 192), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 13, Color("#ffd76a"))
-	if lsec == "main":
+	if lsec in ["shop", "store", "pass"]:
+		_lobby_cos(f, hov)
+	elif lsec == "main":
 		_lobby_main(f, hov)
 	elif lsec == "set":
 		_lobby_set(f, hov)
 	elif lsec == "notes":
 		_lobby_notes(f, hov)
+	if not box_res.is_empty():
+		_box_overlay(f, hov)
 	if keys_open:
 		_keys_win(f)
 
@@ -2581,22 +2604,29 @@ func _lobby_main(f: Font, hov) -> void:
 	# 미리보기 땅
 	for j in 8:
 		for i in int(cw / 40.0) + 1:
-			var c := Color("#3a3226") if (i + j) % 2 == 0 else Color("#342d22")
+			var c: Color = tn_cols[(i * 3 + j * 5) % 4]
 			var rr := Rect2(cr.position.x + i * 40.0, cr.position.y + j * 40.0, 40.0, 40.0).intersection(cr)
 			draw_rect(rr, c)
-	art_base(self, Vector2.ZERO, t_real, inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(0.0, Vector2(1.6, 1.6), 0.0, cr.position + Vector2(cw * 0.3, 150)))
+	var bxf := inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(0.0, Vector2(1.6, 1.6), 0.0, cr.position + Vector2(cw * 0.3, 150))
+	draw_set_transform_matrix(bxf)
+	art_base(self, Vector2.ZERO, t_real, bxf, bsk)
 	var bl := [["r", Vector2(0.62, 0.42), 0.0], ["h", Vector2(0.8, 0.43), 0.0], ["s", Vector2(0.88, 0.25), -0.5], ["c", Vector2(0.73, 0.68), 0.3]]
 	for b in bl:
 		_ui_tf(cr.position + Vector2(cw * b[1].x, cr.size.y * b[1].y), b[2], 3.0)
-		art_bot(self, b[0], UT[b[0]].col, UT[b[0]].acc, t_real)
+		if skn.is_empty():
+			art_bot(self, b[0], UT[b[0]].col, UT[b[0]].acc, t_real)
+		else:
+			art_bot_s(self, b[0], C(skn.c), C(skn.a), t_real, skn.pt)
 	_ui_reset()
 	draw_polygon(PackedVector2Array([Vector2(cr.position.x, cr.position.y + 150), Vector2(cr.end.x, cr.position.y + 150), cr.end, Vector2(cr.position.x, cr.end.y)]),
 		PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0, 0, 0, 0.9), Color(0, 0, 0, 0.9)]))
 	draw_rect(cr, Color("#e0b85a"), false, 2.0)
 	draw_string(f, cr.position + Vector2(20, 200), "출격 준비 완료", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#ffe6a6"))
-	draw_string(f, cr.position + Vector2(20, 226), "난이도 어려움 · 로봇 기본 · 기지 기본 · 테마 기본", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#c9d4dc"))
-	var tiles := {"lshop": ["상점", "소로 상자 · ★ 걸작 · 세트", Color("#c9a255")], "lstore": ["창고", "보유 스킨 0 / 69", Color("#2f8a78")],
-		"lpass": ["배틀패스", "시즌 1 · " + str(int(SV.bpxp)) + " XP", Color("#7a5aa8")], "lset": ["설정", "조작 · 소리 · 데이터", Color("#3a5a8a")]}
+	draw_string(f, cr.position + Vector2(20, 226), "난이도 어려움 · 로봇 " + skn.get("n", "기본") + " · 기지 " + bsk.get("n", "기본") + " · 테마 " + thm.get("n", "기본"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#c9d4dc"))
+	var tot := SK.size() + BS.size() + TS.size()
+	var own: int = SV.own.size() + SV.bown.size() + SV.town.size()
+	var tiles := {"lshop": ["상점", "소로 상자 · ★ 걸작 · 세트", Color("#c9a255")], "lstore": ["창고", "보유 스킨 " + str(own) + " / " + str(tot) + (" · 무료 상자 " + str(SV.fbox) if SV.fbox > 0 else ""), Color("#2f8a78")],
+		"lpass": ["배틀패스", SEASON.n + " · " + str(bp_lv()) + " / 30단계" + (" · 프리미엄" if bp().prem else ""), Color("#7a5aa8")], "lset": ["설정", "조작 · 소리 · 데이터", Color("#3a5a8a")]}
 	for it in ui:
 		var r: Rect2 = it.r
 		match it.id:
@@ -2694,7 +2724,18 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			lsec = "set"
 			lob_scroll = 0.0
 		"lnotes": lsec = "notes"
-		"lshop", "lstore", "lpass": lmsg = "상점 · 창고 · 배틀패스는 다음 업데이트에서 열려요"
+		"lshop", "lstore", "lpass":
+			lsec = {"lshop": "shop", "lstore": "store", "lpass": "pass"}[it.id]
+			lob_scroll = 0.0
+			lmsg = ""
+		"cb":
+			cos_press(it.arg)
+		"boxok":
+			if box_busy():
+				box_t0 = t_real - 100.0
+				box_shown = box_res.size()
+			else:
+				box_res = []
 		"lback":
 			lsec = "main"
 			_apply_sv()
@@ -2715,9 +2756,19 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 				return
 			wipe_arm = ""
 			SV.cs = 0
-			SV.ss = 0
-			SV.bpxp = 0
+			for k in ["own", "bown", "town"]:
+				SV[k] = []
+			for k in ["eq", "beq", "teq"]:
+				SV[k] = ""
+			SV.frag = {}
 			if it.id == "lwipeall":
+				SV.ss = 0
+				SV.sfrag = 0
+				SV.spity = 0
+				SV.fbox = 0
+				SV.hist = []
+				SV.erase("bp")
+				_sv_defaults()
 				SV.tut_done = false
 				del_save()
 			sv_save()
@@ -2739,8 +2790,13 @@ func _lobby_input(e: InputEvent) -> void:
 	var released := false
 	if e is InputEventMouseButton and e.device != InputEvent.DEVICE_ID_EMULATION:
 		if e.button_index == MOUSE_BUTTON_WHEEL_UP or e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			var dd := -60.0 if e.button_index == MOUSE_BUTTON_WHEEL_UP else 60.0
 			if e.pressed and lsec == "set":
-				lob_scroll = clampf(lob_scroll + (-40.0 if e.button_index == MOUSE_BUTTON_WHEEL_UP else 40.0), 0.0, 200.0)
+				lob_scroll = clampf(lob_scroll + dd * 0.7, 0.0, 200.0)
+			elif e.pressed and lsec == "pass" and not (e.shift_pressed):
+				pass_scroll = clampf(pass_scroll + dd * 1.5, 0.0, _pass_max())
+			elif e.pressed and lsec in ["shop", "store"] and box_res.is_empty():
+				lob_scroll = clampf(lob_scroll + dd, 0.0, lob_max)
 			return
 		if e.button_index != MOUSE_BUTTON_LEFT:
 			return
@@ -2759,23 +2815,1607 @@ func _lobby_input(e: InputEvent) -> void:
 	elif e is InputEventScreenDrag:
 		if slider_drag != null:
 			_slider_set(slider_drag, e.position)
+		elif lob_drag != null:
+			if (e.position - lob_drag.p).length() > 12.0:
+				lob_drag.m = true
+			if lob_drag.m:
+				if lsec == "pass":
+					pass_scroll = clampf(pass_scroll - e.relative.x / us, 0.0, _pass_max())
+				elif lsec in ["shop", "store", "set"]:
+					lob_scroll = clampf(lob_scroll - e.relative.y / us, 0.0, lob_max if lsec != "set" else 200.0)
 		return
 	if pos == null:
 		return
+	var touch := e is InputEventScreenTouch
 	if released:
 		if slider_drag != null:
 			if slider_drag == "uis":
 				_apply_sv()
 			slider_drag = null
 			sv_save()
+		elif touch and lob_drag != null:
+			var moved: bool = lob_drag.m
+			lob_drag = null
+			if not moved:
+				var it2 = ui_hit(pos)
+				if it2 != null and it2.id != "sl":
+					lobby_press(it2, pos)
 		return
 	if pressed:
 		if keys_open:
 			keys_open = false
 			return
 		var it = ui_hit(pos)
+		if touch:
+			lob_drag = {"p": pos, "m": false}
+			if it != null and it.id == "sl":
+				lobby_press(it, pos)
+			return
 		if it != null:
 			lobby_press(it, pos)
+
+const SK := [
+{"id":"j1","g":"ju","n":"봄 벚꽃","c":"#f4a6c0","a":"#fff0f5","pt":"dot","d":"분홍 장갑에 꽃잎 점무늬"},
+{"id":"j2","g":"ju","n":"한여름 바다","c":"#3fa7e0","a":"#e8fbff","pt":"band","d":"파도빛 몸체에 흰 물결 띠"},
+{"id":"j3","g":"ju","n":"가을 단풍","c":"#d9772b","a":"#ffe0a0","pt":"dot","d":"붉은 단풍색에 금빛 점"},
+{"id":"j4","g":"ju","n":"첫눈","c":"#dbeef8","a":"#5f9fd0","pt":"dot","d":"눈처럼 흰 장갑에 푸른 점"},
+{"id":"j5","g":"ju","n":"사막 모래","c":"#d8b878","a":"#6e5024","pt":"band","d":"모래색 위장 도색"},
+{"id":"j6","g":"ju","n":"정글 이끼","c":"#5f9a48","a":"#d8f0a0","pt":"band","d":"이끼 낀 녹색 장갑"},
+{"id":"j7","g":"ju","n":"강철 공장","c":"#7d8894","a":"#f2c14e","pt":"band","d":"회색 철판에 노란 경고 띠"},
+{"id":"j8","g":"ju","n":"산호초","c":"#ff8070","a":"#fff4d0","pt":"dot","d":"산호빛 몸체에 모래 점"},
+{"id":"j9","g":"ju","n":"박하 사탕","c":"#9ce8cc","a":"#ff5a7a","pt":"band","d":"민트색에 빨간 사탕 줄"},
+{"id":"j10","g":"ju","n":"자정","c":"#2c3e70","a":"#ffe27a","pt":"dot","d":"밤하늘 남색에 별빛 점"},
+{"id":"k6","g":"kro","p":1100,"n":"심해","c":"#13324a","a":"#3ff0ff","pj":"bubble","pc":["#bffcff","#3ff0ff"],"pt":"glow","d":"물방울 탄환 · 거품 폭발"},
+{"id":"k5","g":"kro","p":1200,"n":"벚꽃 폭풍","c":"#ffd6e4","a":"#ff5f97","pj":"petal","pc":["#ffe0ec","#ff6fa0"],"pt":"glow","d":"회전하는 꽃잎 탄환 · 꽃잎 흩날림"},
+{"id":"k1","g":"kro","p":1300,"n":"오로라","c":"#1d4a52","a":"#7affd4","pj":"aurora","pc":["#7affd4","#c08cff"],"pt":"glow","d":"초록·보라 빛줄기 탄환"},
+{"id":"k3","g":"kro","p":1400,"n":"서리 왕관","c":"#e6f6ff","a":"#4ab0ff","pj":"ice","pc":["#ffffff","#6ac8ff"],"pt":"glow","d":"얼음 창 탄환 · 서리 파편"},
+{"id":"k2","g":"kro","p":1500,"n":"용암 핵","c":"#3a1a14","a":"#ff6a1f","pj":"fire","pc":["#ffd25a","#ff4a1a"],"pt":"glow","d":"불덩이 탄환 · 불씨 폭발"},
+{"id":"k4","g":"kro","p":1600,"n":"번개 군단","c":"#262b44","a":"#ffe14a","pj":"bolt","pc":["#ffffff","#ffe14a"],"pt":"glow","d":"지직거리는 번개 탄환 · 전기 스파크"},
+{"id":"k7","g":"kro","p":1700,"n":"황금 제국","c":"#c9a23a","a":"#fff1a8","pj":"star","pc":["#fffbe0","#ffcc33"],"pt":"glow","d":"회전하는 황금 별 탄환 · 금가루 폭발"},
+{"id":"j11","g":"ju","n":"네온 거리","c":"#ff3ad0","a":"#3affe8","pt":"band","d":"형광 분홍 몸체에 민트 네온 띠"},
+{"id":"j12","g":"ju","n":"군용 위장","c":"#5a6a3a","a":"#c8b878","pt":"dot","d":"국방색 위장 점무늬"},
+{"id":"j13","g":"ju","n":"라벤더","c":"#b89ae0","a":"#fff6ff","pt":"dot","d":"연보라 몸체에 흰 꽃 점"},
+{"id":"k8","g":"kro","p":1250,"n":"네온 사이버","c":"#1a1030","a":"#ff3ad0","pj":"bolt","pc":["#3affe8","#ff3ad0"],"pt":"glow","d":"네온 번개 탄환 · 형광 스파크"},
+{"id":"k10","g":"kro","p":1350,"n":"장미 기사","c":"#5a1020","a":"#ff4a6a","pj":"petal","pc":["#ffd0d8","#d81a3a"],"pt":"glow","d":"붉은 장미 꽃잎 탄환 · 꽃잎 폭발"},
+{"id":"k9","g":"kro","p":1450,"n":"혜성","c":"#1a2240","a":"#9ad8ff","pj":"aurora","pc":["#ffffff","#5a9aff"],"pt":"glow","d":"꼬리 긴 혜성 빛줄기 탄환"},
+{"id":"k11","g":"kro","ex":1,"p":0,"n":"은하 사령관","c":"#1a1440","a":"#c08cff","pj":"star","pc":["#ffffff","#c08cff"],"pt":"glow","d":"패스 전용 · 보랏빛 별 탄환 · 별가루 폭발"},
+{"id":"m1","g":"star","n":"천상의 기사","c":"#fff4d6","a":"#ffd25a","pj":"holy","pc":["#ffffff","#ffd25a"],"pt":"m1","d":"금빛 후광과 펄럭이는 날개 · 빛의 창 탄환"},
+{"id":"m2","g":"star","n":"용의 군주","c":"#8a1a12","a":"#ff6a1f","pj":"dragon","pc":["#ffd25a","#ff3a1a"],"pt":"m2","d":"불꽃 오라와 박쥐 날개 · 용의 화염구"},
+{"id":"m3","g":"star","n":"프리즘 코어","c":"#e8f6ff","a":"#ffffff","pj":"rainbow","pc":["#ffffff","#7affd4"],"pt":"m3","d":"무지갯빛 결정체와 공전하는 조각 · 프리즘 광선"}]
+const BS := [
+{"id":"b1","n":"벚꽃 정원","d":"분홍 꽃잎빛 돔과 정원 판","pl":"#3a2a30","rim":"#f4a6c0","bd":"#5a3a46","tp":"#ffd0de","gl":"#ff8fb8","lt":"#fff0f5"},
+{"id":"b2","n":"빙하 요새","d":"얼음 판 위의 푸른 돔","pl":"#1e2c38","rim":"#bfe6ff","bd":"#4a6a82","tp":"#e6f6ff","gl":"#6ac8ff","lt":"#ffffff"},
+{"id":"b3","n":"화산 요새","d":"검붉은 장갑과 용암 돔","pl":"#241412","rim":"#7a2a1a","bd":"#3a1a14","tp":"#5a2a1e","gl":"#ff6a1f","lt":"#ffd25a"},
+{"id":"b4","n":"황금 궁전","d":"금빛 장식의 사령부","pl":"#2a2416","rim":"#c9a23a","bd":"#6b5420","tp":"#e8c36a","gl":"#fff1a8","lt":"#ffcc33"},
+{"id":"b5","n":"심해 기지","d":"깊은 바다색 돔과 청록 조명","pl":"#0c1e2c","rim":"#2a6a8a","bd":"#13324a","tp":"#1d5070","gl":"#3ff0ff","lt":"#bffcff"},
+{"id":"b6","n":"정글 전초기지","d":"이끼 낀 녹색 기지","pl":"#1c2a18","rim":"#5f9a48","bd":"#3a5a2c","tp":"#8ab86a","gl":"#d8f0a0","lt":"#f2c14e"},
+{"id":"b7","n":"오로라 관측소","d":"오로라빛 돔과 보라 조명","pl":"#101c22","rim":"#7affd4","bd":"#1d4a52","tp":"#2a6a6a","gl":"#7affd4","lt":"#c08cff"},
+{"id":"b8","n":"번개 요새","d":"먹구름빛 장갑과 번쩍이는 조명","pl":"#14141c","rim":"#ffe14a","bd":"#262b44","tp":"#3a3a5a","gl":"#ffe14a","lt":"#ffffff"},
+{"id":"b9","n":"네온 타워","d":"형광 네온이 번쩍이는 사령부","pl":"#14102a","rim":"#ff3ad0","bd":"#2a1a4a","tp":"#4a2a7a","gl":"#3affe8","lt":"#ff3ad0"},
+{"id":"b10","n":"혜성 관측소","d":"밤하늘빛 돔과 별빛 조명","pl":"#0e1426","rim":"#9ad8ff","bd":"#1a2240","tp":"#2a3a6a","gl":"#9ad8ff","lt":"#ffffff"},
+{"id":"b11","n":"장미 온실","d":"붉은 장미빛 유리 온실","pl":"#2a1218","rim":"#ff4a6a","bd":"#5a1020","tp":"#8a2a3a","gl":"#ffd0d8","lt":"#ff4a6a"},
+{"id":"b12","ex":1,"n":"은하 요새","d":"패스 전용 · 별빛 돔과 보랏빛 조명","pl":"#0c0a1e","rim":"#c08cff","bd":"#1a1440","tp":"#3a2a7a","gl":"#c08cff","lt":"#ffffff"},
+{"id":"mb1","g":"star","ex":1,"ms":"mb1","n":"천상의 성소","d":"금빛 기둥과 회전하는 후광 · 하늘로 솟는 빛기둥","pl":"#e8eef8","rim":"#ffd25a","bd":"#c8d0e0","tp":"#ffffff","gl":"#ffd25a","lt":"#ffffff"},
+{"id":"mb2","g":"star","ex":1,"ms":"mb2","n":"용의 둥지","d":"거대한 뿔과 용암 웅덩이 · 빛나는 용의 눈","pl":"#1a0806","rim":"#5a1a10","bd":"#3a1410","tp":"#5a2a1e","gl":"#ff6a1f","lt":"#ffd25a"},
+{"id":"mb3","g":"star","ex":1,"ms":"mb3","n":"프리즘 첨탑","d":"색이 변하는 결정 첨탑과 공전하는 조각","pl":"#0e1426","rim":"#e8f6ff","bd":"#2a3a6a","tp":"#c8e0ff","gl":"#7affd4","lt":"#ffffff"}]
+const TS := [
+{"id":"t1","g":"ju","n":"설원","d":"눈 덮인 들판과 푸른 적","tn":["#c9d6de","#d3dfe6","#bfccd5","#dbe5eb"],"en":["#4a6a9a","#6a8ab0"],"ob":["#2a3a50","#5a7a9a","#8aaac8"]},
+{"id":"t2","g":"ju","n":"사막","d":"모래 언덕과 흙빛 요새","tn":["#c9a66b","#d1ae72","#bf9c62","#d8b67a"],"en":["#8a4a2a","#a8683a"],"ob":["#5a3a20","#8a5a30","#b07a44"]},
+{"id":"t3","g":"ju","n":"초원","d":"푸른 풀밭과 붉은 적","tn":["#4f7a3a","#56823f","#487236","#5c8a44"],"en":["#a83a3a","#c06a3a"],"ob":["#3a2420","#7a3a30","#a85a48"]},
+{"id":"t4","g":"ju","n":"화성","d":"붉은 땅과 노란 적","tn":["#7a3a24","#843f27","#713521","#8a462c"],"en":["#e0c060","#e09040"],"ob":["#2a1a14","#5a3a24","#8a5a34"]},
+{"id":"t5","g":"ju","n":"달 표면","d":"회색 크레이터와 푸른 적","tn":["#6a6a70","#727278","#636369","#7a7a80"],"en":["#3a8ac8","#5aa0d8"],"ob":["#22262e","#3a4250","#5a6474"]},
+{"id":"t6","g":"ju","n":"늪지","d":"어두운 늪과 독초색 적","tn":["#3a4430","#404a34","#363f2c","#465038"],"en":["#8ac040","#a0b050"],"ob":["#1e2418","#3a4a28","#5a6e3a"]},
+{"id":"t7","g":"ju","n":"해변","d":"밝은 모래사장과 산호빛 적","tn":["#e0cf9a","#e6d6a3","#d8c690","#ecdcaa"],"en":["#e06a4a","#f09a5a"],"ob":["#2a4a5a","#3a7a8a","#6ab0c0"]},
+{"id":"t8","g":"ju","n":"가을 숲","d":"갈색 낙엽 땅과 단풍빛 적","tn":["#6a4a2a","#72502e","#634527","#7a5632"],"en":["#d0502a","#e08a2a"],"ob":["#2a1a10","#5a3018","#8a4a20"]},
+{"id":"t9","g":"ju","n":"청록 행성","d":"청록 대지와 주황 적","tn":["#1f4a4a","#235050","#1c4444","#285656"],"en":["#ff8a4a","#ffb04a"],"ob":["#102828","#2a5a5a","#4a8a8a"]},
+{"id":"t10","g":"ju","n":"잿빛 폐허","d":"무너진 회색 도시와 붉은 적","tn":["#4a4a4a","#505050","#444444","#565656"],"en":["#c83a3a","#d86a3a"],"ob":["#1a1a1a","#3a3a3a","#5a5a5a"]},
+{"id":"tk1","g":"kro","p":1100,"n":"심해 협곡","d":"떠오르는 거품 · 적이 물방울 탄환을 쏴요","tn":["#0c2a3a","#0f3040","#0a2634","#123646"],"en":["#2ad0a0","#3ff0ff"],"ob":["#061820","#14485a","#3ff0ff"],"amb":"bubble","pj":"bubble","pc":["#bffcff","#3ff0ff"],"a":"#3ff0ff"},
+{"id":"tk2","g":"kro","p":1200,"n":"벚꽃 계곡","d":"흩날리는 꽃잎 · 적이 꽃잎 탄환을 쏴요","tn":["#5a7a4a","#628250","#557245","#6a8a56"],"en":["#d84a7a","#f07aa0"],"ob":["#3a2030","#8a4a68","#ffb0cc"],"amb":"petal","pj":"petal","pc":["#ffe0ec","#ff6fa0"],"a":"#ff6fa0"},
+{"id":"tk3","g":"kro","p":1300,"n":"눈보라 왕국","d":"내리는 눈 · 적이 얼음 창을 던져요","tn":["#c9d6de","#d3dfe6","#bfccd5","#dbe5eb"],"en":["#3a5a9a","#5a7ab8"],"ob":["#1a2a44","#4a6a9a","#cfe6ff"],"amb":"snow","pj":"ice","pc":["#ffffff","#6ac8ff"],"a":"#bfe6ff"},
+{"id":"tk4","g":"kro","p":1400,"n":"폭풍 황무지","d":"쏟아지는 비 · 적이 번개를 쏴요","tn":["#3a3a40","#404046","#35353b","#46464c"],"en":["#6a6aff","#8a8aff"],"ob":["#14141c","#3a3a5a","#ffe14a"],"amb":"rain","pj":"bolt","pc":["#ffffff","#ffe14a"],"a":"#ffe14a"},
+{"id":"tk5","g":"kro","p":1500,"n":"용암 대지","d":"날리는 불씨 · 적이 불덩이를 쏴요","tn":["#2a1612","#301a14","#26130f","#361e16"],"en":["#ff5a2a","#ff8a2a"],"ob":["#140806","#4a1a10","#ff6a1f"],"amb":"ember","pj":"fire","pc":["#ffd25a","#ff4a1a"],"a":"#ff6a1f"},
+{"id":"tk6","g":"kro","p":1600,"n":"오로라 툰드라","d":"하늘의 오로라 · 적이 빛줄기를 쏴요","tn":["#2a3a44","#2f404a","#26353f","#344650"],"en":["#4ac0a0","#7ab0d0"],"ob":["#101c22","#2a5a5a","#7affd4"],"amb":"aurora","pj":"aurora","pc":["#7affd4","#c08cff"],"a":"#7affd4"},
+{"id":"tk7","g":"kro","p":1700,"n":"별의 바다","d":"반짝이는 별하늘 · 적이 황금 별을 쏴요","tn":["#0e1428","#111830","#0c1224","#141c36"],"en":["#5a8aff","#8ab0ff"],"ob":["#080c1a","#2a3a7a","#ffe27a"],"amb":"star","pj":"star","pc":["#fffbe0","#ffcc33"],"a":"#ffe27a"},
+{"id":"t11","g":"ju","n":"네온 도시","d":"어두운 도시와 형광 적","tn":["#1e1a2e","#231e34","#1a1628","#28223a"],"en":["#3affe8","#ff3ad0"],"ob":["#120e22","#3a2a6a","#ff3ad0"]},
+{"id":"t12","g":"ju","n":"라벤더 언덕","d":"보랏빛 들판과 짙은 보라 적","tn":["#8a7aa8","#9282b0","#82729f","#9a8ab8"],"en":["#4a2a6a","#6a3a8a"],"ob":["#3a2a4a","#6a4a8a","#c8a0ff"]},
+{"id":"t13","g":"ju","n":"붉은 협곡","d":"붉은 바위 협곡과 푸른 적","tn":["#8a4a2a","#924f2e","#824527","#9a5432"],"en":["#3a6aa8","#5a8ac8"],"ob":["#3a1a10","#6a3020","#a85030"]},
+{"id":"tk8","g":"kro","p":1250,"n":"사이버 그리드","d":"네온 비 · 적이 형광 번개를 쏴요","tn":["#120e22","#161128","#100c1e","#1a142e"],"en":["#3affe8","#ff3ad0"],"ob":["#0a0818","#2a1a4a","#3affe8"],"amb":"rain","pj":"bolt","pc":["#3affe8","#ff3ad0"],"a":"#ff3ad0"},
+{"id":"tk10","g":"kro","p":1350,"n":"장미 정원","d":"흩날리는 장미잎 · 적이 장미 꽃잎을 쏴요","tn":["#3a5a34","#40623a","#36542f","#46683f"],"en":["#a81a3a","#d84a6a"],"ob":["#2a0a12","#6a1a2a","#ff4a6a"],"amb":"petal","pj":"petal","pc":["#ffd0d8","#d81a3a"],"a":"#ff4a6a"},
+{"id":"tk9","g":"kro","p":1450,"n":"유성우 사막","d":"쏟아지는 별빛 · 적이 혜성 빛줄기를 쏴요","tn":["#2a2238","#30283f","#262033","#352c45"],"en":["#5a9aff","#9ad8ff"],"ob":["#0e0a1a","#2a2a5a","#9ad8ff"],"amb":"star","pj":"aurora","pc":["#ffffff","#5a9aff"],"a":"#9ad8ff"},
+{"id":"tk11","g":"kro","ex":1,"p":0,"n":"은하수","d":"패스 전용 · 쏟아지는 별 · 적이 보랏빛 별을 쏴요","tn":["#0a0818","#0d0a1e","#080614","#100c24"],"en":["#c08cff","#7a5aff"],"ob":["#06041a","#2a1a5a","#c08cff"],"amb":"star","pj":"star","pc":["#ffffff","#c08cff"],"a":"#c08cff"},
+{"id":"tm1","g":"star","ex":1,"p":0,"n":"천상의 구름 정원","d":"구름 위 정원 · 금빛 깃털이 내려와요 · 적이 빛의 창을 던져요","tn":["#c8d8ec","#d2e0f2","#bed0e6","#dae6f6"],"en":["#c8a040","#e0b850"],"ob":["#6a7a9a","#e8eef8","#ffd25a"],"amb":"feather","pj":"holy","pc":["#ffffff","#ffd25a"],"a":"#ffd25a"},
+{"id":"tm2","g":"star","ex":1,"p":0,"n":"용암 화산 둥지","d":"끓어오르는 화산 · 불씨가 솟아요 · 적이 용의 화염구를 쏴요","tn":["#2a1210","#321612","#24100e","#3a1a14"],"en":["#ff5a1a","#ffb03a"],"ob":["#1a0806","#5a1a10","#ff6a1f"],"amb":"ember","pj":"dragon","pc":["#ffd25a","#ff3a1a"],"a":"#ff6a1f"},
+{"id":"tm3","g":"star","ex":1,"p":0,"n":"프리즘 결정 동굴","d":"무지갯빛 결정 동굴 · 색이 바뀌는 빛가루 · 적이 프리즘 광선을 쏴요","tn":["#141a2e","#182036","#121628","#1c243c"],"en":["#7affd4","#c08cff"],"ob":["#0a0e1e","#2a3a6a","#ffffff"],"amb":"prism","pj":"rainbow","pc":["#ffffff","#7affd4"],"a":"#c8e0ff"}]
+const TMN := {"t1":["#7ab8e0","#e6f6ff","rgba(200,230,255,.18)","snow"],"t2":["#d8a040","#fff0b0","rgba(255,210,120,.16)","sand"],"t3":["#3ac0a0","#b0ffe8","rgba(95,224,196,.14)","grass"],"t4":["#e07a3a","#ffd0a0","rgba(255,140,80,.16)","rock"],"t5":["#9ab0ff","#e8eeff","rgba(170,190,255,.16)","crater"],"t6":["#8ac040","#e0ffb0","rgba(160,220,90,.15)","moss"],"t7":["#ff8a7a","#fff0e0","rgba(255,150,130,.16)","shell"],"t8":["#e08a2a","#ffe0a0","rgba(255,170,80,.16)","leaf"],"t9":["#ffb04a","#fff0c0","rgba(255,180,80,.16)","rock"],"t10":["#7ad0e0","#e0faff","rgba(120,210,230,.15)","rubble"],
+ "tk1":["#3ff0ff","#d8ffff","rgba(63,240,255,.22)","bubble"],"tk2":["#ff6fa0","#ffe0ec","rgba(255,111,160,.2)","petal"],"tk3":["#6ac8ff","#ffffff","rgba(160,220,255,.22)","ice"],"tk4":["#ffe14a","#fffbe0","rgba(255,225,74,.2)","spark"],"tk5":["#ff6a1f","#ffd25a","rgba(255,106,31,.24)","ember"],"tk6":["#7affd4","#e8fff8","rgba(122,255,212,.22)","aurora"],"tk7":["#ffe27a","#fffbe0","rgba(255,226,122,.22)","star"],
+ "t11":["#ff3ad0","#ffd0f6","rgba(255,58,208,.18)","rock"],"t12":["#c8a0ff","#f6eeff","rgba(200,160,255,.16)","grass"],"t13":["#e0904a","#ffe0b0","rgba(255,160,80,.15)","rock"],"tk8":["#3affe8","#e0fffb","rgba(58,255,232,.2)","spark"],"tk9":["#9ad8ff","#ffffff","rgba(154,216,255,.2)","star"],"tk10":["#ff4a6a","#ffd0d8","rgba(255,74,106,.2)","petal"],"tk11":["#c08cff","#f0e0ff","rgba(192,140,255,.22)","star"],"tm1":["#ffd25a","#fffbe0","rgba(255,226,140,.28)","star"],"tm2":["#ff6a1f","#ffd25a","rgba(255,106,31,.3)","ember"],"tm3":["#c8e0ff","#ffffff","rgba(200,230,255,.28)","aurora"]}
+const SETS := [{"n":"벚꽃 세트","r":"k5","b":"b1","t":"tk2"},{"n":"서리 세트","r":"k3","b":"b2","t":"tk3"},{"n":"용암 세트","r":"k2","b":"b3","t":"tk5"},{"n":"황금 세트","r":"k7","b":"b4","t":"tk7"},{"n":"심해 세트","r":"k6","b":"b5","t":"tk1"},{"n":"오로라 세트","r":"k1","b":"b7","t":"tk6"},{"n":"번개 세트","r":"k4","b":"b8","t":"tk4"},{"n":"정글 세트","r":"j6","b":"b6","t":"t3"},{"n":"네온 세트","r":"k8","b":"b9","t":"tk8"},{"n":"장미 세트","r":"k10","b":"b11","t":"tk10"},{"n":"혜성 세트","r":"k9","b":"b10","t":"tk9"}]
+const MSET := [{"n":"천상 세트","r":"m1","b":"mb1","t":"tm1"},{"n":"용왕 세트","r":"m2","b":"mb2","t":"tm2"},{"n":"프리즘 세트","r":"m3","b":"mb3","t":"tm3"}]
+
+# ═════════ 꾸미기: 스킨 · 기지 · 테마 그림 (웹 bot · base · masterBot · masterBase · amb · mdeco · drawPr) ═════════
+var _ccache := {}
+func C(s) -> Color:
+	if s is Color:
+		return s
+	var k := str(s)
+	if _ccache.has(k):
+		return _ccache[k]
+	var c := Color.WHITE
+	if k.begins_with("rgba("):
+		var a := k.substr(5, k.length() - 6).split(",")
+		c = Color(float(a[0]) / 255.0, float(a[1]) / 255.0, float(a[2]) / 255.0, float(a[3]))
+	else:
+		c = Color(k)
+	_ccache[k] = c
+	return c
+
+func hsl(h: float, s: float, l: float, a: float = 1.0) -> Color:
+	var c := (1.0 - absf(2.0 * l - 1.0)) * s
+	var hp := fmod(h, 360.0) / 60.0
+	var x := c * (1.0 - absf(fmod(hp, 2.0) - 1.0))
+	var r := 0.0
+	var g := 0.0
+	var b := 0.0
+	if hp < 1:
+		r = c
+		g = x
+	elif hp < 2:
+		r = x
+		g = c
+	elif hp < 3:
+		g = c
+		b = x
+	elif hp < 4:
+		g = x
+		b = c
+	elif hp < 5:
+		r = x
+		b = c
+	else:
+		r = c
+		b = x
+	var m := l - c / 2.0
+	return Color(r + m, g + m, b + m, a)
+
+func _find_in(L: Array, id) -> Dictionary:
+	if id == null or str(id) == "":
+		return {}
+	for q in L:
+		if q.id == id:
+			return q
+	return {}
+
+func SKIN() -> Dictionary:
+	return _find_in(SK, SV.eq)
+func BSK() -> Dictionary:
+	return _find_in(BS, SV.beq)
+func TH() -> Dictionary:
+	var k := _find_in(TS, SV.teq)
+	if not k.is_empty() and not k.has("mn"):
+		k.mn = TMN.get(k.id, null)
+	return k
+func KRO() -> Dictionary:
+	var s := SKIN()
+	return s if (not s.is_empty() and (s.g == "kro" or s.g == "star")) else {}
+func TKRO() -> Dictionary:
+	var s := TH()
+	return s if (not s.is_empty() and (s.g == "kro" or s.g == "star")) else {}
+func ground_tn() -> Array:
+	var th := TH()
+	return th.tn if not th.is_empty() else ["#4a4234", "#4e4537", "#463f32", "#524939"]
+
+# 로봇: 기본 모양 위에 스킨 무늬 (dot · band · glow) · 걸작(m1~m3)은 따로
+func art_bot_s(ci: CanvasItem, k: String, col: Color, acc: Color, t: float, pat: String) -> void:
+	if pat.length() == 2 and pat[0] == "m":
+		art_master_bot(ci, k, pat, t)
+		return
+	if pat == "glow":
+		ci.draw_circle(Vector2.ZERO, 13, Color(acc, 0.22 + 0.12 * sin(t * 4.0)))
+	art_bot(ci, k, col, acc, t, pat == "")
+	if k != "s":
+		if pat == "dot":
+			ci.draw_rect(Rect2(-6, -5, 2, 2), acc)
+			ci.draw_rect(Rect2(-6, 3, 2, 2), acc)
+			ci.draw_rect(Rect2(-3, -1, 2, 2), acc)
+		elif pat == "band":
+			ci.draw_rect(Rect2(-2, -7, 2, 14), acc)
+
+func _hexp(r: float, rot: float = 0.0, c: Vector2 = Vector2.ZERO, sy: float = 1.0) -> PackedVector2Array:
+	var p := PackedVector2Array()
+	for i in 6:
+		var a := i * PI / 3.0 + rot
+		p.append(c + Vector2(cos(a) * r, sin(a) * r * sy))
+	return p
+
+func _xp(pts: Array, S: float, rot: float = 0.0, off: Vector2 = Vector2.ZERO) -> PackedVector2Array:
+	var o := PackedVector2Array()
+	for v in pts:
+		o.append(((v as Vector2).rotated(rot) + off) * S)
+	return o
+
+func art_master_bot(ci: CanvasItem, k: String, p: String, tm: float) -> void:
+	var S: float = {"c": 1.15, "r": 1.0, "h": 1.0, "m": 0.95, "s": 0.72}.get(k, 1.0)
+	if p == "m1":
+		for i in 12:
+			var a := tm * 1.5 + i * TAU / 12.0
+			ci.draw_arc(Vector2.ZERO, 14 * S, a, a + 0.28, 4, Color(1.0, 0.9, 0.55, 0.85), 1.6 * S)
+		ci.draw_circle(Vector2.ZERO, 15 * S, Color(1.0, 0.91, 0.63, 0.3 + 0.15 * sin(tm * 3.0)))
+		var w := sin(tm * 6.0) * 2.5
+		for sg in [-1.0, 1.0]:
+			var wing := []
+			var a0 := Vector2(-2, sg * 4)
+			for j in 9:
+				var q := j / 8.0
+				wing.append(a0.lerp(Vector2(-10, sg * (14 + w)), q).lerp(Vector2(-10, sg * (14 + w)).lerp(Vector2(-16, sg * (10 + w)), q), q))
+			wing.append(Vector2(-10, sg * 8))
+			wing.append(Vector2(-6, sg * 5))
+			var wp := _xp(wing, S)
+			ci.draw_colored_polygon(wp, Color.WHITE)
+		ci.draw_colored_polygon(_xp([Vector2(11, 0), Vector2(3, -8), Vector2(-7, -6), Vector2(-7, 6), Vector2(3, 8)], S), K)
+		var body := _xp([Vector2(9.5, 0), Vector2(2.5, -6.5), Vector2(-5.5, -5), Vector2(-5.5, 5), Vector2(2.5, 6.5)], S)
+		ci.draw_polygon(body, PackedColorArray([Color("#f2d68a"), Color.WHITE, Color.WHITE, Color("#f8e4b0"), Color("#f2d68a")]))
+		var bl := body.duplicate()
+		bl.append(body[0])
+		ci.draw_polyline(bl, Color("#c9a23a"), 1.0)
+		ci.draw_circle(Vector2(1, 0) * S, 5.0 * S, Color(1.0, 0.82, 0.35, 0.3))
+		ci.draw_circle(Vector2(1, 0) * S, 2.6 * S, Color("#ffd25a"))
+	elif p == "m2":
+		for i in 8:
+			var a := i / 8.0 * TAU + tm * 2.0
+			var r := 11.0 + sin(tm * 9.0 + i * 1.7) * 2.5
+			ci.draw_circle(Vector2(cos(a), sin(a)) * r * S, 2.6 * S, Color("#ff5a1a" if i % 2 else "#ffb03a", 0.55))
+		ci.draw_colored_polygon(_xp([Vector2(-6, -2), Vector2(-17, sin(tm * 5.0) * 4), Vector2(-6, 2)], S), Color("#3a0a0a"))
+		for sg in [-1.0, 1.0]:
+			ci.draw_colored_polygon(_xp([Vector2(-1, sg * 3), Vector2(-6, sg * (15 + sin(tm * 7.0) * 2)), Vector2(-9, sg * 9), Vector2(-12, sg * 12), Vector2(-8, sg * 4)], S), Color("#5a0e12"))
+		ci.draw_colored_polygon(_xp([Vector2(12, 0), Vector2(2, -8), Vector2(-8, -5), Vector2(-8, 5), Vector2(2, 8)], S), K)
+		var body := _xp([Vector2(10.5, 0), Vector2(1.5, -6.5), Vector2(-6.5, -4), Vector2(-6.5, 4), Vector2(1.5, 6.5)], S)
+		ci.draw_polygon(body, PackedColorArray([Color("#d8321e"), Color("#a02016"), Color("#5a0a0a"), Color("#5a0a0a"), Color("#a02016")]))
+		for i in 3:
+			ci.draw_rect(Rect2(Vector2(-5 + i * 3.5, -1) * S, Vector2(2, 2) * S), Color(1.0, 0.59, 0.27, 0.4))
+		for sg in [-1.0, 1.0]:
+			ci.draw_colored_polygon(_xp([Vector2(4, sg * 4), Vector2(-2, sg * 11), Vector2(1, sg * 4)], S), Color("#f0e0c0"))
+		ci.draw_rect(Rect2(Vector2(6, -3.2) * S, Vector2(2.4, 1.8) * S), Color("#ffe14a"))
+		ci.draw_rect(Rect2(Vector2(6, 1.4) * S, Vector2(2.4, 1.8) * S), Color("#ffe14a"))
+	else:
+		var h := fmod(tm * 60.0, 360.0)
+		for i in 3:
+			var a := tm * 2.2 + i * 2.094
+			ci.draw_colored_polygon(_xp([Vector2(0, -3.5), Vector2(2.2, 0), Vector2(0, 3.5), Vector2(-2.2, 0)], S, a * 2.0, Vector2(cos(a), sin(a)) * 14.0 / 1.0), hsl(h + i * 120, 0.9, 0.7))
+		ci.draw_circle(Vector2.ZERO, 13 * S, hsl(h, 0.9, 0.65, 0.3))
+		var rot := tm * 0.6
+		ci.draw_colored_polygon(_xp(Array(_hexp(10.5, rot)), S), K)
+		var hx := _xp(Array(_hexp(9.0, rot)), S)
+		ci.draw_polygon(hx, PackedColorArray([hsl(h, 0.9, 0.75), Color.WHITE, hsl(h + 180, 0.9, 0.65), hsl(h + 180, 0.9, 0.65), Color.WHITE, hsl(h, 0.9, 0.75)]))
+		for i in 3:
+			var a := i * PI / 3.0 + rot
+			ci.draw_line(Vector2(cos(a), sin(a)) * 9 * S, -Vector2(cos(a), sin(a)) * 9 * S, Color(1, 1, 1, 0.6), 0.8)
+		ci.draw_circle(Vector2.ZERO, 4.0 * S, Color(1, 1, 1, 0.35))
+		ci.draw_circle(Vector2.ZERO, 2.4 * S, Color.WHITE)
+	var ac := Color("#ffd25a") if p == "m1" else (Color("#ff8a3a") if p == "m2" else hsl(fmod(tm * 60.0, 360.0), 0.9, 0.7))
+	if k == "r":
+		ci.draw_rect(Rect2(Vector2(7, -1.8) * S, Vector2(10, 3.6) * S), K)
+		ci.draw_rect(Rect2(Vector2(14, -1.8) * S, Vector2(3, 3.6) * S), ac)
+	elif k == "c":
+		ci.draw_colored_polygon(_xp([Vector2(10, -6), Vector2(17, -2), Vector2(10, -3)], S), ac)
+		ci.draw_colored_polygon(_xp([Vector2(10, 6), Vector2(17, 2), Vector2(10, 3)], S), ac)
+	elif k == "h":
+		ci.draw_rect(Rect2(Vector2(-6, -1) * S, Vector2(6, 2) * S), Color("#8be28b"))
+		ci.draw_rect(Rect2(Vector2(-4, -3) * S, Vector2(2, 6) * S), Color("#8be28b"))
+	elif k == "m":
+		ci.draw_colored_polygon(_xp([Vector2(9, -4), Vector2(16, 0), Vector2(9, 4)], S), Color("#c8d0d8"))
+
+# 걸작 기지 (mb1 천상 · mb2 용 · mb3 프리즘)
+func art_master_base(ci: CanvasItem, p: Vector2, m: String, tm: float, xf: Transform2D) -> void:
+	var X := xf * Transform2D(0.0, Vector2.ONE, 0.0, p)
+	ci.draw_set_transform_matrix(X)
+	ci.draw_colored_polygon(ell(Vector2(6, 42), 60, 18), Color(0, 0, 0, 0.32))
+	if m == "mb1":
+		var ga := 0.35 + 0.15 * sin(tm * 2.0)
+		ci.draw_polygon(PackedVector2Array([Vector2(-14, -140), Vector2(14, -140), Vector2(14, 0), Vector2(-14, 0)]), PackedColorArray([Color(1, 0.94, 0.7, 0), Color(1, 0.94, 0.7, 0), Color(1, 0.94, 0.7, ga), Color(1, 0.94, 0.7, ga)]))
+		ci.draw_colored_polygon(ell(Vector2(0, 10), 56, 24), Color("#8a96b0"))
+		ci.draw_colored_polygon(ell(Vector2(0, 4), 56, 24), Color("#eef2fa"))
+		ell_line(ci, Vector2(0, 4), 56, 24, Color("#ffd25a"), 2.0)
+		ell_line(ci, Vector2(0, 4), 42, 17, Color(0.78, 0.67, 0.35, 0.5), 1.0)
+		var P: Array = []
+		for i in 6:
+			var a := i / 6.0 * TAU + tm * 0.2
+			P.append(Vector2(cos(a) * 44, 4 + sin(a) * 18))
+		P.sort_custom(func(a, b): return a.y < b.y)
+		var pil := func(q: Vector2):
+			ci.draw_rect(Rect2(q.x - 3, q.y - 26, 6, 26), Color("#c8d0e0"))
+			ci.draw_rect(Rect2(q.x - 3, q.y - 26, 3, 26), Color.WHITE)
+			ci.draw_rect(Rect2(q.x - 4.5, q.y - 29, 9, 3), Color("#ffd25a"))
+			ci.draw_rect(Rect2(q.x - 4.5, q.y - 1, 9, 2), Color("#ffd25a"))
+		for q in P:
+			if q.y < 4:
+				pil.call(q)
+		ci.draw_colored_polygon(PackedVector2Array([Vector2(0, -58), Vector2(15, 0), Vector2(-15, 0)]), K)
+		ci.draw_polygon(PackedVector2Array([Vector2(0, -54), Vector2(12, -2), Vector2(-12, -2)]), PackedColorArray([Color.WHITE, Color("#c0c8d8"), Color("#d8dde8")]))
+		ci.draw_circle(Vector2(0, -22), 11, Color(1, 0.82, 0.35, 0.3))
+		ci.draw_circle(Vector2(0, -22), 6, Color("#ffd25a"))
+		for ring in [[-46.0, 18.0, 1.0], [-30.0, 24.0, -1.4]]:
+			var n := 10
+			for i in n:
+				var a: float = tm * ring[2] + i * TAU / n
+				var pts := PackedVector2Array()
+				for s in 4:
+					var aa := a + s * 0.12
+					pts.append(Vector2(cos(aa) * ring[1], ring[0] + sin(aa) * ring[1] * 0.35))
+				ci.draw_polyline(pts, Color(1, 0.84, 0.35, 0.9), 2.4)
+		for q in P:
+			if q.y >= 4:
+				pil.call(q)
+		for i in 6:
+			var a := tm * 0.8 + i
+			ci.draw_rect(Rect2(cos(a) * 30, -30 - fmod(tm * 20 + i * 15, 50.0), 2, 2), Color(1, 0.96, 0.84, absf(sin(tm * 2 + i))))
+	elif m == "mb2":
+		var o1 := PackedVector2Array()
+		var o2 := PackedVector2Array()
+		for i in 14:
+			var a := i / 14.0 * TAU
+			var r1 := 50.0 if i % 2 else 58.0
+			var r2 := 44.0 if i % 2 else 52.0
+			o1.append(Vector2(cos(a) * r1, 6 + sin(a) * r1 * 0.55))
+			o2.append(Vector2(cos(a) * r2, 2 + sin(a) * r2 * 0.5))
+		ci.draw_colored_polygon(o1, Color("#120604"))
+		ci.draw_colored_polygon(o2, Color("#2a1210"))
+		var la := 0.7 + 0.3 * sin(tm * 3.0)
+		ci.draw_colored_polygon(ell(Vector2(0, 4), 34, 17), Color(0.35, 0.04, 0.04, la))
+		ci.draw_colored_polygon(ell(Vector2(0, 4), 24, 12), Color(1.0, 0.42, 0.12, la))
+		ci.draw_colored_polygon(ell(Vector2(0, 4), 10, 5), Color(1.0, 0.88, 0.29, la))
+		var hood := PackedVector2Array()
+		var hood2 := PackedVector2Array()
+		for j in 13:
+			var q := j / 12.0
+			hood.append(Vector2(-18, -6).lerp(Vector2(0, -40), q).lerp(Vector2(0, -40).lerp(Vector2(18, -6), q), q))
+			hood2.append(Vector2(-15, -6).lerp(Vector2(0, -35), q).lerp(Vector2(0, -35).lerp(Vector2(15, -6), q), q))
+		ci.draw_colored_polygon(hood, Color("#0b0604"))
+		ci.draw_colored_polygon(hood2, Color("#3a1a14"))
+		for sg in [-1.0, 1.0]:
+			var horn := PackedVector2Array()
+			for j in 9:
+				var q := j / 8.0
+				horn.append(Vector2(sg * 10, -20).lerp(Vector2(sg * 38, -36), q).lerp(Vector2(sg * 38, -36).lerp(Vector2(sg * 30, -64), q), q))
+			for j in 9:
+				var q := j / 8.0
+				horn.append(Vector2(sg * 30, -64).lerp(Vector2(sg * 26, -40), q).lerp(Vector2(sg * 26, -40).lerp(Vector2(sg * 4, -26), q), q))
+			ci.draw_colored_polygon(horn, Color("#e8dcc0"))
+		ci.draw_circle(Vector2(-6, -16), 6, Color(1, 0.42, 0.12, 0.35))
+		ci.draw_circle(Vector2(6, -16), 6, Color(1, 0.42, 0.12, 0.35))
+		ci.draw_colored_polygon(ell(Vector2(-6, -16), 3, 2, 10), Color("#ffe14a"))
+		ci.draw_colored_polygon(ell(Vector2(6, -16), 3, 2, 10), Color("#ffe14a"))
+		for i in 10:
+			var q := fmod(tm * 0.6 + i / 10.0, 1.0)
+			ci.draw_rect(Rect2(sin(i * 2.3) * 30 + sin(tm * 2 + i) * 4, 4 - q * 80, 2.5, 2.5), Color("#ffb03a" if i % 2 else "#ff5a1a", 1.0 - q))
+	else:
+		var h := fmod(tm * 50.0, 360.0)
+		ci.draw_colored_polygon(ell(Vector2(0, 4), 62, 28), hsl(h, 0.9, 0.65, 0.25))
+		var hx := _hexp(56, 0.0, Vector2(0, 6), 0.5)
+		ci.draw_colored_polygon(hx, Color("#0a0e1e"))
+		var hl := hx.duplicate()
+		hl.append(hx[0])
+		ci.draw_polyline(hl, hsl(h, 0.9, 0.7), 3.0)
+		var sh := [[-26, -6, 30, 9], [26, -6, 30, 9], [0, -10, 58, 13], [-12, 6, 22, 7], [14, 8, 20, 6]]
+		for i in sh.size():
+			var s: Array = sh[i]
+			var sx: float = s[0]
+			var sy: float = s[1]
+			var hh: float = s[2]
+			var w: float = s[3]
+			ci.draw_colored_polygon(PackedVector2Array([Vector2(sx, sy - hh - 2), Vector2(sx + w + 1.5, sy), Vector2(sx, sy + w * 0.6 + 1), Vector2(sx - w - 1.5, sy)]), K)
+			ci.draw_polygon(PackedVector2Array([Vector2(sx, sy - hh), Vector2(sx + w, sy), Vector2(sx, sy + w * 0.6), Vector2(sx - w, sy)]),
+				PackedColorArray([hsl(h + i * 50, 0.9, 0.8), Color.WHITE, hsl(h + i * 50 + 160, 0.85, 0.6), Color.WHITE]))
+			ci.draw_line(Vector2(sx, sy - hh), Vector2(sx, sy + w * 0.6), Color(1, 1, 1, 0.55), 0.8)
+		for i in 5:
+			var a := tm * 1.2 + i * 1.2566
+			var c := Vector2(cos(a) * 50, -20 + sin(a) * 16)
+			var pts := PackedVector2Array()
+			for v in [Vector2(0, -5), Vector2(3, 0), Vector2(0, 5), Vector2(-3, 0)]:
+				pts.append(c + (v as Vector2).rotated(a * 2.0))
+			ci.draw_colored_polygon(pts, hsl(h + i * 72, 0.95, 0.72))
+		ci.draw_circle(Vector2(0, -34), 10, hsl(h, 0.9, 0.7, 0.35))
+		ci.draw_circle(Vector2(0, -34), 4, Color.WHITE)
+	ci.draw_set_transform_matrix(xf)
+
+# 테마: 광산 주변 꾸미기 (mdeco)
+func mdeco(X: Vector2, mn, tm: float, top: bool) -> void:
+	if mn == null:
+		return
+	var d: String = mn[3]
+	if not top:
+		match d:
+			"snow":
+				draw_colored_polygon(ell(X + Vector2(0, 10), 24, 8), Color("#f4fbff"))
+			"sand":
+				draw_colored_polygon(ell(X + Vector2(0, 10), 24, 8), Color("#e6c88a"))
+				draw_rect(Rect2(X.x - 16, X.y + 9, 3, 2), Color("#b8925a"))
+				draw_rect(Rect2(X.x + 12, X.y + 12, 3, 2), Color("#b8925a"))
+			"grass", "moss":
+				var gc := Color("#6ab04a") if d == "grass" else Color("#5a7a30")
+				for q in [[-18, 8], [-14, 12], [15, 9], [19, 12], [-4, 14]]:
+					draw_rect(Rect2(X.x + q[0], X.y + q[1] - 5, 2, 6), gc)
+					draw_rect(Rect2(X.x + q[0] + 3, X.y + q[1] - 3, 2, 4), gc)
+			"rock", "rubble":
+				for q in [[-18, 10, 6], [17, 9, 5], [-8, 14, 4]]:
+					draw_colored_polygon(ell(X + Vector2(q[0], q[1]), q[2], q[2] * 0.7, 12), Color("#5a3a2a") if d == "rock" else Color("#3a3a3a"))
+			"crater":
+				ell_line(self, X + Vector2(0, 8), 26, 9, Color(0, 0, 0, 0.35), 2.0)
+			"shell":
+				for q in [[-18, 12], [16, 13]]:
+					draw_arc(X + Vector2(q[0], q[1]), 1.75, PI, TAU, 6, Color("#fff4e0"), 3.5)
+				draw_rect(Rect2(X.x - 2, X.y + 14, 3, 2), Color("#ffb0a0"))
+			"leaf":
+				for q in [[-17, 9, "#e05a2a"], [16, 11, "#f0a030"], [-6, 15, "#c84a20"]]:
+					draw_colored_polygon(ell(X + Vector2(q[0], q[1]), 4, 2, 10), Color(q[2]))
+			"bubble":
+				for i in 3:
+					var q := fmod(tm * 18.0 + i * 14.0, 40.0)
+					draw_arc(X + Vector2(-8 + i * 8, -q), 2 + i * 0.6, 0, TAU, 10, Color(0.75, 0.99, 1.0, 0.8 * (1.0 - q / 40.0)), 1.0)
+			"petal":
+				for i in 4:
+					draw_colored_polygon(ell(X + Vector2(-18 + i * 12, 11 + (i % 2) * 3), 3, 1.6, 8), Color("#ffc0d6") if i % 2 else Color("#ff8fb8"))
+			"ember":
+				draw_colored_polygon(ell(X + Vector2(0, 10), 24, 8), Color(1.0, 0.35, 0.08, 0.35))
+				for i in 3:
+					var q := fmod(tm * 0.8 + i / 3.0, 1.0)
+					draw_rect(Rect2(X.x - 8 + i * 8, X.y - q * 30, 2, 2), Color(1.0, 0.69, 0.23, 1.0 - q))
+			"spark":
+				if sin(tm * 7.0) > 0.6:
+					draw_polyline(PackedVector2Array([X + Vector2(-14, -16), X + Vector2(-8, -10), X + Vector2(-12, -7), X + Vector2(-6, -1)]), Color("#fff6a0"), 1.5)
+			"aurora":
+				draw_colored_polygon(ell(X + Vector2(0, -4), 16, 30), Color(C(mn[0]), 0.22 + 0.12 * sin(tm * 2.0)))
+			"star":
+				for i in 4:
+					var a := i * 1.57 + tm * 0.5
+					draw_rect(Rect2(X.x + cos(a) * 22, X.y + sin(a) * 14, 2, 2), Color(1.0, 0.98, 0.88, absf(sin(tm * 2.0 + i * 1.6))))
+	elif d == "snow" or d == "ice":
+		var wc := Color(1, 1, 1, 0.92)
+		draw_colored_polygon(ell(X + Vector2(0, -20), 4, 2.2, 10), wc)
+		draw_colored_polygon(ell(X + Vector2(-10, -9), 3, 1.8, 10), wc)
+		draw_colored_polygon(ell(X + Vector2(10, -8), 3, 1.6, 10), wc)
+		if d == "ice":
+			draw_line(X + Vector2(-22, 11), X + Vector2(22, 11), Color(1, 1, 1, 0.55), 1.0)
+
+const AMB := {"snow": [8, 35], "ember": [0, -30], "petal": [25, 30], "star": [0, 0], "rain": [-60, 450], "bubble": [0, -25], "feather": [14, 26], "prism": [0, -14]}
+# 테마 분위기 효과 (화면 좌표 · w×h 영역)
+func amb(k: Dictionary, tm: float, o: Vector2, w: float, h: float, ox: float, oy: float, sc: float = 1.0) -> void:
+	if k.is_empty() or not k.has("amb"):
+		return
+	var a: String = k.amb
+	if a == "aurora":
+		for b in 3:
+			var pts := PackedVector2Array()
+			for i in 25:
+				pts.append(o + Vector2(w * i / 24.0, h * 0.12 + b * h * 0.06 + sin(i / 24.0 * 6.0 + tm * 0.6 + b) * h * 0.04))
+			draw_polyline(pts, Color(C(k.pc[b % 2]), 0.12), (18.0 - b * 4) * h / 540.0 + 3.0)
+		return
+	var v: Array = AMB.get(a, [0, 0])
+	for i in 55:
+		var r := float((i * 9301 + 49297) % 233280) / 233280.0
+		var r2 := float((i * 4447 + 1931) % 1000) / 1000.0
+		var px := fposmod(r * w - ox * 0.3 + tm * v[0] + sin(tm * 0.8 + i) * 10.0, w)
+		var py := fposmod(r2 * h - oy * 0.3 + tm * v[1] * (0.7 + r * 0.6), h)
+		var P := o + Vector2(px, py)
+		match a:
+			"snow": draw_circle(P, (1.0 + r * 1.6) * sc, Color(1, 1, 1, 0.8))
+			"ember": draw_rect(Rect2(P, Vector2(2, 2) * sc), Color("#ffb03a" if i % 2 else "#ff5a1a", 0.4 + 0.5 * absf(sin(tm * 5.0 + i))))
+			"petal": draw_colored_polygon(_rot_ell(P, 3 * sc, 1.6 * sc, tm * 2 + i), Color("#ffc0d6" if i % 2 else "#ff8fb8", 0.8))
+			"star":
+				var z := (1.5 if i % 5 else 2.5) * sc
+				draw_rect(Rect2(P, Vector2(z, z)), Color("#ffffff" if i % 3 else "#ffe27a", 0.25 + 0.75 * absf(sin(tm * 1.5 + i * 1.7))))
+			"feather": draw_colored_polygon(_rot_ell(P, 3.4 * sc, 1.3 * sc, tm + i), Color("#fff6d6" if i % 3 else "#ffd25a", 0.75))
+			"prism": draw_rect(Rect2(P, Vector2(2.6, 2.6) * sc), hsl(tm * 80 + i * 40, 0.95, 0.72, 0.35 + 0.65 * absf(sin(tm * 2 + i))))
+			"rain": draw_line(P, P + Vector2(-2, 10) * sc, Color(0.72, 0.78, 1.0, 0.35), 1.0)
+			_: draw_arc(P, (1.5 + r * 2.5) * sc, 0, TAU, 10, Color(0.75, 0.99, 1.0, 0.5), 1.0)
+
+func _rot_ell(c: Vector2, rx: float, ry: float, rot: float) -> PackedVector2Array:
+	var p := PackedVector2Array()
+	for i in 10:
+		var a := TAU * i / 10.0
+		p.append(c + Vector2(cos(a) * rx, sin(a) * ry).rotated(rot))
+	return p
+
+# 탄환 (스킨별 모양)
+func draw_pr(X: Vector2, v: Vector2, s: Dictionary, col: Color, big: bool, mine: bool, tm: float) -> void:
+	if big:
+		draw_circle(X, 10, Color(Color("#3ab0ff") if mine else Color("#ff3a2a"), 0.35))
+		draw_line(X - v * 18.0, X, Color("#7fd8ff") if mine else Color("#ff6a4a"), 4.0)
+		draw_circle(X, 4.5, Color("#e0f6ff") if mine else Color("#ffe0d0"))
+		return
+	if s.is_empty():
+		draw_line(X - v * 12.0, X, col, 3.0)
+		draw_circle(X, 3.0, Color.WHITE)
+		return
+	var a := C(s.pc[0])
+	var b := C(s.pc[1])
+	var an := v.angle()
+	var R := func(pts: Array) -> PackedVector2Array:
+		var o := PackedVector2Array()
+		for q in pts:
+			o.append(X + (q as Vector2).rotated(an))
+		return o
+	match s.get("pj", ""):
+		"holy":
+			draw_colored_polygon(_rot_ell(X + Vector2(-8, 0).rotated(an), 16, 5, an), Color(b, 0.35))
+			draw_colored_polygon(R.call([Vector2(11, 0), Vector2(-2, -3.2), Vector2(-15, 0), Vector2(-2, 3.2)]), a)
+			draw_circle(X, 5, Color(b, 0.35))
+			draw_circle(X, 2.6, b)
+			for i in 3:
+				draw_rect(Rect2(X + Vector2(-19 - i * 6, sin(tm * 20 + i) * 3).rotated(an), Vector2(1.6, 1.6)), Color.WHITE)
+		"dragon":
+			for i in range(4, 0, -1):
+				draw_circle(X - v * i * 6.0 + Vector2(sin(tm * 25 + i), cos(tm * 25 + i)) * 1.5, 7 - i, Color(b if i % 2 else a, 0.18 + 0.1 * (5 - i)))
+			draw_circle(X, 11, Color(b, 0.35))
+			draw_circle(X, 8, Color(b, 0.3))
+			draw_circle(X, 5.5, a)
+		"rainbow":
+			var h := fmod(tm * 240.0, 360.0)
+			for k in 3:
+				draw_line(X - v * (30 - k * 6), X, hsl(h + k * 70, 0.95, 0.65, 0.85 - k * 0.2), 6 - k * 1.6)
+			draw_circle(X, 5, Color(1, 1, 1, 0.35))
+			draw_circle(X, 3, Color.WHITE)
+		"aurora":
+			draw_line(X - v * 26.0, X, Color(b, 0.35), 7.0)
+			draw_line(X - v * 16.0, X, Color(a, 0.9), 3.0)
+			draw_circle(X, 2.5, Color.WHITE)
+		"fire":
+			for i in range(3, 0, -1):
+				draw_circle(X - v * i * 6.0, 5 - i, Color(b, 0.15 + 0.12 * (4 - i)))
+			draw_circle(X, 8, Color(b, 0.4))
+			draw_circle(X, 4, a)
+		"ice":
+			draw_line(X + Vector2(-18, 0).rotated(an), X + Vector2(-4, 0).rotated(an), Color(b, 0.4), 2.0)
+			var pts: PackedVector2Array = R.call([Vector2(9, 0), Vector2(0, -3.5), Vector2(-7, 0), Vector2(0, 3.5)])
+			draw_colored_polygon(pts, a)
+			pts.append(pts[0])
+			draw_polyline(pts, b, 1.0)
+		"bolt":
+			var z := [Vector2(-26, 0), Vector2(-20, 4), Vector2(-14, -4), Vector2(-8, 3), Vector2(-3, -2), Vector2(3, 0)]
+			var zz := PackedVector2Array()
+			for i in z.size():
+				var j := sin(tm * 40 + i) * 2.0 if (i > 0 and i < 5) else 0.0
+				zz.append(X + (z[i] + Vector2(0, j)).rotated(an))
+			draw_polyline(zz, Color(b, 0.35), 4.0)
+			draw_polyline(zz, a, 1.5)
+		"petal":
+			draw_circle(X - v * 10.0 + Vector2(sin(tm * 9), cos(tm * 9)) * 3.0, 1.8, Color(a, 0.6))
+			draw_circle(X - v * 18.0, 1.3, Color(a, 0.6))
+			draw_colored_polygon(_rot_ell(X, 6, 3, tm * 12), b)
+			draw_colored_polygon(_rot_ell(X + Vector2(1, 0).rotated(tm * 12), 3, 1.5, tm * 12), a)
+		"bubble":
+			var q := [[0.0, 5.0], [10.0, 2.5], [18.0, 1.6]]
+			for i in 3:
+				draw_arc(X - v * q[i][0] + Vector2(0, sin(tm * 8 + i) * 2.0 if i else 0.0), q[i][1], 0, TAU, 12, Color(b, 1.0 - i * 0.3), 1.5)
+			draw_rect(Rect2(X - Vector2(2, 3), Vector2(2, 2)), a)
+		_:
+			draw_circle(X, 10, Color(b, 0.3))
+			draw_line(X - v * 20.0, X, Color(b, 0.5), 2.0)
+			var st := PackedVector2Array()
+			for i in 10:
+				var r := 2.6 if i % 2 else 6.5
+				var qa := i * PI / 5.0 + tm * 6.0
+				st.append(X + Vector2(cos(qa), sin(qa)) * r)
+			draw_colored_polygon(st, a)
+
+
+# ═════════ 꾸미기: 상자 · 파편 · 구매 · 장착 · 별 뽑기 · 배틀패스 (웹 로직 그대로) ═════════
+const FN := {"r": 6, "b": 5, "t": 4}
+const FREF := {"ju": 15, "b": 20, "kro": 60}
+const SEASON := {"id": 1, "n": "시즌 1 · 은하 원정", "d": "별의 바다를 건너는 첫 원정 · 보상: 은하 세트"}
+var box_res: Array = []
+var box_t0 := 0.0
+var box_star := false
+var box_shown := 0
+
+func _sv_defaults() -> void:
+	for k in ["own", "bown", "town", "hist"]:
+		if not (SV.get(k) is Array):
+			SV[k] = []
+	for k in ["eq", "beq", "teq"]:
+		if not SV.has(k) or SV[k] == null:
+			SV[k] = ""
+	if not (SV.get("frag") is Dictionary):
+		SV.frag = {}
+	for k in ["fbox", "sfrag", "spity", "ss", "cs"]:
+		SV[k] = int(SV.get(k, 0))
+	if not (SV.get("bp") is Dictionary) or int(SV.bp.get("season", 0)) != SEASON.id:
+		SV.bp = {"season": SEASON.id, "xp": int(SV.get("bpxp", 0)), "prem": false, "cf": [], "cp": []}
+	SV.erase("bpxp")
+
+func bp() -> Dictionary:
+	return SV.bp
+func bp_lv() -> int:
+	return mini(30, int(int(SV.bp.xp) / 500))
+func bpr(L: int) -> Dictionary:
+	var f = null
+	if L % 5 == 0:
+		f = {"box": 2 if L >= 20 else 1}
+	elif L % 2 == 1:
+		f = {"cs": 50 + L * 5}
+	var p = null
+	if L == 10:
+		p = {"skin": "b12"}
+	elif L == 20:
+		p = {"skin": "tk11"}
+	elif L == 30:
+		p = {"skin": "k11"}
+	elif L % 3 == 0:
+		p = {"frag": 3 if L >= 18 else 2}
+	elif L % 2 == 0:
+		p = {"box": 2 if L >= 16 else 1}
+	else:
+		p = {"cs": 150 + L * 10}
+	return {"f": f, "p": p}
+
+func cat_of(id: String) -> String:
+	if id.begins_with("k") or id.begins_with("j") or (id.begins_with("m") and not id.begins_with("mb")):
+		return "s"
+	if id.begins_with("b") or id.begins_with("mb"):
+		return "b"
+	return "t"
+func arr_of(cat: String) -> Array:
+	return SV.own if cat == "s" or cat == "r" else (SV.bown if cat == "b" else SV.town)
+func list_of(cat: String) -> Array:
+	return SK if cat == "s" or cat == "r" else (BS if cat == "b" else TS)
+func item(id: String) -> Dictionary:
+	return _find_in(list_of(cat_of(id)), id)
+func owns(id: String) -> bool:
+	return arr_of(cat_of(id)).has(id)
+func equipped(id: String) -> bool:
+	var c := cat_of(id)
+	return SV[{"s": "eq", "b": "beq", "t": "teq"}[c]] == id
+func equip(id: String) -> void:
+	var c := cat_of(id) if id != "" else ""
+	SV[{"s": "eq", "b": "beq", "t": "teq"}[c]] = id
+func unequip(c: String) -> void:
+	SV[{"s": "eq", "b": "beq", "t": "teq"}[c]] = ""
+
+func rt_txt(r: Dictionary) -> String:
+	if r.has("cs"):
+		return "청석 " + str(r.cs)
+	if r.has("box"):
+		return "소로 상자 ×" + str(r.box)
+	if r.has("frag"):
+		return "크로 파편 ×" + str(r.frag)
+	return item(r.skin).get("n", "")
+
+func bp_give(r: Dictionary) -> String:
+	if r.has("cs"):
+		SV.cs += int(r.cs)
+		return "청석 +" + str(r.cs)
+	if r.has("box"):
+		SV.fbox += int(r.box)
+		return "소로 상자 +" + str(r.box)
+	if r.has("frag"):
+		var Cn: Array = []
+		for q in SK:
+			if q.g == "kro" and not q.has("ex") and not SV.own.has(q.id):
+				Cn.append(["r", q])
+		for q in TS:
+			if q.g == "kro" and not q.has("ex") and not SV.town.has(q.id):
+				Cn.append(["t", q])
+		if Cn.is_empty():
+			SV.cs += int(r.frag) * 60
+			return "청석 +" + str(int(r.frag) * 60)
+		var pick: Array = Cn[rng.randi() % Cn.size()]
+		var R := apply_drop({"cat": pick[0], "g": "kro", "it": pick[1], "amt": int(r.frag)})
+		return pick[1].n + " 파편 ×" + str(r.frag) + (" (완성!)" if R.res == "done" else "")
+	var a := arr_of(cat_of(r.skin))
+	if not a.has(r.skin):
+		a.append(r.skin)
+	return item(r.skin).n + " 획득!"
+
+func bp_claim(tp: String, L: int):
+	var P := bp()
+	var arr: Array = P.cf if tp == "f" else P.cp
+	var r = bpr(L)[tp]
+	if r == null or arr.has(L) or bp_lv() < L or (tp == "p" and not P.prem):
+		return null
+	arr.append(L)
+	return bp_give(r)
+
+func roll_drop() -> Dictionary:
+	var r := rng.randf()
+	var cat := ""
+	var g := ""
+	var L: Array = []
+	if r < 0.4:
+		cat = "r"
+		g = "ju" if rng.randf() < 0.82 else "kro"
+		L = SK.filter(func(q): return q.g == g and not q.has("ex"))
+	elif r < 0.65:
+		cat = "b"
+		g = "b"
+		L = BS.filter(func(q): return not q.has("ex"))
+	else:
+		cat = "t"
+		g = "ju" if rng.randf() < 0.82 else "kro"
+		L = TS.filter(func(q): return q.g == g and not q.has("ex"))
+	var it: Dictionary = L[rng.randi() % L.size()]
+	var q := rng.randf()
+	return {"cat": cat, "g": g, "it": it, "amt": 1 if q < 0.65 else (2 if q < 0.9 else 3)}
+
+func apply_drop(D: Dictionary) -> Dictionary:
+	var arr := arr_of(D.cat)
+	var need: int = FN[D.cat]
+	var rate: int = FREF[D.g]
+	var o := D.duplicate()
+	if arr.has(D.it.id):
+		o.res = "dup"
+		o.v = int(D.amt) * rate
+		SV.cs += o.v
+		return o
+	var c: int = int(SV.frag.get(D.it.id, 0)) + int(D.amt)
+	if c >= need:
+		arr.append(D.it.id)
+		SV.frag.erase(D.it.id)
+		o.res = "done"
+		o.v = (c - need) * rate
+		SV.cs += o.v
+		return o
+	SV.frag[D.it.id] = c
+	o.res = "prog"
+	o.c = c
+	o.need = need
+	return o
+
+func set_parts(S: Dictionary) -> Array:
+	return [item(S.r), item(S.b), item(S.t)]
+
+func jackpot() -> Dictionary:
+	var L: Array = SETS.filter(func(S): return item(S.r).g == "kro")
+	var S: Dictionary = L[rng.randi() % L.size()]
+	var had := 0
+	for id in [S.r, S.b, S.t]:
+		var a := arr_of(cat_of(id))
+		if a.has(id):
+			had += 1
+		else:
+			a.append(id)
+		SV.frag.erase(id)
+	var v := 3000 if had == 3 else 0
+	SV.cs += v
+	return {"cat": "set", "g": "kro", "it": {"n": S.n, "id": S.r}, "amt": 0, "res": "jack", "v": v}
+
+func open_box(n: int, free: bool) -> void:
+	if n <= 0:
+		return
+	if free:
+		if SV.fbox < n:
+			return
+		SV.fbox -= n
+	else:
+		var cost := 600 * n
+		if SV.cs < cost:
+			lmsg = "청석이 부족해요 (" + str(cost) + " 필요)"
+			sfx("err")
+			return
+		SV.cs -= cost
+	var R: Array = []
+	for i in n:
+		R.append(jackpot() if rng.randf() < 1e-4 else apply_drop(roll_drop()))
+	_hist("box", R)
+	sv_save()
+	box_res = R
+	box_star = false
+	box_t0 = t_real
+	box_shown = 0
+	sfx("box")
+
+func star_all() -> Array:
+	var o: Array = []
+	for q in SK:
+		if q.g == "star":
+			o.append(q)
+	for q in BS:
+		if q.get("g", "") == "star":
+			o.append(q)
+	for q in TS:
+		if q.g == "star":
+			o.append(q)
+	return o
+
+func star_pull(n: int) -> void:
+	var cost := 15 * n
+	if SV.ss < cost:
+		lmsg = "별석이 부족해요 (" + str(cost) + " 필요)"
+		sfx("err")
+		return
+	SV.ss -= cost
+	var R: Array = []
+	for i in n:
+		SV.spity += 1
+		if rng.randf() < 1e-5 or SV.spity >= 500:
+			SV.spity = 0
+			var L: Array = star_all().filter(func(q): return not owns(q.id))
+			if not L.is_empty():
+				var it: Dictionary = L[rng.randi() % L.size()]
+				arr_of(cat_of(it.id)).append(it.id)
+				R.append({"res": "star", "it": it, "cat": cat_of(it.id)})
+			else:
+				SV.sfrag += 30
+				R.append({"res": "starx"})
+		else:
+			var q := rng.randf()
+			var a := 1 if q < 0.54 else (2 if q < 0.86 else (3 if q < 0.97 else 4))
+			SV.sfrag += a
+			R.append({"res": "sf", "a": a})
+	_hist("star", R)
+	sv_save()
+	box_res = R
+	box_star = true
+	box_t0 = t_real
+	box_shown = 0
+	sfx("sbox")
+
+func _hist(k: String, R: Array) -> void:
+	var now := int(Time.get_unix_time_from_system())
+	for i in range(R.size() - 1, -1, -1):
+		var q: Dictionary = R[i]
+		var x := ""
+		if k == "box":
+			if q.res == "jack":
+				x = q.it.n + " (크로 세트 통째로)"
+			else:
+				x = q.it.n + " 파편 ×" + str(q.amt) + (" → 완성" if q.res == "done" else (" → 보유 중, 청석 +" + str(q.v) if q.res == "dup" else " (" + str(q.get("c", 0)) + "/" + str(q.get("need", 0)) + ")"))
+		else:
+			x = ("★ 걸작 완품 · " + q.it.n) if q.res == "star" else ("★ 걸작 완품 (모두 보유) → 별 파편 +30" if q.res == "starx" else "★ 별 파편 ×" + str(q.a))
+		SV.hist.push_front({"t": now, "k": k, "x": x})
+	if SV.hist.size() > 500:
+		SV.hist.resize(500)
+
+func box_step() -> float:
+	return minf(0.12, 5.0 / maxf(1.0, box_res.size()))
+
+func box_busy() -> bool:
+	return not box_res.is_empty() and t_real - box_t0 < 1.45 + box_res.size() * box_step()
+
+func _box_tick() -> void:
+	if box_res.is_empty():
+		return
+	var n := int((t_real - box_t0 - 1.0) / box_step()) + 1
+	n = clampi(n, 0, box_res.size())
+	while box_shown < n:
+		var q: Dictionary = box_res[box_shown]
+		var k := ""
+		if box_star:
+			k = "sjack" if (q.res == "star" or q.res == "starx") else ("srare" if int(q.get("a", 0)) >= 3 else "sreveal")
+		else:
+			k = "jack" if q.res == "jack" else ("rare" if (q.res == "done" or q.g == "kro") else "reveal")
+		sfx(k)
+		box_shown += 1
+
+func buy_skin(id: String) -> void:
+	var it := item(id)
+	var c := cat_of(id)
+	if not owns(id):
+		var pr: int = int(it.get("p", 0)) if int(it.get("p", 0)) > 0 else (500 if c == "b" else 300)
+		if it.get("g", "") == "star" or it.has("ex"):
+			return
+		if SV.cs < pr:
+			lmsg = "청석이 부족해요 (" + str(pr) + " 필요)"
+			sfx("err")
+			return
+		SV.cs -= pr
+		arr_of(c).append(id)
+		SV.frag.erase(id)
+		lmsg = it.n + " 스킨을 샀어요!"
+		sfx("up")
+	equip(id)
+	sv_save()
+
+func set_miss(S: Dictionary) -> int:
+	var P := set_parts(S)
+	var m := 0
+	if not owns(P[0].id):
+		m += int(P[0].get("p", 300)) if int(P[0].get("p", 0)) > 0 else 300
+	if not owns(P[1].id):
+		m += 500
+	if not owns(P[2].id):
+		m += int(P[2].get("p", 300)) if int(P[2].get("p", 0)) > 0 else 300
+	return m
+
+func buy_set(i: int) -> void:
+	var S: Dictionary = SETS[i]
+	var cost := roundi(set_miss(S) * 0.85)
+	if cost > 0:
+		if SV.cs < cost:
+			lmsg = "청석이 부족해요 (" + str(cost) + " 필요)"
+			sfx("err")
+			return
+		SV.cs -= cost
+		for id in [S.r, S.b, S.t]:
+			if not owns(id):
+				arr_of(cat_of(id)).append(id)
+				SV.frag.erase(id)
+		lmsg = S.n + "를 샀어요!"
+		sfx("up")
+	SV.eq = S.r
+	SV.beq = S.b
+	SV.teq = S.t
+	sv_save()
+
+
+# ═════════ 꾸미기 화면: 상점 · 창고 · 배틀패스 · 상자 열기 ═════════
+var shop_tab2 := "box"
+var stF := {"own": "all", "cat": "all", "gr": "all"}
+var lob_draw: Array = []
+var lob_max := 0.0
+var pass_scroll := 0.0
+var lob_drag = null
+
+func _wide_rect() -> Rect2:
+	var u := ui_size()
+	var W := minf(1180.0, u.x - 24.0)
+	return Rect2((u.x - W) / 2.0, 180.0, W, u.y - 192.0)
+
+func _content_rect() -> Rect2:
+	var pr := _wide_rect()
+	return Rect2(pr.position.x + 14.0, pr.position.y + (100.0 if lsec == "shop" else 54.0), pr.size.x - 28.0, pr.size.y - (160.0 if lsec == "shop" else 114.0))
+
+# ── 미리보기 (140×84 기준 좌표) ──
+func _pv_xf(r: Rect2) -> Transform2D:
+	return inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(0.0, Vector2(r.size.x / 140.0, r.size.x / 140.0), 0.0, r.position)
+
+func _pv_set(M: Transform2D, local: Transform2D = Transform2D.IDENTITY) -> void:
+	draw_set_transform_matrix(M * local)
+
+func _pv_tiles(tn: Array, nx: int, ny: int, cw: float, ch: float) -> void:
+	for j in ny:
+		for i in nx:
+			draw_rect(Rect2(i * cw, j * ch, cw, ch), C(tn[(i * 3 + j * 5) % 4]))
+
+func _pv_bot(M: Transform2D, k: String, p: Vector2, sc: float, s: Dictionary, tm: float) -> void:
+	_pv_set(M, Transform2D(0.0, Vector2(sc, sc), 0.0, p))
+	var col: Color = UT[k].col
+	var acc: Color = UT[k].acc
+	var pat := ""
+	if not s.is_empty():
+		col = C(s.c)
+		acc = C(s.a)
+		pat = s.pt
+	art_bot_s(self, k, col, acc, tm, pat)
+
+func _pv_do(M: Transform2D, s: Dictionary, tm: float, d: Vector2, o: Vector2) -> void:
+	_pv_set(M)
+	var hy := sin(tm * 5.0) * 2.0
+	var dc := C(s.c) if not s.is_empty() else Color("#f2d14e")
+	var da := C(s.a) if not s.is_empty() else Color.WHITE
+	var oc := C(s.c) if not s.is_empty() else Color("#d9a441")
+	var oa := C(s.a) if not s.is_empty() else Color("#ffd27a")
+	if not s.is_empty() and s.g == "kro":
+		draw_circle(d + Vector2(0, hy), 11, Color(da, 0.3))
+	draw_rect(Rect2(d.x - 7, d.y - 3 + hy, 14, 7), K)
+	draw_rect(Rect2(d.x - 6, d.y - 2 + hy, 12, 5), dc)
+	draw_rect(Rect2(d.x - 12, d.y - 5 + hy, 5, 2), Color("#9aa6b2"))
+	draw_rect(Rect2(d.x + 7, d.y - 5 + hy, 5, 2), Color("#9aa6b2"))
+	draw_rect(Rect2(d.x - 1, d.y - 1 + hy, 2, 2), da)
+	for i in 8:
+		var a := i * TAU / 8.0
+		draw_arc(o, 12, a, a + 0.25, 4, Color(oa, 0.75), 1.0)
+	draw_rect(Rect2(o.x - 5, o.y - 6, 10, 12), K)
+	draw_rect(Rect2(o.x - 4, o.y - 5, 8, 10), oc)
+	draw_rect(Rect2(o.x - 2, o.y - 8, 4, 3), Color("#2a1a08"))
+	draw_rect(Rect2(o.x - 3, o.y - 2, 2, 4), oa)
+
+func _pv_base(M: Transform2D, b: Dictionary, p: Vector2, sc: float, tm: float) -> void:
+	var xf := M * Transform2D(0.0, Vector2(sc, sc), 0.0, p)
+	draw_set_transform_matrix(xf)
+	art_base(self, Vector2.ZERO, tm, xf, b)
+
+func _pv_theme(M: Transform2D, k: Dictionary, tm: float) -> void:
+	_pv_set(M)
+	var tn: Array = k.tn if not k.is_empty() else ["#4a4234", "#4e4537", "#463f32", "#524939"]
+	var ob: Array = k.ob if not k.is_empty() else ["#3a2a46", "#6b4a86", "#8f66ab"]
+	var en: Array = k.en if not k.is_empty() else ["#c24b68", "#c98a46"]
+	_pv_tiles(tn, 7, 4, 20, 21)
+	draw_colored_polygon(ell(Vector2(44, 58), 26, 8), Color(0, 0, 0, 0.3))
+	draw_colored_polygon(PackedVector2Array([Vector2(20, 56), Vector2(26, 32), Vector2(62, 32), Vector2(68, 56)]), C(ob[0]))
+	draw_rect(Rect2(33, 20, 22, 28), C(ob[1]))
+	draw_rect(Rect2(33, 20, 22, 4), C(ob[2]))
+	draw_circle(Vector2(44, 34), 5, Color("#ff6a55") if int(tm * 3.0) % 2 else Color("#a8352a"))
+	for q in [[100, 32, 0], [118, 58, 1]]:
+		draw_circle(Vector2(q[0], q[1]), 8, Color("#1c0e14"))
+		draw_circle(Vector2(q[0], q[1]), 6.5, C(en[q[2]]))
+		draw_rect(Rect2(q[0] - 6, q[1] - 1.5, 4, 3), Color("#ffd0a8"))
+	var mn = TMN.get(k.get("id", ""), null) if not k.is_empty() else null
+	_pv_set(M, Transform2D(0.0, Vector2(0.6, 0.6), 0.0, Vector2(78, 62)))
+	mdeco(Vector2.ZERO, mn, tm, false)
+	var M0 := C(mn[0]) if mn != null else Color("#2fa88f")
+	var M1 := C(mn[1]) if mn != null else Color("#8ff3dd")
+	for c in [[-10.0, 6.0, 0.7], [10.0, 5.0, 0.6], [0.0, 0.0, 1.0]]:
+		var h: float = 22.0 * c[2]
+		var w: float = 9.0 * c[2]
+		var px: float = c[0]
+		var py: float = c[1]
+		draw_colored_polygon(PackedVector2Array([Vector2(px, py - h), Vector2(px + w, py), Vector2(px, py + h * 0.35), Vector2(px - w, py)]), M0)
+		draw_colored_polygon(PackedVector2Array([Vector2(px, py - h), Vector2(px + w, py), Vector2(px, py)]), M1)
+	mdeco(Vector2.ZERO, mn, tm, true)
+	_pv_set(M)
+	if not k.is_empty() and (k.g == "kro" or k.g == "star"):
+		amb(k, tm, Vector2.ZERO, 140, 84, 0, 0, 0.8)
+		var q := fmod(tm * 0.9, 1.0)
+		draw_pr(Vector2(90 - q * 40, 32), Vector2(-1, 0), k, Color.WHITE, false, false, tm)
+
+func draw_preview(r: Rect2, kind: String, id, tm: float) -> void:
+	var M := _pv_xf(r)
+	_pv_set(M)
+	match kind:
+		"s":
+			var s: Dictionary = item(id) if str(id) != "" else {}
+			draw_rect(Rect2(0, 0, 140, 84), Color("#2b2620"))
+			draw_rect(Rect2(0, 60, 140, 24), Color(0, 0, 0, 0.18))
+			for q in [["c", 20], ["h", 46], ["r", 72]]:
+				_pv_bot(M, q[0], Vector2(q[1], 44), 1.4, s, tm)
+			_pv_do(M, s, tm, Vector2(122, 16), Vector2(12, 70))
+			_pv_set(M)
+			var k := fmod(tm * 0.9, 1.0)
+			if not s.is_empty() and (s.g == "kro" or s.g == "star"):
+				draw_pr(Vector2(94 + k * 40, 44), Vector2(1, 0), s, Color.WHITE, false, true, tm)
+			else:
+				draw_pr(Vector2(94 + k * 40, 44), Vector2(1, 0), {}, Color("#7ff0ff"), false, true, tm)
+		"b":
+			draw_rect(Rect2(0, 0, 140, 84), Color("#2b2620"))
+			_pv_base(M, item(id) if str(id) != "" else {}, Vector2(70, 44), 0.62, tm)
+		"t":
+			_pv_theme(M, item(id) if str(id) != "" else {}, tm)
+		"set", "mset":
+			var S: Dictionary = (SETS if kind == "set" else MSET)[int(id)]
+			var P := set_parts(S)
+			_pv_tiles(P[2].tn, 7, 4, 20, 21)
+			_pv_base(M, P[1], Vector2(36, 46), 0.42, tm)
+			for q in [["c", 84, 54], ["r", 106, 38], ["h", 126, 56]]:
+				_pv_bot(M, q[0], Vector2(q[1], q[2]), 1.1, P[0], tm)
+			_pv_do(M, P[0], tm, Vector2(122, 14), Vector2(68, 72))
+			_pv_set(M)
+			if P[2].has("amb"):
+				amb(P[2], tm, Vector2.ZERO, 140, 84, 0, 0, 0.8)
+		"box":
+			draw_rect(Rect2(0, 0, 140, 84), Color("#1a1420"))
+			var gold := id == "gold"
+			draw_rect(Rect2(46, 30, 48, 36), Color("#8a5a20") if gold else Color("#5a3a7a"))
+			draw_rect(Rect2(42, 22, 56, 12), Color("#c9a23a") if gold else Color("#8a5ab0"))
+			draw_rect(Rect2(66, 22, 8, 44), Color("#ffd76a"))
+			draw_circle(Vector2(70, 40), 18 + 3 * sin(tm * 3), Color(1, 0.85, 0.4, 0.15))
+		"star":
+			draw_rect(Rect2(0, 0, 140, 84), Color("#120e24"))
+			var st := PackedVector2Array()
+			for i in 10:
+				var rr := 9.0 if i % 2 else 24.0
+				var a := i * PI / 5.0 - PI / 2.0 + sin(tm) * 0.1
+				st.append(Vector2(70, 42) + Vector2(cos(a), sin(a)) * rr)
+			draw_colored_polygon(st, Color("#ffd76a"))
+	_ui_reset()
+
+# ── 줄 단위 배치 ──
+func _rows_shop() -> Array:
+	var R: Array = []
+	match shop_tab2:
+		"star":
+			R.append({"h": "★ 걸작 · 로봇 · 기지 · 테마가 완전히 새 모습으로 바뀌는 최상위 등급 · 오직 별 뽑기로만 얻어요"})
+			R.append({"p": "별석 " + str(SV.ss) + " · ★ 별 파편 " + str(SV.sfrag) + " / 30 · 천장 " + str(SV.spity) + " / 500  —  500번째 뽑기는 걸작 완품 확정 · 별 파편 30개로 원하는 걸작 제작"})
+			R.append({"btns": [["별 뽑기 1회 · 별석 15", {"a": "spull", "n": 1}, SV.ss >= 15], ["별 뽑기 10회 · 별석 150", {"a": "spull", "n": 10}, SV.ss >= 150], ["별석 1개 교환 · 청석 300", {"a": "sx", "n": 1}, SV.cs >= 300], ["별석 10개 교환 · 청석 3,000", {"a": "sx", "n": 10}, SV.cs >= 3000]]})
+			var cards: Array = []
+			for it in star_all():
+				var c := cat_of(it.id)
+				var o := owns(it.id)
+				var e := equipped(it.id)
+				cards.append({"pv": [c, it.id], "tag": "★ 걸작 · " + {"s": "로봇", "b": "기지", "t": "테마"}[c], "n": it.n, "d": it.d, "star": true,
+					"btns": [[("장착 중" if e else "장착") if o else "★ 별 파편 30개로 제작", {"a": "eq", "id": it.id} if o else {"a": "craft", "id": it.id}, (not e) if o else SV.sfrag >= 30]]})
+			R.append({"cards": cards})
+			R.append({"h": "★ 걸작 세트"})
+			cards = []
+			for i in MSET.size():
+				var S: Dictionary = MSET[i]
+				var n := [S.r, S.b, S.t].filter(func(id): return owns(id)).size()
+				var e: bool = SV.eq == S.r and SV.beq == S.b and SV.teq == S.t
+				cards.append({"pv": ["mset", i], "tag": "★ 세트", "n": S.n, "d": "보유 " + str(n) + " / 3", "star": true,
+					"btns": [["세트 장착 중" if e else ("세트 장착" if n == 3 else "3종을 모두 모으면 장착"), {"a": "mset", "i": i}, n == 3 and not e]]})
+			R.append({"cards": cards})
+		"box":
+			R.append({"h": "소로 상자 · 스킨 파편 (로봇 6개 · 기지 5개 · 테마 4개 모으면 완성)"})
+			R.append({"p": "상자 1개에서 스킨 1종의 파편이 1~3개 나와요 (1개 65% · 2개 25% · 3개 10%) · 로봇 40% · 기지 25% · 테마 35% · 주 등급 82% · 크로 등급 18% · 이미 가진 스킨의 파편은 청석으로 돌려받아요 · 0.01% 확률로 크로 세트가 통째로!"})
+			var b: Array = []
+			if SV.fbox > 0:
+				b.append(["무료 상자 열기 · 보유 " + str(SV.fbox) + "개", {"a": "fbox"}, true])
+			b.append(["1개 열기 · 청석 600", {"a": "box", "n": 1}, SV.cs >= 600])
+			b.append(["5개 열기 · 청석 3,000", {"a": "box", "n": 5}, SV.cs >= 3000])
+			b.append(["10개 열기 · 청석 6,000", {"a": "box", "n": 10}, SV.cs >= 6000])
+			var na := mini(100, int(SV.cs / 600))
+			if na > 10:
+				b.append(["모두 열기 · " + str(na) + "개", {"a": "box", "n": na}, true])
+			R.append({"btns": b})
+			R.append({"h": "최근 뽑기 기록"})
+			var H: Array = SV.hist.slice(0, 12)
+			for h in H:
+				R.append({"p": ("소로 상자 · " if h.k == "box" else "별 뽑기 · ") + h.x})
+			if H.is_empty():
+				R.append({"p": "아직 뽑기 기록이 없어요"})
+		"set":
+			R.append({"h": "로봇 + 기지 + 테마 · 없는 것만 15% 할인"})
+			var cards: Array = []
+			for i in SETS.size():
+				var S: Dictionary = SETS[i]
+				var P := set_parts(S)
+				var miss := set_miss(S)
+				var cost := roundi(miss * 0.85)
+				var e: bool = SV.eq == S.r and SV.beq == S.b and SV.teq == S.t
+				cards.append({"pv": ["set", i], "tag": "세트", "n": S.n, "d": P[0].n + " · " + P[1].n + " · " + P[2].n, "kro": true,
+					"btns": [["장착 중" if e else ("청석 " + str(cost) if miss > 0 else "세트 장착"), {"a": "set", "i": i}, not e]]})
+			R.append({"cards": cards})
+		"r", "b", "t":
+			var c: String = shop_tab2
+			var cat := "s" if c == "r" else c
+			var hdr := {"r": "주 등급 · 외형 변경 · 청석 300  /  크로 등급 · 외형 + 투사체 + 타격 효과", "b": "기지 모습 + 패배 시 폭발 연출 · 청석 500", "t": "필드 배경 · 상대 기지 · 상대 로봇 · 광산"}[c]
+			R.append({"h": hdr})
+			var cards: Array = [{"pv": [cat, ""], "tag": "기본", "n": {"r": "기본 도색", "b": "기본 기지", "t": "기본 테마"}[c], "d": "처음 모습",
+				"btns": [["장착 중" if SV[{"s": "eq", "b": "beq", "t": "teq"}[cat]] == "" else "장착", {"a": "uneq", "c": cat}, SV[{"s": "eq", "b": "beq", "t": "teq"}[cat]] != ""]]}]
+			for it in list_of(cat):
+				if it.get("g", "") == "star" or (it.has("ex") and not owns(it.id)):
+					continue
+				var o := owns(it.id)
+				var e := equipped(it.id)
+				var pr: int = int(it.get("p", 0)) if int(it.get("p", 0)) > 0 else (500 if cat == "b" else 300)
+				var fr: int = int(SV.frag.get(it.id, 0))
+				var g: String = it.get("g", "b")
+				cards.append({"pv": [cat, it.id], "tag": {"ju": "주", "kro": "크로", "b": "기지"}.get(g, ""), "n": it.n, "d": it.d, "kro": g == "kro",
+					"st": ("파편 " + str(fr) + " / " + str(FN[cat if cat != "s" else "r"])) if (fr > 0 and not o) else "",
+					"btns": [["장착 중" if e else ("장착" if o else "청석 " + str(pr)), {"a": "buy", "id": it.id}, not e]]})
+			R.append({"cards": cards})
+	return R
+
+func _store_gr(it: Dictionary) -> String:
+	if it.get("g", "") == "star":
+		return "star"
+	if it.has("ex"):
+		return "pass"
+	if cat_of(it.id) == "b":
+		return "base"
+	return it.g
+
+func _rows_store() -> Array:
+	var R: Array = []
+	var all: Array = []
+	for c in ["s", "b", "t"]:
+		for it in list_of(c):
+			all.append(it)
+	var cnt := func(c: String) -> String:
+		var L: Array = list_of(c)
+		return str(L.filter(func(q): return owns(q.id)).size()) + " / " + str(L.size())
+	var fsum := 0
+	for v in SV.frag.values():
+		fsum += int(v)
+	R.append({"p": "로봇 " + cnt.call("s") + " · 기지 " + cnt.call("b") + " · 테마 " + cnt.call("t") + " · 스킨 파편 " + str(fsum) + " · ★ 별 파편 " + str(SV.sfrag) + " · 무료 상자 " + str(SV.fbox)})
+	var nm := func(c: String) -> String:
+		var id: String = SV[{"s": "eq", "b": "beq", "t": "teq"}[c]]
+		return item(id).get("n", "기본") if id != "" else "기본"
+	R.append({"btns": [["로봇: " + nm.call("s") + (" · 기본으로" if SV.eq != "" else ""), {"a": "uneq", "c": "s"}, SV.eq != ""], ["기지: " + nm.call("b") + (" · 기본으로" if SV.beq != "" else ""), {"a": "uneq", "c": "b"}, SV.beq != ""], ["테마: " + nm.call("t") + (" · 기본으로" if SV.teq != "" else ""), {"a": "uneq", "c": "t"}, SV.teq != ""]]})
+	var chips := func(k: String, opts: Array) -> Array:
+		var o: Array = []
+		for q in opts:
+			o.append([q[1], {"a": "sf", "k": k, "v": q[0]}, true, stF[k] == q[0]])
+		return o
+	R.append({"chips": chips.call("own", [["all", "전체"], ["yes", "보유"], ["no", "미보유"]]) + chips.call("cat", [["all", "모든 종류"], ["s", "로봇"], ["b", "기지"], ["t", "테마"]])})
+	R.append({"chips": chips.call("gr", [["all", "모든 등급"], ["ju", "주"], ["kro", "크로"], ["star", "★ 걸작"], ["pass", "패스 전용"], ["base", "일반 기지"]])})
+	var cards: Array = []
+	for it in all:
+		var c := cat_of(it.id)
+		var o := owns(it.id)
+		var g := _store_gr(it)
+		if stF.own != "all" and (stF.own == "yes") != o:
+			continue
+		if stF.cat != "all" and stF.cat != c:
+			continue
+		if stF.gr != "all" and stF.gr != g:
+			continue
+		var e := equipped(it.id)
+		var st := ""
+		var bar := -1.0
+		if not o:
+			if g == "star":
+				st = "★ 별 파편 " + str(SV.sfrag) + " / 30"
+				bar = minf(1.0, SV.sfrag / 30.0)
+			elif g == "pass":
+				st = "배틀패스 보상"
+			else:
+				var n: int = int(SV.frag.get(it.id, 0))
+				var need: int = FN[c if c != "s" else "r"]
+				st = "파편 " + str(n) + " / " + str(need)
+				bar = float(n) / need
+		cards.append({"pv": [c, it.id], "tag": {"s": "로봇", "b": "기지", "t": "테마"}[c] + " · " + {"ju": "주", "kro": "크로", "star": "★ 걸작", "pass": "패스 전용", "base": "일반"}[g], "n": it.n, "d": "", "st": st, "bar": bar,
+			"star": g == "star", "kro": g == "kro", "dim": not o, "btns": [[("장착 중" if e else "장착"), {"a": "eq", "id": it.id}, not e]] if o else []})
+	R.append({"p": str(cards.size()) + "개"})
+	R.append({"cards": cards})
+	return R
+
+func _rows_pass() -> Array:
+	var P := bp()
+	var lv := bp_lv()
+	var cur := int(P.xp) - lv * 500
+	var R: Array = []
+	R.append({"h": SEASON.n + "  ·  " + str(lv) + " / 30단계" + ("  ·  프리미엄" if P.prem else "")})
+	R.append({"bar": 1.0 if lv >= 30 else cur / 500.0, "bt": "MAX" if lv >= 30 else str(cur) + " / 500 XP"})
+	R.append({"p": "플레이 1분 +10 · 적 처치 +2 · 기지 정복 +30 · 레이드 방어 +50 · 게임을 끝내면 들어와요"})
+	R.append({"btns": [["프리미엄 해금 · 청석 2,000" if not P.prem else "프리미엄 해금됨", {"a": "bpbuy"}, not P.prem], ["1단계 구매 · 청석 100", {"a": "bpskip", "n": 1}, lv < 30], ["5단계 구매 · 청석 500", {"a": "bpskip", "n": 5}, lv < 30], ["받을 보상 모두 받기", {"a": "bpall"}, true]]})
+	R.append({"pass": true})
+	return R
+
+func _layout_rows(R: Array, cr: Rect2, f: Font) -> void:
+	lob_draw.clear()
+	var y := cr.position.y - lob_scroll
+	var x0 := cr.position.x
+	var W := cr.size.x
+	for row in R:
+		if row.has("h"):
+			lob_draw.append({"k": "h", "p": Vector2(x0, y + 22.0), "s": row.h})
+			y += 34.0
+		elif row.has("p"):
+			var L := _wrap(f, row.p, 13, W)
+			for l in L:
+				lob_draw.append({"k": "p", "p": Vector2(x0, y + 16.0), "s": l})
+				y += 20.0
+			y += 6.0
+		elif row.has("bar"):
+			lob_draw.append({"k": "bar", "r": Rect2(x0, y, W, 22.0), "v": row.bar, "s": row.bt})
+			y += 32.0
+		elif row.has("btns") or row.has("chips"):
+			var B: Array = row.btns if row.has("btns") else row.chips
+			var bx := x0
+			var bh := 38.0 if row.has("btns") else 30.0
+			for b in B:
+				var bw: float = f.get_string_size(b[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 30.0
+				if bx + bw > x0 + W:
+					bx = x0
+					y += bh + 8.0
+				var r := Rect2(bx, y, bw, bh)
+				var on: bool = b[3] if b.size() > 3 else false
+				lob_draw.append({"k": "btn", "r": r, "s": b[0], "en": b[2], "on": on, "chip": row.has("chips")})
+				if r.end.y > cr.position.y and r.position.y < cr.end.y:
+					_add("cb", r, b[2], "", b[1])
+				bx += bw + 8.0
+			y += bh + 12.0
+		elif row.has("cards"):
+			var cw := 172.0
+			var ch := 238.0
+			var cols := maxi(1, int((W + 12.0) / (cw + 12.0)))
+			cw = (W - 12.0 * (cols - 1)) / cols
+			var n: int = row.cards.size()
+			for i in n:
+				var c: Dictionary = row.cards[i]
+				var r := Rect2(x0 + (i % cols) * (cw + 12.0), y + int(i / cols) * (ch + 12.0), cw, ch)
+				if r.end.y < cr.position.y - 10.0 or r.position.y > cr.end.y + 10.0:
+					continue
+				lob_draw.append({"k": "card", "r": r, "c": c})
+				var bts: Array = c.get("btns", [])
+				for j in bts.size():
+					var b: Array = bts[j]
+					var br := Rect2(r.position.x + 8.0, r.end.y - 38.0 - j * 34.0, r.size.x - 16.0, 30.0)
+					lob_draw.append({"k": "btn", "r": br, "s": b[0], "en": b[2], "on": false, "chip": false})
+					if br.end.y > cr.position.y and br.position.y < cr.end.y:
+						_add("cb", br, b[2], "", b[1])
+			y += ceili(n / float(cols)) * (ch + 12.0) + 6.0
+		elif row.has("pass"):
+			var cw := 120.0
+			var th := 290.0
+			var tr := Rect2(x0, y, W, th)
+			lob_draw.append({"k": "track", "r": tr})
+			var P := bp()
+			var lv := bp_lv()
+			for L in range(1, 31):
+				var cx := x0 + 96.0 + (L - 1) * (cw + 8.0) - pass_scroll
+				if cx < x0 + 90.0 or cx + cw > x0 + W:
+					continue
+				for ti in 2:
+					var tp := "f" if ti == 0 else "p"
+					var r = bpr(L)[tp]
+					var cr2 := Rect2(cx, y + 34.0 + ti * 128.0, cw, 120.0)
+					var got: bool = (P.cf if tp == "f" else P.cp).has(L)
+					var lk: bool = lv < L or (tp == "p" and not P.prem)
+					lob_draw.append({"k": "bpr", "r": cr2, "rw": r, "got": got, "lk": lk, "L": L, "tp": tp})
+					if r != null and not got and not lk:
+						var br := Rect2(cr2.position.x + 8.0, cr2.end.y - 32.0, cw - 16.0, 26.0)
+						lob_draw.append({"k": "btn", "r": br, "s": "받기", "en": true, "on": true, "chip": false})
+						_add("cb", br, true, "", {"a": "bpc", "t": tp, "L": L})
+				lob_draw.append({"k": "lvn", "p": Vector2(cx, y + 24.0), "w": cw, "L": L, "on": lv >= L})
+			y += th + 10.0
+	lob_max = maxf(0.0, y + lob_scroll - cr.end.y + 20.0)
+
+func _draw_rows(f: Font, hov) -> void:
+	var cr := _content_rect()
+	for e in lob_draw:
+		match e.k:
+			"h":
+				if e.p.y > cr.position.y and e.p.y < cr.end.y + 10.0:
+					draw_string(f, e.p, e.s, HORIZONTAL_ALIGNMENT_LEFT, cr.size.x, 15, Color("#ffe6a6"))
+			"p":
+				if e.p.y > cr.position.y and e.p.y < cr.end.y + 10.0:
+					draw_string(f, e.p, e.s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#9fb3c2"))
+			"bar":
+				var r: Rect2 = e.r
+				draw_rect(r, Color(1, 1, 1, 0.08))
+				draw_rect(Rect2(r.position, Vector2(r.size.x * clampf(e.v, 0, 1), r.size.y)), Color("#c79bff"))
+				draw_string(f, r.position + Vector2(0, 16), e.s, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, Color.WHITE)
+			"btn":
+				var r: Rect2 = e.r
+				if r.end.y < cr.position.y or r.position.y > cr.end.y:
+					continue
+				var sb := StyleBoxFlat.new()
+				sb.set_corner_radius_all(6)
+				sb.set_border_width_all(1)
+				if e.chip:
+					sb.bg_color = Color("#3a2c10") if e.on else Color("#141c24")
+					sb.border_color = Color("#ffd76a") if e.on else Color(1, 1, 1, 0.15)
+				elif e.en:
+					sb.bg_color = Color("#d9b04e") if e.on else Color("#1c2834")
+					sb.border_color = Color("#ffd76a") if e.on else Color("#c9a255")
+				else:
+					sb.bg_color = Color("#10151a")
+					sb.border_color = Color(1, 1, 1, 0.1)
+				sb.draw(get_canvas_item(), r)
+				var tc := Color("#2a1a02") if (e.on and not e.chip and e.en) else (Color.WHITE if e.en else Color("#6a7682"))
+				draw_string(f, Vector2(r.position.x, r.position.y + r.size.y / 2.0 + 5.0), e.s, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, tc)
+			"card":
+				_draw_card(f, e.r, e.c)
+			"track":
+				draw_rect(e.r, Color(0, 0, 0, 0.25))
+				draw_string(f, e.r.position + Vector2(8, 24), "단계", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#9fb3c2"))
+				draw_string(f, e.r.position + Vector2(8, 34 + 64), "무료", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+				draw_string(f, e.r.position + Vector2(8, 34 + 128 + 64), "프리미엄", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd76a"))
+			"lvn":
+				draw_string(f, e.p, str(e.L), HORIZONTAL_ALIGNMENT_CENTER, e.w, 15, Color("#ffd76a") if e.on else Color("#6a7682"))
+			"bpr":
+				var r: Rect2 = e.r
+				var sb := StyleBoxFlat.new()
+				sb.set_corner_radius_all(8)
+				sb.set_border_width_all(1)
+				sb.bg_color = Color("#141c24") if not e.got else Color("#10261e")
+				sb.border_color = Color("#ffd76a") if (e.tp == "p" and e.rw != null and e.rw.has("skin")) else Color(1, 1, 1, 0.12)
+				sb.draw(get_canvas_item(), r)
+				if e.rw == null:
+					continue
+				var rw: Dictionary = e.rw
+				if rw.has("skin"):
+					draw_preview(Rect2(r.position + Vector2(10, 8), Vector2(r.size.x - 20, (r.size.x - 20) * 0.6)), cat_of(rw.skin), rw.skin, t_real)
+				else:
+					var ic := Color("#7fd8ff") if rw.has("cs") else (Color("#c79bff") if rw.has("box") else Color("#ff8fb8"))
+					draw_circle(r.position + Vector2(r.size.x / 2.0, 34), 16, Color(ic, 0.3))
+					draw_circle(r.position + Vector2(r.size.x / 2.0, 34), 9, ic)
+				draw_string(f, r.position + Vector2(4, 78), rt_txt(rw), HORIZONTAL_ALIGNMENT_CENTER, r.size.x - 8.0, 11, Color.WHITE if not e.lk else Color("#6a7682"))
+				if e.got:
+					draw_string(f, r.position + Vector2(0, r.size.y - 12.0), "받음", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#8be28b"))
+				elif e.lk:
+					draw_string(f, r.position + Vector2(0, r.size.y - 12.0), "잠김", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#6a7682"))
+
+func _draw_card(f: Font, r: Rect2, c: Dictionary) -> void:
+	var cr := _content_rect()
+	var sb := StyleBoxFlat.new()
+	sb.set_corner_radius_all(10)
+	sb.set_border_width_all(1)
+	sb.bg_color = Color("#161320") if c.get("star", false) else Color("#121a22")
+	sb.border_color = Color("#ffd76a") if c.get("star", false) else (Color("#b07aff") if c.get("kro", false) else Color(1, 1, 1, 0.12))
+	sb.draw(get_canvas_item(), r)
+	var pv := Rect2(r.position + Vector2(8, 8), Vector2(r.size.x - 16, (r.size.x - 16) * 0.6))
+	if pv.position.y > cr.position.y - 20.0 and pv.end.y < cr.end.y + 40.0:
+		draw_preview(pv, c.pv[0], c.pv[1], t_real)
+		if c.get("dim", false):
+			draw_rect(pv, Color(0, 0, 0, 0.45))
+	var y := pv.end.y + 18.0
+	draw_string(f, Vector2(r.position.x + 10, y), c.tag, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20.0, 11, Color("#ffd76a") if c.get("star", false) else (Color("#c79bff") if c.get("kro", false) else Color("#8a9bad")))
+	draw_string(f, Vector2(r.position.x + 10, y + 20), c.n, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20.0, 15, Color.WHITE)
+	var L := _wrap(f, c.get("d", ""), 11, r.size.x - 20.0)
+	for i in mini(2, L.size()):
+		draw_string(f, Vector2(r.position.x + 10, y + 38 + i * 15), L[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#9fb3c2"))
+	if c.get("st", "") != "":
+		var by := r.end.y - 38.0 - c.get("btns", []).size() * 34.0 - 4.0
+		if c.get("bar", -1.0) >= 0.0:
+			draw_rect(Rect2(r.position.x + 8, by - 18, r.size.x - 16, 16), Color(1, 1, 1, 0.08))
+			draw_rect(Rect2(r.position.x + 8, by - 18, (r.size.x - 16) * clampf(c.bar, 0, 1), 16), Color("#5a7a9a"))
+		draw_string(f, Vector2(r.position.x, by - 6), c.st, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 11, Color("#c9d4dc"))
+
+func _box_overlay(f: Font, hov) -> void:
+	var u := ui_size()
+	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.75))
+	var W := minf(980.0, u.x - 40.0)
+	var pr := Rect2((u.x - W) / 2.0, 60.0, W, u.y - 100.0)
+	sb_panel.draw(get_canvas_item(), pr)
+	var et := t_real - box_t0
+	# 상자 흔들림 → 열림
+	var bc := Vector2(u.x / 2.0, pr.position.y + 70.0)
+	var gold := box_res.any(func(q): return q.get("g", "") == "kro" or q.res in ["jack", "star", "starx"] or int(q.get("a", 0)) >= 3)
+	var sh := sin(et * 40.0) * 4.0 * clampf(1.0 - et, 0.0, 1.0)
+	_ui_tf(bc + Vector2(sh, 0), 0.0, 0.9)
+	draw_preview(Rect2(-70, -42, 140, 84), "star" if box_star else "box", "gold" if gold else "", t_real)
+	_ui_reset()
+	if et > 0.9 and et < 1.3:
+		draw_circle(bc, 60 + (et - 0.9) * 400, Color(1, 0.95, 0.8, 0.5 * (1.3 - et) / 0.4))
+	var tot := 0
+	for q in box_res:
+		tot += int(q.get("amt", q.get("a", 0)))
+	var sm := ("별 뽑기 " + str(box_res.size()) + "회 · 별 파편 +" + str(tot) + " (보유 " + str(SV.sfrag) + "/30) · 천장 " + str(SV.spity) + "/500") if box_star else ("상자 " + str(box_res.size()) + "개 · 파편 " + str(tot) + "개")
+	draw_string(f, Vector2(pr.position.x, pr.position.y + 136.0), sm, HORIZONTAL_ALIGNMENT_CENTER, pr.size.x, 14, Color("#ffe6a6"))
+	var cw := 150.0
+	var ch := 160.0
+	var cols := maxi(1, int((pr.size.x - 20.0) / (cw + 8.0)))
+	var x0 := pr.position.x + (pr.size.x - cols * (cw + 8.0) + 8.0) / 2.0
+	var show := mini(box_res.size(), box_shown)
+	var rows_fit := maxi(1, int((pr.size.y - 230.0) / (ch + 8.0)))
+	var first := maxi(0, (int((show - 1) / cols) - rows_fit + 1) * cols)
+	for i in range(first, show):
+		var q: Dictionary = box_res[i]
+		var k := i - first
+		var r := Rect2(x0 + (k % cols) * (cw + 8.0), pr.position.y + 152.0 + int(k / cols) * (ch + 8.0), cw, ch)
+		var sb := StyleBoxFlat.new()
+		sb.set_corner_radius_all(8)
+		sb.set_border_width_all(2)
+		var big: bool = q.res in ["jack", "star", "starx", "done"]
+		sb.bg_color = Color("#161320")
+		sb.border_color = Color("#ffd76a") if big else (Color("#b07aff") if q.get("g", "") == "kro" else Color(1, 1, 1, 0.15))
+		sb.draw(get_canvas_item(), r)
+		var pv := Rect2(r.position + Vector2(8, 8), Vector2(cw - 16, (cw - 16) * 0.6))
+		var title := ""
+		var line2 := ""
+		var line3 := ""
+		if box_star:
+			if q.res == "star":
+				draw_preview(pv, q.cat, q.it.id, t_real)
+				title = q.it.n
+				line2 = "★ 걸작 완품!"
+			elif q.res == "starx":
+				draw_preview(pv, "star", "", t_real)
+				title = "모든 걸작 보유 중"
+				line2 = "별 파편 +30"
+			else:
+				draw_preview(pv, "star", "", t_real)
+				title = "★ 별 파편"
+				line2 = "×" + str(q.a)
+		else:
+			if q.res == "jack":
+				var si := 0
+				for j in SETS.size():
+					if SETS[j].r == q.it.id:
+						si = j
+				draw_preview(pv, "set", si, t_real)
+				title = q.it.n
+				line2 = "크로 세트 획득!"
+				line3 = ("이미 보유 → 청석 +" + str(q.v)) if int(q.v) > 0 else "로봇 + 기지 + 테마 전부!"
+			else:
+				draw_preview(pv, "s" if q.cat == "r" else q.cat, q.it.id, t_real)
+				title = q.it.n
+				line2 = {"r": "로봇", "b": "기지", "t": "테마"}[q.cat] + " · " + {"ju": "주", "kro": "크로", "b": "기지"}[q.g] + " · 파편 ×" + str(q.amt)
+				line3 = "완성!" if q.res == "done" else (("보유 중 → 청석 +" + str(q.v)) if q.res == "dup" else str(q.c) + " / " + str(q.need))
+		draw_string(f, Vector2(r.position.x, pv.end.y + 20.0), title, HORIZONTAL_ALIGNMENT_CENTER, cw, 13, Color.WHITE)
+		draw_string(f, Vector2(r.position.x, pv.end.y + 38.0), line2, HORIZONTAL_ALIGNMENT_CENTER, cw, 11, Color("#c79bff") if big else Color("#9fb3c2"))
+		draw_string(f, Vector2(r.position.x, pv.end.y + 54.0), line3, HORIZONTAL_ALIGNMENT_CENTER, cw, 11, Color("#ffd76a") if big else Color("#c9d4dc"))
+	for it in ui:
+		if it.id == "boxok":
+			_btn(f, it.r, "건너뛰기" if box_busy() else "확인", hov == it, 16)
+
+func _build_cos() -> void:
+	if not box_res.is_empty():
+		var u := ui_size()
+		_add("boxok", Rect2(u.x / 2.0 - 90.0, u.y - 96.0, 180.0, 44.0))
+		return
+	var pr := _wide_rect()
+	_add("lback", Rect2(pr.end.x - 130.0, pr.end.y - 52.0, 116.0, 40.0))
+	if lsec == "shop":
+		var tabs := [["star", "★ 걸작"], ["box", "소로 상자"], ["set", "세트"], ["r", "로봇 스킨"], ["b", "기지 스킨"], ["t", "테마"]]
+		var x := pr.position.x + 14.0
+		for tb in tabs:
+			var w := 112.0
+			_add("cb", Rect2(x, pr.position.y + 50.0, w, 36.0), true, "", {"a": "tab", "k": tb[0], "lb": tb[1]})
+			x += w + 6.0
+	var cr := _content_rect()
+	var R: Array = _rows_shop() if lsec == "shop" else (_rows_store() if lsec == "store" else _rows_pass())
+	_layout_rows(R, cr, ThemeDB.fallback_font)
+
+func _pass_max() -> float:
+	return maxf(0.0, 96.0 + 30.0 * 128.0 - _content_rect().size.x)
+
+func _lobby_cos(f: Font, hov) -> void:
+	var pr := _wide_rect()
+	sb_panel.draw(get_canvas_item(), pr)
+	_draw_rows(f, hov)
+	var cr := _content_rect()
+	var mk := Color("#0a0e14")
+	draw_rect(Rect2(pr.position.x + 2, pr.position.y + 2, pr.size.x - 4, cr.position.y - pr.position.y - 2), mk)
+	draw_rect(Rect2(pr.position.x + 2, cr.end.y, pr.size.x - 4, pr.end.y - cr.end.y - 2), mk)
+	draw_string(f, pr.position + Vector2(18, 34), {"shop": "상점", "store": "창고", "pass": "배틀패스"}[lsec], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, GOLD)
+	var info := "청석 " + str(SV.cs) + " · 별석 " + str(SV.ss)
+	if lsec == "shop":
+		info += " · 게임이 끝나면 번 광석의 4% + 정복 보너스가 청석으로 들어와요"
+	draw_string(f, pr.position + Vector2(130, 32), info, HORIZONTAL_ALIGNMENT_LEFT, pr.size.x - 150.0, 12, Color("#9fb3c2"))
+	for it in ui:
+		if it.id == "lback":
+			_btn(f, it.r, "뒤로", hov == it, 15)
+		elif it.id == "cb" and it.arg.get("a", "") == "tab":
+			var on: bool = shop_tab2 == it.arg.k
+			(sb_tab_on if on else sb_btn).draw(get_canvas_item(), it.r)
+			draw_string(f, Vector2(it.r.position.x, it.r.position.y + 23.0), it.arg.lb, HORIZONTAL_ALIGNMENT_CENTER, it.r.size.x, 13, Color.WHITE)
+	if lob_max > 0.0:
+		var cr := _content_rect()
+		var k := lob_scroll / lob_max
+		var hh := maxf(30.0, cr.size.y * cr.size.y / (cr.size.y + lob_max))
+		draw_rect(Rect2(cr.end.x + 4.0, cr.position.y + (cr.size.y - hh) * k, 4.0, hh), Color(1, 1, 1, 0.25))
+
+func cos_press(a: Dictionary) -> void:
+	match a.a:
+		"tab":
+			shop_tab2 = a.k
+			lob_scroll = 0.0
+		"buy": buy_skin(a.id)
+		"eq":
+			equip(a.id)
+			sv_save()
+		"uneq":
+			unequip(a.c)
+			sv_save()
+		"box": open_box(int(a.n), false)
+		"fbox": open_box(mini(30, SV.fbox), true)
+		"spull": star_pull(int(a.n))
+		"sx":
+			var c := 300 * int(a.n)
+			if SV.cs < c:
+				lmsg = "청석이 부족해요 (" + str(c) + " 필요)"
+				return
+			SV.cs -= c
+			SV.ss += int(a.n)
+			lmsg = "별석 " + str(a.n) + "개로 교환했어요"
+			sv_save()
+		"craft":
+			if SV.sfrag < 30 or owns(a.id):
+				return
+			SV.sfrag -= 30
+			arr_of(cat_of(a.id)).append(a.id)
+			lmsg = item(a.id).n + " 제작 완료!"
+			sfx("evo")
+			sv_save()
+		"mset":
+			var S: Dictionary = MSET[int(a.i)]
+			SV.eq = S.r
+			SV.beq = S.b
+			SV.teq = S.t
+			lmsg = S.n + " 장착!"
+			sv_save()
+		"set": buy_set(int(a.i))
+		"sf":
+			stF[a.k] = a.v
+			lob_scroll = 0.0
+		"bpbuy":
+			if bp().prem:
+				return
+			if SV.cs < 2000:
+				lmsg = "청석이 부족해요 (2,000 필요)"
+				return
+			SV.cs -= 2000
+			bp().prem = true
+			lmsg = "프리미엄 배틀패스가 해금됐어요!"
+			sfx("capture")
+			sv_save()
+		"bpskip":
+			var n := mini(int(a.n), 30 - bp_lv())
+			if n <= 0:
+				return
+			if SV.cs < 100 * n:
+				lmsg = "청석이 부족해요 (" + str(100 * n) + " 필요)"
+				return
+			SV.cs -= 100 * n
+			bp().xp = mini(15000, int(bp().xp) + 500 * n)
+			lmsg = "배틀패스 " + str(n) + "단계 구매! 지금 " + str(bp_lv()) + "단계"
+			sv_save()
+		"bpc":
+			var r = bp_claim(a.t, int(a.L))
+			if r != null:
+				lmsg = r
+				sfx("up")
+				sv_save()
+		"bpall":
+			var G := 0
+			for L in range(1, 31):
+				for tp in ["f", "p"]:
+					if bp_claim(tp, L) != null:
+						G += 1
+			lmsg = ("보상 " + str(G) + "개 받기 완료!") if G > 0 else "받을 보상이 없어요"
+			sv_save()
 
 # ═════════ 소리 (웹 효과음·배경음을 WAV로 만든 것) ═════════
 const SFX_GAP := {"shoot": 0.06, "hit": 0.06, "ehit": 0.08, "die": 0.05, "ore": 0.12, "turret": 0.06, "myturret": 0.1, "basehit": 0.15, "up": 0.05, "click": 0.03, "cmd_atk": 0.05, "cmd_mv": 0.05}
@@ -2852,11 +4492,13 @@ func _bgm_tick() -> void:
 		bgm_p.play()
 
 # ═════════ 효과: 파티클 · 레이드 띠 · 화살표 · 비네트 · 승리/패배 ═════════
-func boom(p: Vector2, c: Color) -> void:
-	for i in 6:
+func boom(p: Vector2, c: Color, sk: Dictionary = {}) -> void:
+	var n := 7 if not sk.is_empty() else 6
+	for i in n:
 		var a := rng.randf() * TAU
 		var v := rng.randf_range(40.0, 130.0)
-		parts.append({"p": p, "v": Vector2.from_angle(a) * v, "t": rng.randf_range(0.3, 0.6), "c": c})
+		var cc: Color = C(sk.pc[i % 2]) if not sk.is_empty() else c
+		parts.append({"p": p, "v": Vector2.from_angle(a) * v, "t": rng.randf_range(0.3, 0.6), "c": cc})
 
 func _tick_fx(dt: float) -> void:
 	for q in parts:
@@ -2965,18 +4607,18 @@ func _base_boom(lt: float) -> void:
 	var h := func(i: int) -> float: return fmod(i * 9301.0 + 49297.0, 233280.0) / 233280.0
 	if lt < 0.45:
 		var sh := (1.0 - lt / 0.45) * 7.0
-		art_base(self, X + Vector2(rng.randf() - 0.5, rng.randf() - 0.5) * sh, t)
+		art_base(self, X + Vector2(rng.randf() - 0.5, rng.randf() - 0.5) * sh, t, Transform2D.IDENTITY, bsk)
 		draw_circle(X, 58.0, Color(1, 1, 1, lt / 0.45 * 0.85))
 		return
 	var tt := lt - 0.45
 	draw_colored_polygon(ell(X + Vector2(0, 10), 62, 22), Color(0, 0, 0, 0.35))
 	for i in 10:
-		draw_rect(Rect2(X.x - 42.0 + h.call(i) * 84.0, X.y - 16.0 + h.call(i + 20) * 36.0, 6.0 + h.call(i + 40) * 11.0, 4.0 + h.call(i + 60) * 7.0), Color("#38434d") if i % 2 else Color("#5a6a78"))
+		draw_rect(Rect2(X.x - 42.0 + h.call(i) * 84.0, X.y - 16.0 + h.call(i + 20) * 36.0, 6.0 + h.call(i + 40) * 11.0, 4.0 + h.call(i + 60) * 7.0), C(bsk.get("bd", "#38434d")) if i % 2 else C(bsk.get("tp", "#5a6a78")))
 	if tt < 0.8:
-		draw_arc(X, 20.0 + tt * 280.0, 0, TAU, 64, Color(1.0, 0.95, 0.75, 1.0 - tt / 0.8), 7.0 * (1.0 - tt / 0.8) + 1.0)
+		draw_arc(X, 20.0 + tt * 280.0, 0, TAU, 64, Color(C(bsk.lt) if bsk.has("lt") else Color(1.0, 0.95, 0.75), 1.0 - tt / 0.8), 7.0 * (1.0 - tt / 0.8) + 1.0)
 	if tt < 1.2:
-		draw_circle(X, 32.0 + tt * 55.0, Color(1.0, 0.42, 0.12, (1.0 - tt / 1.2) * 0.85))
-		draw_circle(X, 18.0 + tt * 26.0, Color(1.0, 0.82, 0.35, 1.0 - tt / 1.2))
+		draw_circle(X, 32.0 + tt * 55.0, Color(C(bsk.gl) if bsk.has("gl") else Color(1.0, 0.42, 0.12), (1.0 - tt / 1.2) * 0.85))
+		draw_circle(X, 18.0 + tt * 26.0, Color(C(bsk.lt) if bsk.has("lt") else Color(1.0, 0.82, 0.35), 1.0 - tt / 1.2))
 	var fade := maxf(0.0, 1.0 - tt / 2.3)
 	for i in 48:
 		var a: float = h.call(i) * TAU
@@ -3796,6 +5438,7 @@ func _process(dt: float) -> void:
 	if wipe_arm != "" and t_real - wipe_t > 3.0:
 		wipe_arm = ""
 	if scene == "lobby":
+		_box_tick()
 		queue_redraw()
 		return
 	if not won and not lost and not paused:
@@ -3883,7 +5526,7 @@ func update_game(dt: float) -> void:
 		if dl <= sp + 6.0:
 			tg.hp -= p.d
 			fx.append({"k": "imp", "p": tg.p, "t": 0.18, "c": Color("#7ff0ff") if p.mine else Color("#ff8a66")})
-			boom(tg.p, Color("#7ff0ff") if p.mine else Color("#ff8a66"))
+			boom(tg.p, Color("#7ff0ff") if p.mine else Color("#ff8a66"), kro_s if p.mine else tkro_s)
 			p.done = true
 		else:
 			p.p = (p.p as Vector2) + dv / dl * sp
@@ -3946,8 +5589,17 @@ func update_game(dt: float) -> void:
 		msg("기지가 파괴됐어요")
 
 # ═════════ 그리기 (월드) ═════════
+func _cos_cache() -> void:
+	skn = SKIN()
+	bsk = BSK()
+	thm = TH()
+	kro_s = KRO()
+	tkro_s = TKRO()
+	tn_cols = ground_tn().map(func(c): return C(c))
+
 func _draw() -> void:
 	var f := ThemeDB.fallback_font
+	_cos_cache()
 	if scene == "lobby":
 		inv = get_canvas_transform().affine_inverse()
 		draw_set_transform_matrix(inv)
@@ -3965,7 +5617,7 @@ func _draw() -> void:
 	if lost:
 		_base_boom(t_real - lost_at)
 	else:
-		art_base(self, B, t)
+		art_base(self, B, t, Transform2D.IDENTITY, bsk)
 		_bar(B.x, B.y - 68.0, 90.0, base.hp / base.mh, Color("#5fe0c4") if base.hp / base.mh > 0.3 else Color("#e5604d"), 6.0)
 		draw_string(f, Vector2(B.x - 40.0, B.y - 73.0), str(ceili(maxf(0.0, base.hp))), HORIZONTAL_ALIGNMENT_CENTER, 80, 11, Color("#e6edf3"))
 	for m in mines:
@@ -3986,9 +5638,9 @@ func _draw() -> void:
 			draw_circle(u.goal, 2.5, Color(0.47, 1.0, 0.67, 0.35))
 	for p in prs:
 		var pp: Vector2 = p.p
-		var c := Color("#7ff0ff") if p.mine else Color("#ff8a66")
-		draw_circle(pp, 5.0 if p.big else 3.0, c)
-		draw_circle(pp, 1.6, Color(1, 1, 1, 0.9))
+		var dv: Vector2 = (p.tg.p as Vector2) - pp
+		var dirv := dv.normalized() if dv.length() > 0.1 else Vector2.RIGHT
+		draw_pr(pp, dirv, kro_s if p.mine else tkro_s, Color("#7ff0ff") if p.mine else Color("#ff8a66"), p.big, p.mine, t)
 	if box_active:
 		var r := box_rect()
 		draw_rect(r, Color(0.55, 0.89, 0.55, 0.12))
@@ -4005,6 +5657,9 @@ func _draw() -> void:
 	# 화면 고정 그리기
 	inv = get_canvas_transform().affine_inverse()
 	draw_set_transform_matrix(inv)
+	if not thm.is_empty():
+		var tl := cam.position - vsize() / zm / 2.0
+		amb(thm, t_real, Vector2.ZERO, vsize().x, vsize().y, tl.x * zm, tl.y * zm)
 	_vignette()
 	_minimap()
 	_hud(f)
@@ -4018,7 +5673,7 @@ func _ground(i0: int, j0: int, i1: int, j1: int) -> void:
 	for j in range(j0, j1 + 1):
 		for i in range(i0, i1 + 1):
 			var h: int = ((i * 73856093) ^ (j * 19349663)) & 0xFFFFFFFF
-			draw_rect(Rect2(i * CELL, j * CELL, CELL + 1, CELL + 1), TN[h % 4])
+			draw_rect(Rect2(i * CELL, j * CELL, CELL + 1, CELL + 1), tn_cols[h % 4])
 			var a := i * CELL + (h >> 2) % 30 + 4
 			var b := j * CELL + (h >> 6) % 30 + 4
 			if h % 11 == 0:
@@ -4035,14 +5690,15 @@ func _outpost(o: Dictionary, f: Font) -> void:
 	var p: Vector2 = o.p
 	var c: bool = o.cap
 	ell_fill(self, p + Vector2(4, 26), 40, 13, Color(0, 0, 0, 0.3))
-	poly(self, [p + Vector2(-34, 20), p + Vector2(-26, -20), p + Vector2(26, -20), p + Vector2(34, 20)], Color("#2e4a3a") if c else Color("#3a2a46"))
-	draw_rect(Rect2(p.x - 16, p.y - 34, 32, 40), Color("#4aa86a") if c else Color("#6b4a86"))
-	draw_rect(Rect2(p.x - 16, p.y - 34, 32, 6), Color("#7fd49a") if c else Color("#8f66ab"))
+	var ob: Array = thm.ob if not thm.is_empty() else ["#3a2a46", "#6b4a86", "#8f66ab"]
+	poly(self, [p + Vector2(-34, 20), p + Vector2(-26, -20), p + Vector2(26, -20), p + Vector2(34, 20)], Color("#2e4a3a") if c else C(ob[0]))
+	draw_rect(Rect2(p.x - 16, p.y - 34, 32, 40), Color("#4aa86a") if c else C(ob[1]))
+	draw_rect(Rect2(p.x - 16, p.y - 34, 32, 6), Color("#7fd49a") if c else C(ob[2]))
 	var lamp := Color("#c9f5d6")
 	if not c:
 		lamp = Color("#ff6a55") if int(t * 3.0) % 2 == 1 else Color("#a8352a")
 	draw_circle(p + Vector2(0, -12), 7, lamp)
-	draw_line(p + Vector2(10, -34), p + Vector2(10, -48), Color("#7fd49a") if c else Color("#8f66ab"), 2.0)
+	draw_line(p + Vector2(10, -34), p + Vector2(10, -48), Color("#7fd49a") if c else C(ob[2]), 2.0)
 	if c:
 		draw_rect(Rect2(p.x + 10, p.y - 48, 12, 7), Color("#7fd49a"))
 		return
@@ -4071,6 +5727,8 @@ func _enemy(u: Dictionary, f: Font) -> void:
 		col = Color("#5a2a8a") if ev > 0 else Color("#4a1620")
 	elif ev > 0:
 		col = Color("#8a4fc0") if m else Color("#9a6ad0")
+	elif not thm.is_empty():
+		col = C(thm.en[0 if m else 1])
 	else:
 		col = Color("#c24b68") if m else Color("#c98a46")
 	if m:
@@ -4099,10 +5757,18 @@ func _unit(u: Dictionary, f: Font) -> void:
 	if u.sel:
 		ell_line(self, p + Vector2(0, z + 1), z + 6, z / 2.0 + 4.0, Color("#d9ffd0"), 1.5)
 	var col: Color = d.col
-	if ev > 0:
+	var acc: Color = d.acc
+	var pat := ""
+	if not skn.is_empty():
+		col = C(skn.c)
+		acc = C(skn.a)
+		pat = skn.pt
+	elif ev > 0:
 		col = [Color("#a98ae0"), Color("#9462e0"), Color("#7d3fdc")][ev - 1]
+	if u.oilT > 0.0:
+		draw_arc(p, z + 9, t * 4.0, t * 4.0 + 4.5, 20, C(skn.a) if not skn.is_empty() else Color(1, 0.67, 0.16, 0.85), 2.0)
 	draw_set_transform(p, u.fa, Vector2(1.35, 1.35))
-	art_bot(self, u.t, col, d.acc, t)
+	art_bot_s(self, u.t, col, acc, t, pat)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if ev > 0:
 		draw_arc(p, z + 7, 0.0, TAU, 24, Color(0.69, 0.5, 1.0, 0.55), 1.0)
@@ -4223,7 +5889,31 @@ func _selftest() -> void:
 	await _shot("00_lobby")
 	lsec = "set"
 	await _shot("00b_set")
+	SV.cs = 30000
+	SV.ss = 200
+	lsec = "shop"
+	shop_tab2 = "box"
+	await _shot("00c_shop_box")
+	open_box(10, false)
+	await _wait(1.6)
+	await _shot("00d_box_open")
+	await _wait(1.5)
+	box_res = []
+	shop_tab2 = "r"
+	await _shot("00e_shop_r")
+	shop_tab2 = "star"
+	await _shot("00f_shop_star")
+	buy_set(0)
+	print("SET eq=", SV.eq, " beq=", SV.beq, " teq=", SV.teq, " cs=", SV.cs)
+	lsec = "store"
+	await _shot("00g_store")
+	SV.bp.xp = 6200
+	lsec = "pass"
+	await _shot("00h_pass")
+	cos_press({"a": "bpall"})
+	print("BP ", lmsg, " cs=", SV.cs, " fbox=", SV.fbox)
 	lsec = "main"
+	await _shot("00i_main_skin")
 	start_game(false)
 	await _wait(0.3)
 	await _shot("01_start")
@@ -4395,46 +6085,55 @@ func oct(r: float) -> PackedVector2Array:
 		p.append(Vector2(cos(a), sin(a)) * r)
 	return p
 
-func art_base(ci: CanvasItem, p: Vector2, t: float, xf: Transform2D = Transform2D.IDENTITY) -> void:
-	ell_fill(ci, p + Vector2(6, 40), 58, 18, Color(0, 0, 0, 0.32))
+func art_base(ci: CanvasItem, p: Vector2, t: float, xf: Transform2D = Transform2D.IDENTITY, P: Dictionary = {}) -> void:
+	if P.has("ms"):
+		art_master_base(ci, p, P.ms, t, xf)
+		return
+	var pl := C(P.pl) if P.has("pl") else PL
+	var rim := C(P.rim) if P.has("rim") else RIM
+	var bd := C(P.bd) if P.has("bd") else BD
+	var tp := C(P.tp) if P.has("tp") else TP
+	var gl := C(P.gl) if P.has("gl") else GL
+	var lt := C(P.lt) if P.has("lt") else LT
 	ci.draw_set_transform_matrix(xf * Transform2D(0.0, Vector2.ONE, 0.0, p))
+	ell_fill(ci, Vector2(6, 40), 58, 18, Color(0, 0, 0, 0.32))
 	var o := oct(54)
-	ci.draw_colored_polygon(o, PL)
+	ci.draw_colored_polygon(o, pl)
 	o.append(o[0])
-	ci.draw_polyline(o, RIM, 3.0, true)
+	ci.draw_polyline(o, rim, 3.0, true)
 	var o2 := oct(44)
 	o2.append(o2[0])
 	ci.draw_polyline(o2, Color(1, 1, 1, 0.1), 1.0, true)
 	for i in 4:
 		ci.draw_set_transform_matrix(xf * Transform2D(i * PI / 2.0, Vector2.ONE, 0.0, p))
-		ci.draw_rect(Rect2(-8, -50, 16, 3), Color(LT, 0.55))
+		ci.draw_rect(Rect2(-8, -50, 16, 3), Color(lt, 0.55))
 	ci.draw_set_transform_matrix(xf * Transform2D(0.0, Vector2.ONE, 0.0, p))
 	ci.draw_rect(Rect2(-25, -19, 56, 46), Color(0, 0, 0, 0.35))
-	ci.draw_rect(Rect2(-28, -22, 56, 44), BD)
-	ci.draw_rect(Rect2(-18, -32, 36, 64), BD)
-	ci.draw_rect(Rect2(-28, -22, 56, 5), TP)
-	ci.draw_rect(Rect2(-18, -32, 36, 5), TP)
+	ci.draw_rect(Rect2(-28, -22, 56, 44), bd)
+	ci.draw_rect(Rect2(-18, -32, 36, 64), bd)
+	ci.draw_rect(Rect2(-28, -22, 56, 5), tp)
+	ci.draw_rect(Rect2(-18, -32, 36, 5), tp)
 	ci.draw_rect(Rect2(-24, 8, 48, 6), Color(0, 0, 0, 0.45))
 	for i in 6:
 		var on := int(t * 2 + i) % 3 != 0
-		ci.draw_rect(Rect2(-22 + i * 8, 9, 5, 4), Color(GL, 0.85) if on else Color(1, 1, 1, 0.15))
+		ci.draw_rect(Rect2(-22 + i * 8, 9, 5, 4), Color(gl, 0.85) if on else Color(1, 1, 1, 0.15))
 	var pu := 0.6 + 0.4 * sin(t * 3.0)
-	ci.draw_circle(Vector2(0, -6), 21, Color(GL, 0.25 * pu))
+	ci.draw_circle(Vector2(0, -6), 21, Color(gl, 0.25 * pu))
 	ci.draw_circle(Vector2(0, -6), 13, K)
-	ci.draw_circle(Vector2(0, -6), 10, GL)
+	ci.draw_circle(Vector2(0, -6), 10, gl)
 	ci.draw_circle(Vector2(-3, -9), 3.5, Color(1, 1, 1, 0.55))
-	ci.draw_line(Vector2(-20, -27), Vector2(-20, -42), RIM, 2.0)
-	ci.draw_circle(Vector2(-20, -43), 2.5, LT if int(t * 1.5) % 2 == 1 else Color("#3a2a10"))
+	ci.draw_line(Vector2(-20, -27), Vector2(-20, -42), rim, 2.0)
+	ci.draw_circle(Vector2(-20, -43), 2.5, lt if int(t * 1.5) % 2 == 1 else Color("#3a2a10"))
 	ci.draw_set_transform_matrix(xf * Transform2D(t * 1.6, Vector2.ONE, 0.0, p + Vector2(20, -25)))
-	ci.draw_arc(Vector2.ZERO, 7, -0.9, 0.9, 12, TP, 2.0)
-	ci.draw_line(Vector2.ZERO, Vector2(7, 0), TP, 2.0)
+	ci.draw_arc(Vector2.ZERO, 7, -0.9, 0.9, 12, tp, 2.0)
+	ci.draw_line(Vector2.ZERO, Vector2(7, 0), tp, 2.0)
 	ci.draw_rect(Rect2(-2, -2, 4, 4), K)
 	ci.draw_set_transform_matrix(xf * Transform2D(0.0, Vector2.ONE, 0.0, p))
 	var corners := [Vector2(-46, -19), Vector2(46, -19), Vector2(-46, 19), Vector2(46, 19)]
 	for i in 4:
 		var c: Vector2 = corners[i]
 		ci.draw_rect(Rect2(c.x - 4, c.y - 4, 8, 8), K)
-		ci.draw_rect(Rect2(c.x - 2, c.y - 2, 4, 4), LT if int(t * 2 + i * 0.5) % 2 == 1 else Color(0, 0, 0, 0.4))
+		ci.draw_rect(Rect2(c.x - 2, c.y - 2, 4, 4), lt if int(t * 2 + i * 0.5) % 2 == 1 else Color(0, 0, 0, 0.4))
 	ci.draw_set_transform_matrix(xf)
 
 func art_mine(ci: CanvasItem, m: Dictionary, t: float) -> void:
@@ -4442,14 +6141,16 @@ func art_mine(ci: CanvasItem, m: Dictionary, t: float) -> void:
 	var ev: bool = m.ev
 	var on: bool = m.amt > 0
 	ell_fill(ci, p + Vector2(0, 12), 18, 7, Color(0, 0, 0, 0.28))
+	var MN = thm.get("mn", null)
 	if on:
-		var gc := Color(0.67, 0.43, 1.0, 0.16) if ev else Color(0.37, 0.88, 0.77, 0.14)
+		var gc := Color(0.67, 0.43, 1.0, 0.16) if ev else (C(MN[2]) if MN != null else Color(0.37, 0.88, 0.77, 0.14))
 		ci.draw_circle(p, 28, Color(gc, gc.a + 0.04 * sin(t * 2.0 + p.x)))
+	mdeco(p, MN, t_real, false)
 	var c1 := Color("#47504d")
 	var c2 := Color("#6a746f")
 	if on:
-		c1 = Color("#8a4fd0") if ev else Color("#2fa88f")
-		c2 = Color("#d2a8ff") if ev else Color("#8ff3dd")
+		c1 = Color("#8a4fd0") if ev else (C(MN[0]) if MN != null else Color("#2fa88f"))
+		c2 = Color("#d2a8ff") if ev else (C(MN[1]) if MN != null else Color("#8ff3dd"))
 	for c in [[-10.0, 6.0, 0.7], [10.0, 5.0, 0.6], [0.0, 0.0, 1.0]]:
 		var px: float = p.x + c[0]
 		var py: float = p.y + c[1]
@@ -4457,9 +6158,10 @@ func art_mine(ci: CanvasItem, m: Dictionary, t: float) -> void:
 		var w: float = 9.0 * c[2]
 		poly(ci, [Vector2(px, py - h), Vector2(px + w, py), Vector2(px, py + h * 0.35), Vector2(px - w, py)], c1)
 		poly(ci, [Vector2(px, py - h), Vector2(px + w, py), Vector2(px, py)], c2)
+	mdeco(p, MN, t_real, true)
 
 # 로봇 모양 (원점 기준, 오른쪽이 앞)
-func art_bot(ci: CanvasItem, k: String, col: Color, acc: Color, t: float) -> void:
+func art_bot(ci: CanvasItem, k: String, col: Color, acc: Color, t: float, plain: bool = true) -> void:
 	match k:
 		"s":
 			poly(ci, [Vector2(8, 0), Vector2(-5, -6), Vector2(-3, 0), Vector2(-5, 6)], K)
@@ -4486,6 +6188,8 @@ func art_bot(ci: CanvasItem, k: String, col: Color, acc: Color, t: float) -> voi
 			ci.draw_circle(Vector2.ZERO, 7.5, col)
 			ci.draw_rect(Rect2(-1, -5, 2, 10), acc)
 			ci.draw_rect(Rect2(-5, -1, 10, 2), acc)
+	if not plain:
+		return
 	if k != "s" and k != "h":
 		ci.draw_rect(Rect2(-6, -7, 9, 2), Color(1, 1, 1, 0.26))
 	if k == "c" or k == "r":

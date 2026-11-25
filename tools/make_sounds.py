@@ -125,7 +125,39 @@ def sfx():
     mk('cmd_mv', cm_mv)
     def flag(s): s.tn(660, .08, 'triangle', .05); s.tn(990, .12, 'triangle', .04, .06)
     mk('flag', flag)
-    for k, x in D.items(): save(k, x, 1.4)  # 웹 효과음 음량(0.42)의 약 3.3배 · 가장 큰 승리음이 0.9 정도
+    def box(s):
+        for i in range(5): s.nz(.08, .2, i * .16, 420, 'bandpass'); s.tn(150 - i * 6, .09, 'sine', .14, i * .16, 90)
+        s.nz(.04, .18, .84, 4200, 'highpass'); s.sw(.25, .1, .64, 6000)
+        for i, f in enumerate([784, 988, 1175, 1568]): s.tn(f, .9, 'sine', .055, .9 + i * .025); s.tn(f * 2, .5, 'sine', .015, .9 + i * .025)
+        s.tn(98, .7, 'sine', .2, .9, 60)
+    mk('box', box)
+    def reveal(s): s.tn(988, .38, 'triangle', .08); s.tn(1976, .22, 'sine', .025); s.tn(494, .3, 'sine', .03)
+    mk('reveal', reveal)
+    def rare(s): s.arp([784, 988, 1175, 1568, 1976], 'sine', .075, .05, .65); s.tn(392, .9, 'triangle', .05); s.nz(.5, .05, .15, 7000, 'highpass')
+    mk('rare', rare)
+    def jack(s):
+        for f in [392, 523, 659, 784]: s.tn(f, 1.6, 'triangle', .06); s.tn(f * 2, 1.2, 'sine', .025)
+        s.arp([1046, 1318, 1568, 2093, 2637], 'sine', .08, .07, .7); s.tn(98, 1.2, 'sine', .3, 0, 55); s.nz(1.2, .1, .2, 6000, 'highpass')
+    mk('jack', jack)
+    def sbox(s):
+        s.tn(55, 1, 'sawtooth', .1, 0, 110); s.tn(82, 1, 'sine', .22, 0, 165)
+        for f in [262, 330, 392, 523]: s.tn(f, 1.1, 'sine', .045); s.tn(f * 1.006, 1.1, 'sine', .035)
+        s.sw(.9, .22, 0, 4000)
+        for i in range(8): s.tn(72, .09, 'sine', .22, i * .11, 50)
+        s.nz(1.3, .32, .95, 800); s.tn(65, 1.5, 'sine', .5, .95, 35)
+        for f in [523, 659, 784, 1046, 1568]: s.tn(f, 1.7, 'triangle', .065, .95)
+    mk('sbox', sbox, 4)
+    def sreveal(s): s.tn(1568, .55, 'sine', .08); s.tn(3136, .32, 'sine', .03); s.tn(2093, .4, 'sine', .025, .03)
+    mk('sreveal', sreveal)
+    def srare(s): s.arp([1046, 1318, 1568, 2093], 'sine', .1, .06, .55); s.nz(.6, .07, .1, 7000, 'highpass')
+    mk('srare', srare)
+    def sjack(s):
+        for i in range(10): s.tn(70, .1, 'sine', .25, i * .06, 48)
+        s.sw(.6, .2, 0, 3000); s.tn(65, 2.2, 'sine', .45, .6, 40)
+        for f in [131, 196, 262, 330, 392, 523, 659, 784, 1046]: s.tn(f, 2.6, 'triangle', .055, .6); s.tn(f * 1.004, 2.6, 'sine', .035, .6)
+        s.arp([1568, 2093, 2637, 3136], 'sine', .06, .1, .7); s.nz(1.6, .14, .6, 6500, 'highpass')
+    mk('sjack', sjack, 4)
+    for k, x in D.items(): save(k, x, 1.4 * (0.6 if k in ("sbox", "sjack") else 1.0))  # 웹 효과음 음량(0.42)의 약 3.3배 · 큰 뽑기음은 찢어지지 않게 줄임
 
 BGC = {'lobby': [[220, 262, 330], [175, 220, 262], [262, 330, 392], [196, 247, 294]],
        'game': [[147, 175, 220], [117, 147, 175], [175, 220, 262], [131, 165, 196]],
