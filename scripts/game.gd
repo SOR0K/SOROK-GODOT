@@ -87,6 +87,7 @@ var last_tap := {"t": -9.0, "k": ""}
 var last_num := {"t": -9.0, "k": ""}
 var mouse_ui := Vector2(-999, -999)
 var tap_tip_t := 0.0
+var mouse_in := false
 var tap_tip_p := Vector2.ZERO
 var ui: Array = []
 var us := 1.0
@@ -95,6 +96,11 @@ var shop_open := false
 var shop_tab := "prod"
 var shop_desc := ""
 var paused := false
+var flags: Array = []
+var keys_open := false
+var muted := false
+var zm_t := -9.0
+var t_real := 0.0
 var aim := ""
 var vb_cd := 0.0
 var dr_cd := 0.0
@@ -147,6 +153,7 @@ func _sb(bg: Color, border: Color) -> StyleBoxFlat:
 
 # ═════════ 새 게임 (웹 reset과 같은 규칙) ═════════
 func new_game() -> void:
+	flags = []
 	ex.resize(GN * GN)
 	ex.fill(0)
 	mm_img = Image.create_empty(GN, GN, false, Image.FORMAT_RGBA8)
@@ -1157,6 +1164,7 @@ func _clamp_cam() -> void:
 func set_zoom(nz: float, anchor: Vector2) -> void:
 	var wp := s2w(anchor)
 	zm = clampf(snappedf(nz, 0.01), ZMIN, ZMAX)
+	zm_t = t_real
 	cam.zoom = Vector2(zm, zm)
 	cam.position = wp - (anchor - vsize() / 2.0) / zm
 	_clamp_cam()
@@ -1786,13 +1794,13 @@ func vis2(p: Vector2) -> bool:
 			return true
 	return false
 
-func num_key(i: int) -> void:
+func num_key(i: int, jump: bool = false) -> void:
 	if i < 0 or i >= ORDER.size():
 		return
 	var k: String = ORDER[i]
-	var dbl: bool = last_num.k == k and t - last_num.t < 0.35
-	last_num = {"k": "" if dbl else k, "t": t}
-	if dbl:
+	var dbl: bool = not jump and last_num.k == k and t_real - last_num.t < 0.35
+	last_num = {"k": "" if (dbl or jump) else k, "t": t_real}
+	if dbl or jump:
 		var lst: Array = bots.filter(func(q): return q.t == k)
 		if not lst.is_empty():
 			var best: Vector2 = lst[0].p
@@ -1805,8 +1813,16 @@ func num_key(i: int) -> void:
 				if n > bn:
 					bn = n
 					best = a.p
-			cam_to(best)
-			fx.append({"k": "ring", "p": best, "t": 0.6, "r": 120.0})
+			var G: Array = lst.filter(func(q): return (q.p as Vector2).distance_to(best) < 350.0)
+			var gc := Vector2.ZERO
+			for q in G:
+				gc += q.p
+			gc /= G.size()
+			cam_to(gc)
+			fx.append({"k": "ring", "p": gc, "t": 0.6, "r": 120.0})
+			msg(UT[k].n + " " + str(lst.size()) + "대 중 " + str(G.size()) + "대가 모인 곳으로 이동했어요")
+		else:
+			msg(UT[k].n + " 로봇이 없어요")
 		return
 	clear_sel()
 	for q in bots:
@@ -2045,10 +2061,100 @@ func _hud(f: Font) -> void:
 		for it in ui:
 			sb_btn.draw(get_canvas_item(), it.r)
 			draw_string(f, (it.r as Rect2).position + Vector2(0, 36), "다시 시작", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
+	_zoom_badge(f)
+	if keys_open:
+		_keys_win(f)
+		return
 	if tip != "" and not shop_open and not info_open:
 		_tooltip(f, tip)
 	elif tip == "" and hov == null and not shop_open and not info_open and not paused and not won and not lost and dn == null and not box_active:
 		_world_tip(f)
+
+# ═════════ 조작: 깃발 · 조작법 창 · 확대 표시 ═════════
+const KEYS := [["마우스", [["좌클릭", "명령 (이동 · 공격 · 채굴) / 로봇 선택"], ["좌클릭 드래그", "지도 이동"], ["우클릭 누른 채 드래그", "로봇 여러 대 묶어서 선택"], ["Ctrl + 휠", "화면 확대 · 축소 (60~180%)"], ["휠", "지도 위아래 이동 (Shift+휠: 좌우)"], ["미니맵 클릭·드래그", "그 위치로 화면 이동"], ["마우스 올리기", "로봇 · 적 · 기지 · 광산 정보 보기"]]],
+	["화면 · 선택", [["W A S D / 화면 가장자리", "지도 이동"], ["E", "모든 로봇 선택"], ["Q", "우리 기지로 화면 이동"], ["1 ~ 5", "정찰 · 채굴 · 근접 · 원거리 · 지원 로봇 전체 선택"], ["Ctrl+1~5 · 숫자 두 번", "그 로봇들이 모인 곳으로 화면 이동"], ["T", "마우스 위치에 깃발 꽂기 / 뽑기"]]],
+	["기능", [["Y", "상점 열기 · 닫기"], ["I", "게임 정보"], ["6 · Space", "기름 들기 (Esc · 우클릭으로 취소)"], ["Esc", "일시정지 · 창 닫기"], ["M", "소리 켜기 · 끄기"], ["Tab", "이 조작법 창 열기 · 닫기"]]]]
+const KEYS_T := [["터치", [["탭", "로봇 선택 · 이동 · 공격 · 채굴 명령"], ["한 손가락 드래그", "지도 이동"], ["두 손가락 벌리기 · 오므리기", "확대 · 축소"], ["길게 누른 채 드래그", "로봇 여러 대 묶기"], ["미니맵 탭 · 드래그", "그 위치로 화면 이동"], ["기지 · 광산 · 적 탭", "정보가 잠깐 떠요"]]],
+	["버튼", [["아래 1~5 칸", "정찰 · 채굴 · 근접 · 원거리 · 지원 전체 선택"], ["아래 6 칸", "기름 들기"], ["전체 · 기지 · 정보 · 상점", "전체 선택 · 기지로 · 게임 기록 · 상점"], ["왼쪽 위 ⏸", "일시정지 · 아이템 취소 · 창 닫기"], ["선택 해제", "선택한 로봇 해제"]]],
+	["상점", [["항목 탭", "바로 구매"], ["아래 수치 누르고 있기", "설명 보기"]]]]
+
+func toggle_flag(w: Vector2) -> void:
+	for i in flags.size():
+		if (flags[i] as Vector2).distance_to(w) < 36.0:
+			flags.remove_at(i)
+			msg("깃발을 뽑았어요")
+			return
+	if flags.size() >= 20:
+		msg("깃발은 최대 20개까지 꽂을 수 있어요. 깃발 위에서 T를 누르면 뽑혀요")
+		return
+	flags.append(w)
+	fx.append({"k": "ring", "p": w, "t": 0.6, "r": 40.0})
+	msg("깃발 " + str(flags.size()) + "번을 꽂았어요 (같은 곳에서 T를 다시 누르면 뽑혀요)")
+
+func _flags(f: Font) -> void:
+	var vr := view_rect().grow(60.0)
+	for i in flags.size():
+		var p: Vector2 = flags[i]
+		if not vr.has_point(p):
+			continue
+		var w := sin(t * 4.0 + i) * 2.5
+		draw_colored_polygon(ell(p + Vector2(2, 2), 9, 4, 16), Color(0, 0, 0, 0.3))
+		draw_line(p, p + Vector2(0, -38), Color("#e9e2cf"), 2.5)
+		var pts := PackedVector2Array()
+		var a := p + Vector2(1, -38)
+		var tip := p + Vector2(24, -31 + w)
+		var b := p + Vector2(1, -24)
+		for k in 9:
+			var q := k / 8.0
+			pts.append(a.lerp(p + Vector2(13, -35 + w), q).lerp((p + Vector2(13, -35 + w)).lerp(tip, q), q))
+		for k in 9:
+			var q := k / 8.0
+			pts.append(tip.lerp(p + Vector2(13, -27 - w), q).lerp((p + Vector2(13, -27 - w)).lerp(b, q), q))
+		draw_colored_polygon(pts, Color("#ffcf3a"))
+		pts.append(pts[0])
+		draw_polyline(pts, Color("#8a6a10"), 1.0)
+		draw_string(f, p + Vector2(4, -27.5 + 4), str(i + 1), HORIZONTAL_ALIGNMENT_CENTER, 12, 10, Color("#3a2a05"))
+
+func _keys_win(f: Font) -> void:
+	var u := ui_size()
+	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.55))
+	var G: Array = KEYS_T if touch_ui() else KEYS
+	var cw := minf(330.0, (u.x - 60.0) / G.size())
+	var rows := 0
+	for g in G:
+		rows = maxi(rows, (g[1] as Array).size())
+	var W := cw * G.size() + 20.0 * (G.size() - 1) + 40.0
+	var H := 70.0 + rows * 40.0 + 20.0
+	var r := Rect2((u.x - W) / 2.0, (u.y - H) / 2.0, W, H)
+	sb_panel.draw(get_canvas_item(), r)
+	draw_string(f, r.position + Vector2(20, 34), "조작법" if touch_ui() else "조작법   Tab으로 열고 닫아요", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, GOLD)
+	for gi in G.size():
+		var g: Array = G[gi]
+		var x := r.position.x + 20.0 + gi * (cw + 20.0)
+		var y := r.position.y + 64.0
+		draw_string(f, Vector2(x, y), g[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+		for li in (g[1] as Array).size():
+			var L: Array = g[1][li]
+			var yy := y + 14.0 + li * 40.0
+			var kw := minf(cw * 0.48, f.get_string_size(L[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x + 14.0)
+			var kr := Rect2(x, yy, kw, 22)
+			draw_rect(kr, Color("#1a232c"))
+			draw_rect(kr, Color("#3a4a58"), false, 1.0)
+			draw_string(f, kr.position + Vector2(0, 16), L[0], HORIZONTAL_ALIGNMENT_CENTER, kw, 12, Color.WHITE)
+			draw_multiline_string(f, Vector2(x + kw + 8.0, yy + 15.0), L[1], HORIZONTAL_ALIGNMENT_LEFT, cw - kw - 8.0, 12, 2, Color("#c9d4dc"))
+	draw_string(f, Vector2(r.position.x, r.end.y - 10.0), "아무 곳이나 누르면 닫혀요", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#7d8b96"))
+
+func _zoom_badge(f: Font) -> void:
+	var a := 1.0 - (t_real - zm_t)
+	if a <= 0.0:
+		return
+	var u := ui_size()
+	var s := str(roundi(zm * 100.0)) + "%"
+	var w := f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 24.0
+	var r := Rect2((u.x - w) / 2.0, 54.0, w, 28.0)
+	var al := minf(1.0, a * 2.5)
+	draw_rect(r, Color(0.04, 0.055, 0.08, 0.85 * al))
+	draw_string(f, r.position + Vector2(0, 20), s, HORIZONTAL_ALIGNMENT_CENTER, w, 15, Color(1, 1, 1, al))
 
 # ═════════ 올렸을 때 말풍선 (웹 hovObj·info·einfo) ═════════
 func info_txt(u: Dictionary) -> String:
@@ -2381,11 +2487,24 @@ func _unhandled_input(e: InputEvent) -> void:
 			if shop_open and shop_tab == "ctl":
 				ctl_scroll += -46.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 46.0
 			return
-		if mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			set_zoom(zm + 0.1, mb.position)
-		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			set_zoom(zm - 0.1, mb.position)
-		elif mb.button_index == MOUSE_BUTTON_LEFT:
+		if mb.pressed and keys_open:
+			keys_open = false
+			return
+		var wheel := mb.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]
+		if wheel and mb.pressed:
+			var amt := 100.0 * (mb.factor if mb.factor > 0.0 else 1.0)
+			var up := mb.button_index == MOUSE_BUTTON_WHEEL_UP
+			var vert := up or mb.button_index == MOUSE_BUTTON_WHEEL_DOWN
+			if vert and (mb.ctrl_pressed or mb.meta_pressed):
+				set_zoom(snappedf(zm + (0.1 if up else -0.1), 0.1), mb.position)
+			elif vert and not mb.shift_pressed:
+				cam.position.y += -amt if up else amt
+			else:
+				var left := up or mb.button_index == MOUSE_BUTTON_WHEEL_LEFT
+				cam.position.x += -amt if left else amt
+			_clamp_cam()
+			return
+		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
 				var it = ui_hit(mb.position)
 				if it != null:
@@ -2427,9 +2546,16 @@ func _unhandled_input(e: InputEvent) -> void:
 				box_b = s2w(mb.position)
 				finish_box(mb.shift_pressed)
 				box_active = false
+	elif e is InputEventPanGesture:
+		cam.position += (e as InputEventPanGesture).delta * 30.0
+		_clamp_cam()
+	elif e is InputEventMagnifyGesture:
+		var mg := e as InputEventMagnifyGesture
+		set_zoom(zm * mg.factor, mg.position)
 	elif e is InputEventMouseMotion:
 		var mm := e as InputEventMouseMotion
 		mouse_ui = mm.position / us
+		mouse_in = true
 		if mm_drag:
 			mm_go(mm.position)
 			return
@@ -2446,8 +2572,17 @@ func _unhandled_input(e: InputEvent) -> void:
 		if not ke.pressed or ke.echo:
 			return
 		var kc: int = ke.keycode
+		if kc == KEY_TAB:
+			keys_open = not keys_open
+			return
+		if kc == KEY_M:
+			muted = not muted
+			msg("음소거" if muted else "소리 켜짐")
+			return
 		if kc == KEY_ESCAPE:
-			if info_open:
+			if keys_open:
+				keys_open = false
+			elif info_open:
 				info_open = false
 			elif shop_open:
 				shop_open = false
@@ -2473,7 +2608,13 @@ func _unhandled_input(e: InputEvent) -> void:
 			info_open = not info_open
 			shop_open = false
 		elif kc >= KEY_1 and kc <= KEY_5:
-			num_key(kc - KEY_1)
+			num_key(kc - KEY_1, ke.ctrl_pressed or ke.shift_pressed)
+		elif kc >= KEY_KP_1 and kc <= KEY_KP_5:
+			num_key(kc - KEY_KP_1, ke.ctrl_pressed or ke.shift_pressed)
+		elif kc == KEY_T:
+			var sp := mouse_ui * us
+			if sp.x >= 0.0:
+				toggle_flag(s2w(sp))
 		elif kc == KEY_6 or kc == KEY_SPACE:
 			hold_oil()
 		elif kc == KEY_E:
@@ -2574,7 +2715,14 @@ func _touch(e: InputEvent) -> void:
 				_clamp_cam()
 
 # ═════════ 매 프레임 ═════════
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_MOUSE_EXIT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		mouse_in = false
+	elif what == NOTIFICATION_WM_MOUSE_ENTER:
+		mouse_in = true
+
 func _process(dt: float) -> void:
+	t_real += dt
 	msg_t = maxf(0.0, msg_t - dt)
 	tap_tip_t = maxf(0.0, tap_tip_t - dt)
 	if ctl_arm != -1 and t > ctl_arm_t:
@@ -2597,6 +2745,24 @@ func _process(dt: float) -> void:
 	if v != Vector2.ZERO:
 		cam.position += v.normalized() * 900.0 * dt / zm
 		_clamp_cam()
+	# 화면 가장자리에 마우스를 대면 지도 이동 (PC)
+	var mp := mouse_ui * us
+	var vs := vsize()
+	if not touch_mode and mouse_in and mp.x >= 0.0 and dn == null and not box_active and not mm_drag and not mm_rect().has_point(mp) \
+			and not shop_open and not info_open and not paused and not keys_open and ui_hit(mp) == null:
+		var es := 1500.0 * dt / zm
+		var ev := Vector2.ZERO
+		if mp.x < 26.0:
+			ev.x = -es
+		elif mp.x > vs.x - 26.0:
+			ev.x = es
+		if mp.y < 26.0:
+			ev.y = -es
+		elif mp.y > vs.y - 26.0:
+			ev.y = es
+		if ev != Vector2.ZERO:
+			cam.position += ev
+			_clamp_cam()
 	if not won and not lost and not paused:
 		update_game(dt)
 	for f in fx:
@@ -2765,6 +2931,7 @@ func _draw() -> void:
 		draw_rect(r, Color("#8be28b"), false, 1.0 / zm)
 	_fx(f)
 	_fog(i0, j0, i1, j1)
+	_flags(f)
 	for d in drones:
 		draw_arc(d.p, 260.0, 0.0, TAU, 64, Color(1.0, 0.88, 0.47, 0.5), 2.0)
 		draw_circle(d.p, 9.0, Color("#0b1118"))
@@ -2957,6 +3124,10 @@ func _minimap() -> void:
 		elif u.t == "s":
 			c = Color("#fff3a0")
 		draw_circle(p, rr, c)
+	for fl in flags:
+		var fp: Vector2 = o + (fl as Vector2) * k
+		draw_line(fp, fp + Vector2(0, -8), Color.WHITE, 1.0)
+		draw_colored_polygon(PackedVector2Array([fp + Vector2(0, -8), fp + Vector2(6, -6), fp + Vector2(0, -4)]), Color("#ffcf3a"))
 	var vr := view_rect()
 	draw_rect(Rect2(o + vr.position * k, vr.size * k), Color(1, 1, 1, 0.65), false, 1.0)
 
@@ -3045,6 +3216,16 @@ func _selftest() -> void:
 		await _shot(pair[1])
 	mouse_ui = Vector2(-999, -999)
 	tap_tip_t = 0.0
+	cam_to(B + Vector2(200, -150))
+	toggle_flag(B + Vector2(150, -120))
+	toggle_flag(B + Vector2(260, -60))
+	num_key(2, true)
+	set_zoom(1.2, vsize() / 2.0)
+	await _shot("03e_flags")
+	keys_open = true
+	await _shot("03f_keys")
+	keys_open = false
+	set_zoom(1.0, vsize() / 2.0)
 	do_upgrade()
 	do_upgrade()
 	do_upgrade()
