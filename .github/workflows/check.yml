@@ -13,7 +13,7 @@ jobs:
         run: |
           wget -q https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip -O g.zip
           unzip -q g.zip && mv Godot_v4.7.2-stable_linux.x86_64 godot && chmod +x godot
-          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb mesa-utils libgl1 > /dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb mesa-utils libgl1 fonts-noto-cjk > /dev/null
       - name: 가져오기
         run: timeout 120 ./godot --headless --path . --import 2>&1 | tail -20 || true
       - name: 자동 테스트 + 스크린샷
