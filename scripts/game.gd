@@ -2647,7 +2647,7 @@ func _lobby_set(f: Font, hov) -> void:
 			"sl":
 				var nm: Array = names[it.arg]
 				var v := float(SV[it.arg])
-				var k := (v - nm[1]) / float(nm[2] - nm[1])
+				var k: float = (v - float(nm[1])) / float(nm[2] - nm[1])
 				draw_string(f, Vector2(x, r.position.y + 21.0), nm[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
 				draw_rect(Rect2(r.position.x, r.position.y + 13.0, r.size.x, 4.0), Color(1, 1, 1, 0.15))
 				draw_rect(Rect2(r.position.x, r.position.y + 13.0, r.size.x * k, 4.0), Color("#ffd76a"))
@@ -2678,7 +2678,7 @@ func _slider_set(key: String, sp: Vector2) -> void:
 	for it in ui:
 		if it.id == "sl" and it.arg == key:
 			var r: Rect2 = it.r
-			var nm := {"uis": [50, 130, 5], "vol_s": [0, 100, 1], "vol_b": [0, 100, 1]}[key]
+			var nm: Array = {"uis": [50, 130, 5], "vol_s": [0, 100, 1], "vol_b": [0, 100, 1]}[key]
 			var k := clampf((sp.x / us - r.position.x) / r.size.x, 0.0, 1.0)
 			SV[key] = int(snappedf(nm[0] + k * (nm[1] - nm[0]), nm[2]))
 			if key != "uis":
