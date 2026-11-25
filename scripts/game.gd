@@ -4624,10 +4624,8 @@ func intro_start() -> void:
 	intro_t0 = t_real
 	intro_ding = false
 	intro_P.clear()
-	var sd := 11
-	var rn := func() -> float:
-		sd = (sd * 16807) % 2147483647
-		return float(sd) / 2147483647.0
+	intro_sd = 11
+	var rn := _intro_rn
 	for a in 2:
 		for i in 1100:
 			var tt: float = pow(rn.call(), 0.8) * 3.1
@@ -4638,6 +4636,11 @@ func intro_start() -> void:
 			var sr: float = 420.0 + rn.call() * 380.0
 			intro_P.append({"r": r * (1.0 + (rn.call() - 0.5) * 0.12), "a": a * PI + tt * 2.2 + (rn.call() - 0.5) * (0.2 + 0.08 * tt), "k": r / 330.0,
 				"s": (1.1 + 1.4 * rn.call()) * (1.2 - r / 660.0), "sx": cos(sa) * sr, "sy": sin(sa) * sr, "dl": rn.call() * 0.45})
+
+var intro_sd := 11
+func _intro_rn() -> float:
+	intro_sd = (intro_sd * 16807) % 2147483647
+	return float(intro_sd) / 2147483647.0
 
 func _rad() -> Texture2D:
 	if rad_tex == null:
