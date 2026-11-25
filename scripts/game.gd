@@ -65,6 +65,7 @@ var zm := 1.0
 var cam: Camera2D
 var msg_text := ""
 var msg_t := 0.0
+var rwm := -99.0
 var rng := RandomNumberGenerator.new()
 var mm_img: Image
 var mm_tex: ImageTexture
@@ -223,7 +224,7 @@ func new_game() -> void:
 			ev = 3 if tr >= 6 else (2 if tr >= 5 else 1)
 		var hpv: float = (130.0 + 1100.0 * dn_ * dn_) * DF.h
 		o.merge({"s": 0.5 + 8.0 * dn_, "dn": dn_, "tr": tr, "lv": lv, "ev": ev, "mx": hpv, "hp": hpv, "atk": (4.0 + 10.0 * dn_) * DF.a,
-			"cap": false, "al": 0.0, "cd": 0.0, "tt": null, "stk": 0, "warn": false, "dt": 0, "n": 0, "cbt": -99.0, "fa": 0.0})
+			"cap": false, "al": 0.0, "cd": 0.0, "tt": null, "stk": 0, "ft": null, "fts": -9.0, "warn": false, "dt": 0, "n": 0, "cbt": -99.0, "fa": 0.0})
 	for o in outs:
 		var cnt: int = maxi(2, roundi([4, 5, 6, 8, 10, 13, 16][o.tr] * DF.n))
 		var ne: int = maxi(1, roundi(cnt * 0.25)) if o.ev > 0 else 0
@@ -288,7 +289,8 @@ func mk_bot(k: String, p: Vector2) -> Dictionary:
 	var u := {"id": uid, "team": 0, "t": k, "p": p, "goal": null, "fa": rng.randf_range(-PI, PI), "sel": false,
 		"lv": 1, "ev": 0, "hp": 1.0, "mh": 1.0, "sp": 1.0, "aspd": 1.0, "rng": float(UT[k].rng), "cd": 0.0,
 		"tgt": null, "mine": null, "st": "go", "c": 0, "w": 0.0, "f": 0.0, "fm": 0.0, "cbt": -99.0,
-		"mo": 0.0, "ms": 0, "acq": 0.0, "pk": -1, "pt": 0.0, "pp": [], "pok": true, "oilT": 0.0}
+		"mo": 0.0, "ms": 0, "acq": 0.0, "pk": -1, "pt": 0.0, "pp": [], "pok": true, "oilT": 0.0,
+		"ai": 0.0, "dodge": 0.0, "dgo": null, "fo": null, "kite": 0.0, "kx": null, "rh": null, "rw": false, "sq": null, "spc": 0.0}
 	calc(u)
 	u.hp = u.mh
 	u.f = u.fm
@@ -457,7 +459,8 @@ func step_to(u: Dictionary, tg: Vector2, dt: float) -> float:
 	var d := p.distance_to(tg)
 	if d < 0.5:
 		return 0.0
-	var s := minf(d, float(u.sp) * (1.2 if float(u.get("oilT", 0.0)) > 0.0 else 1.0) * dt)
+	var spd: float = minf(u.sp, u.spc) if float(u.get("spc", 0.0)) > 0.0 else float(u.sp)
+	var s := minf(d, spd * (1.2 if float(u.get("oilT", 0.0)) > 0.0 else 1.0) * dt)
 	u.fa = lerp_angle(float(u.fa), (tg - p).angle(), minf(1.0, dt * 14.0))
 	u.p = (p + (tg - p) / d * s).clamp(Vector2.ZERO, Vector2(MAPW, MAPW))
 	return d - s
@@ -538,13 +541,209 @@ func engage(u: Dictionary, tg: Dictionary, dt: float) -> void:
 		u.cd = 1.0 / u.aspd
 
 # ═════════ 우리 로봇 행동 ═════════
+func _atk(u: Dictionary, tg: Dictionary) -> void:
+	hit(u, tg, patk(u))
+	u.cd = 1.0 / (u.aspd * (1.2 if u.oilT > 0.0 else 1.0))
+
+# 상대 반대쪽으로 살짝 물러나기 (밝혀진 곳으로만)
+func _away(u: Dictionary, from: Vector2, step: float, dt: float) -> void:
+	var p: Vector2 = u.p
+	var d := maxf(p.distance_to(from), 1.0)
+	var np := p + (p - from) / d * step
+	if u.team == 1 or seen(np):
+		step_to(u, np, dt)
+
+func _seen_ens(p: Vector2, r: float) -> Array:
+	var a: Array = []
+	for e in ens:
+		if e.hp > 0 and seen(e.p) and p.distance_to(e.p) < r:
+			a.append(e)
+	return a
+
+func _near_in(p: Vector2, arr: Array, r: float):
+	var b = null
+	var bd := r
+	for e in arr:
+		var d := p.distance_to(e.p)
+		if d < bd:
+			bd = d
+			b = e
+	return b
+
+# 웹 smartAI 그대로: 포탑 피하기 · 점수로 대상 고르기 · 카이팅 · 후퇴
+func smart_ai(u: Dictionary, dt: float) -> bool:
+	u.ai -= dt
+	if u.dodge > 0.0:
+		u.dodge -= dt
+		var o = u.dgo
+		if o != null and not o.cap and (u.p as Vector2).distance_to(o.p) < 240.0:
+			_away(u, o.p, 40.0, dt)
+		return true
+	if u.tgt != null and (u.tgt.hp <= 0 or u.tgt.get("cap", false)):
+		u.tgt = u.fo if (u.fo != null and not u.fo.get("cap", false) and u.fo.hp > 0) else null
+		u.fo = null
+	if u.ai <= 0.0:
+		u.ai = 0.25
+		var E := _seen_ens(u.p, 260.0)
+		var to = null
+		for o in outs:
+			if not o.cap and is_same(o.tt, u):
+				to = o
+				break
+		if to != null and u.hp < u.mh * 0.45 and to.stk >= 2:
+			var mate := false
+			for a in bots:
+				if not is_same(a, u) and (a.t == "c" or a.t == "r") and a.hp > a.mh * 0.5 and (a.p as Vector2).distance_to(to.p) < 260.0:
+					mate = true
+					break
+			if mate:
+				u.dodge = 1.6
+				u.dgo = to
+				to.tt = null
+				to.stk = 0
+				return true
+		if u.tgt == null and u.goal == null:
+			var R: float = u.rng + 70.0
+			var b = null
+			var bs := 1e9
+			for e in E:
+				var d := (u.p as Vector2).distance_to(e.p)
+				if d > 220.0:
+					continue
+				var sc: float = d * 0.6 + (e.hp / e.mh) * 120.0 - (60.0 if d < R else 0.0)
+				if sc < bs:
+					bs = sc
+					b = e
+			if b != null:
+				u.tgt = b
+			else:
+				for o in outs:
+					if not o.cap and seen(o.p) and (u.p as Vector2).distance_to(o.p) < u.rng + 40.0:
+						u.tgt = o
+						break
+		elif u.tgt != null and u.tgt.team == 1 and not u.tgt.has("op"):
+			var b: Dictionary = u.tgt
+			var bs: float = b.hp / b.mh
+			for e in E:
+				if (u.p as Vector2).distance_to(e.p) <= u.rng + 5.0 and e.hp / e.mh < bs - 0.35:
+					b = e
+					bs = e.hp / e.mh
+			u.tgt = b
+		if u.t == "r":
+			var mel: Array = E.filter(func(e): return e.t != "r")
+			var m = _near_in(u.p, mel, 55.0)
+			if m != null and u.cd > 0.25:
+				u.kite = 0.35
+				u.kx = m
+		if u.hp < u.mh * 0.2:
+			var hs: Array = bots.filter(func(a): return a.t == "h")
+			var h = _near_in(u.p, hs, 320.0)
+			if h != null:
+				u.rh = h
+			else:
+				var db := (u.p as Vector2).distance_to(B)
+				if not u.rw and db < 1400.0 and db > WELL - 60.0:
+					u.rw = true
+					if t - rwm > 10.0:
+						rwm = t
+						msg("체력이 낮은 로봇이 우물로 돌아가요")
+		elif u.hp > u.mh * 0.6:
+			u.rh = null
+		if u.rw and u.hp > u.mh * 0.9:
+			u.rw = false
+	if u.rw and u.goal == null:
+		if (u.p as Vector2).distance_to(B) > WELL - 80.0:
+			move_to(u, B, dt)
+		if u.cd <= 0.0:
+			var e = _near_in(u.p, _seen_ens(u.p, u.rng), u.rng)
+			if e != null:
+				_atk(u, e)
+		return true
+	if u.kite > 0.0 and u.kx != null and u.kx.hp > 0:
+		u.kite -= dt
+		_away(u, u.kx.p, 30.0, dt)
+		if u.cd <= 0.0 and u.tgt != null and u.tgt.hp > 0 and (u.p as Vector2).distance_to(u.tgt.p) <= u.rng:
+			_atk(u, u.tgt)
+		return true
+	if u.rh != null and u.rh.hp > 0 and u.goal == null:
+		if (u.p as Vector2).distance_to(u.rh.p) > 45.0:
+			move_to(u, u.rh.p, dt)
+		if u.cd <= 0.0:
+			var e = _near_in(u.p, _seen_ens(u.p, u.rng), u.rng)
+			if e != null:
+				_atk(u, e)
+		return true
+	return false
+
+# 적 기지 공격 대형: 모였다가 한꺼번에 돌격
+func squad(us: Array, tg: Dictionary) -> void:
+	var A: Array = us.filter(func(q): return q.t != "h")
+	if A.size() < 3 or us.all(func(q): return (q.p as Vector2).distance_to(tg.p) < 420.0):
+		return
+	var c := Vector2.ZERO
+	var msp := 1e9
+	for q in us:
+		c += q.p
+		msp = minf(msp, q.sp)
+	c /= us.size()
+	var dv: Vector2 = c - (tg.p as Vector2)
+	dv = dv.normalized() if dv.length() > 1.0 else Vector2.RIGHT
+	var pv := Vector2(-dv.y, dv.x)
+	var G := {"tg": tg, "ph": "gather", "t0": t, "m": us, "sp": msp, "go": 0.0}
+	var row := 0
+	for k in ["c", "r", "h"]:
+		var L: Array = us.filter(func(q): return q.t == k)
+		var i := 0
+		while i < L.size():
+			var R: Array = L.slice(i, i + 8)
+			for j in R.size():
+				var q = R[j]
+				var off := (j - (R.size() - 1) / 2.0) * 24.0
+				var D := 370.0 + row * 24.0
+				q.sq = G
+				q.tgt = null
+				q.goal = (tg.p as Vector2) + dv * D + pv * off
+				q.pk = -1
+				q.spc = 0.0
+			row += 1
+			i += 8
+	msg("공격 대형으로 모이는 중… 다 모이면 한꺼번에 돌격해요")
+
+func sq_tick(u: Dictionary) -> void:
+	var G: Dictionary = u.sq
+	if G.tg.cap or G.tg.hp <= 0 or t - G.t0 > 60.0:
+		u.sq = null
+		u.spc = 0.0
+		return
+	if G.ph == "gather":
+		var L: Array = G.m.filter(func(q): return q.hp > 0 and q.sq != null and is_same(q.sq, G))
+		var ok := L.filter(func(q): return q.goal == null).size()
+		if t - G.t0 > 14.0 or ok >= ceili(L.size() * 0.85):
+			G.ph = "go"
+			G.go = t
+			for q in L:
+				q.goal = null
+				if q.t != "h":
+					q.tgt = G.tg
+			if L.size() > 0:
+				msg("돌격!")
+	else:
+		u.spc = G.sp if u.t == "h" else 0.0
+		if t - G.go > 20.0:
+			u.sq = null
+			u.spc = 0.0
+
 func ctrl(u: Dictionary, dt: float) -> void:
 	u.cd -= dt
-	if u.oilT > 0.0:
-		u.oilT -= dt
 	if u.hp < u.mh and (u.p as Vector2).distance_to(B) <= WELL:
 		var wr := 0.03 if t - u.cbt < 3.0 else 0.1
 		u.hp = minf(u.mh, u.hp + u.mh * wr * dt)
+	if u.sq != null:
+		sq_tick(u)
+	elif u.spc > 0.0 and u.goal == null:
+		u.spc = 0.0
+	if u.oilT > 0.0:
+		u.oilT -= dt
 	if u.t == "s":
 		if u.goal != null:
 			var o: Vector2 = u.p
@@ -559,30 +758,31 @@ func ctrl(u: Dictionary, dt: float) -> void:
 	if u.t == "m":
 		_miner(u, dt)
 		return
+	if u.t == "c" or u.t == "r":
+		var tg = u.tgt
+		# 방어막이 센 적 기지면 근처 수비 로봇부터
+		if tg != null and tg.has("op") and not tg.cap and shm(tg) < 0.5 and (u.p as Vector2).distance_to(tg.p) < u.rng + 260.0:
+			var dfs: Array = ens.filter(func(e): return e.hp > 0 and e.get("oid", -1) == tg.id)
+			var D = _near_in(u.p, dfs, u.rng + 200.0)
+			if D != null:
+				if (u.p as Vector2).distance_to(D.p) > u.rng:
+					move_to(u, D.p, dt)
+				elif u.cd <= 0.0:
+					_atk(u, D)
+				return
+		if smart_ai(u, dt):
+			return
 	if u.tgt != null and (u.tgt.hp <= 0 or u.tgt.get("cap", false)):
 		u.tgt = null
 	if u.t != "h" and u.tgt != null:
 		var tg: Dictionary = u.tgt
-		# 방어막이 센 적 기지면 근처 수비 로봇부터
-		if tg.has("op") and shm(tg) < 0.5 and (u.p as Vector2).distance_to(tg.p) < u.rng + 260.0:
-			var dfd = null
-			var bd: float = u.rng + 200.0
-			for e in ens:
-				if e.oid == tg.id and e.hp > 0:
-					var dd := (u.p as Vector2).distance_to(e.p)
-					if dd < bd:
-						bd = dd
-						dfd = e
-			if dfd != null:
-				tg = dfd
 		var d := (u.p as Vector2).distance_to(tg.p)
 		var reach: float = u.rng + (20.0 if tg.has("op") else 0.0)
 		if d > reach:
 			if move_to(u, tg.p, dt) < 0.0:
 				u.tgt = null
 		elif u.cd <= 0.0:
-			hit(u, tg, patk(u))
-			u.cd = 1.0 / (u.aspd * (1.2 if u.oilT > 0.0 else 1.0))
+			_atk(u, tg)
 		return
 	if u.goal != null:
 		if move_to(u, u.goal, dt) <= 2.0:
@@ -672,31 +872,102 @@ func _support(u: Dictionary, dt: float) -> void:
 		if a.hp < a.mh and (u.p as Vector2).distance_to(a.p) < u.rng:
 			if b == null or a.hp / a.mh < b.hp / b.mh:
 				b = a
+	var EN: Array = ens.filter(func(e): return e.hp > 0 and seen(e.p))
+	var th = _near_in(u.p, EN, 95.0)
+	if th != null and (u.hp < u.mh * 0.6 or (u.p as Vector2).distance_to(th.p) < 55.0):
+		_away(u, th.p, 30.0, dt)
+	else:
+		var tA = null
+		var tw := 1e9
+		for a in bots:
+			if is_same(a, u) or a.t == "s" or a.t == "m" or a.hp >= a.mh:
+				continue
+			var d := (u.p as Vector2).distance_to(a.p)
+			if d > 460.0:
+				continue
+			var w: float = a.hp / a.mh + d / 900.0
+			if w < tw:
+				tw = w
+				tA = a
+		var fol = tA
+		if fol == null:
+			fol = _near_in(u.p, bots.filter(func(a): return a.t == "c" or a.t == "r"), 500.0)
+		var want: float = u.rng * 0.85 if tA != null else 100.0
+		if fol != null and (u.p as Vector2).distance_to(fol.p) > want:
+			var op: Vector2 = u.p
+			var n0 := _min_d(op, EN)
+			move_to(u, fol.p, dt)
+			var n1 := _min_d(u.p, EN)
+			if n1 < 80.0 and n1 < n0 and not (tA != null and tA.hp < tA.mh * 0.35 and u.hp > u.mh * 0.5):
+				u.p = op
 	if b != null:
 		b.hp = minf(b.mh, b.hp + heal_v(u) * dt)
 		if rng.randf() < dt * 8.0:
 			fx.append({"k": "heal", "p": u.p, "q": b.p, "t": 0.15})
-	var fol = null
-	var fd := 500.0
-	for a in bots:
-		if a.t == "c" or a.t == "r":
-			var d := (u.p as Vector2).distance_to(a.p)
-			if d < fd:
-				fd = d
-				fol = a
-	if fol != null and fd > 100.0:
-		move_to(u, fol.p, dt)
+
+func _min_d(p: Vector2, arr: Array) -> float:
+	var m := 1e9
+	for e in arr:
+		m = minf(m, p.distance_to(e.p))
+	return m
 
 # ═════════ 적 행동 ═════════
+# 웹 ePick: 가깝고 체력 낮은 로봇 · 지원/원거리 우선 · 기지를 치는 로봇 우선
+func e_pick(u: Dictionary, L: Array, o) -> Variant:
+	var b = null
+	var bs := 1e9
+	var rg: float = float(u.get("rng", 30.0)) + 60.0
+	for r in L:
+		if r.hp <= 0:
+			continue
+		var dd := (u.p as Vector2).distance_to(r.p)
+		var sc: float = dd * 0.9 + (r.hp / r.mh) * 110.0
+		if dd < rg and r.t == "h":
+			sc -= 40.0
+		elif dd < rg and r.t == "r":
+			sc -= 20.0
+		if r.t == "m" or r.t == "s":
+			sc += 40.0
+		if o != null and r.tgt != null and is_same(r.tgt, o):
+			sc -= 35.0
+		if sc < bs:
+			bs = sc
+			b = r
+	return b
+
+# 웹 eKite: 적 사격병이 우리 근접 로봇에게서 물러나기
+func e_kite(u: Dictionary, dt: float, lim = null, lr: float = 0.0) -> bool:
+	if u.rng <= 40.0 or u.cd < 0.3:
+		return false
+	var m = _near_in(u.p, bots.filter(func(r): return r.t == "c" and r.hp > 0), 58.0)
+	if m == null:
+		return false
+	var p: Vector2 = u.p
+	var d := maxf(p.distance_to(m.p), 1.0)
+	var np := p + (p - (m.p as Vector2)) / d * 30.0
+	if lim != null and np.distance_to(lim) > lr:
+		return false
+	step_to(u, np, dt)
+	return true
+
+func _e_fight(u: Dictionary, tg: Dictionary, dt: float) -> void:
+	if (u.p as Vector2).distance_to(tg.p) > u.rng:
+		step_to(u, tg.p, dt)
+	elif u.cd <= 0.0:
+		hit(u, tg, u.atk)
+		u.cd = 1.0 / u.aspd
+
 func ectrl(u: Dictionary, dt: float) -> void:
 	u.cd -= dt
 	if u.raid:
 		u.eai -= dt
 		if u.eai <= 0.0 or u.et == null or u.et.hp <= 0 or (u.p as Vector2).distance_to(u.et.p) > 260.0:
 			u.eai = 0.4
-			u.et = nearest(u.p, bots, 220.0)
+			u.et = e_pick(u, bots.filter(func(r): return (u.p as Vector2).distance_to(r.p) < 220.0), null)
 		if u.et != null:
-			engage(u, u.et, dt)
+			if e_kite(u, dt):
+				return
+			_e_fight(u, u.et, dt)
 			return
 		if (u.p as Vector2).distance_to(B) > 45.0:
 			step_to(u, B, dt)
@@ -707,7 +978,7 @@ func ectrl(u: Dictionary, dt: float) -> void:
 		if u.ag != null and u.ag.hp <= 0:
 			u.ag = nearest(u.p, bots, 400.0)
 		if u.ag != null:
-			engage(u, u.ag, dt)
+			_e_fight(u, u.ag, dt)
 			return
 		if (u.p as Vector2).distance_to(B) < 320.0:
 			if (u.p as Vector2).distance_to(B) > 45.0:
@@ -716,28 +987,25 @@ func ectrl(u: Dictionary, dt: float) -> void:
 				hit_base(u)
 			return
 	var o: Dictionary = u.o
-	var tg = null
+	var p = null
 	if o.al > 0.0:
+		var op: Vector2 = o.p
+		if o.ft == null or o.ft.hp <= 0 or op.distance_to(o.ft.p) > 440.0 or t - o.fts > 0.6:
+			o.fts = t
+			o.ft = e_pick(o, bots.filter(func(r): return op.distance_to(r.p) < 420.0), o)
 		u.eai -= dt
-		if u.eai <= 0.0 or u.et == null or u.et.hp <= 0 or (o.p as Vector2).distance_to(u.et.p) > 440.0:
+		if u.eai <= 0.0 or u.et == null or u.et.hp <= 0 or op.distance_to(u.et.p) > 440.0:
 			u.eai = 0.4
-			u.et = null
-			var bd := 1e9
-			for r in bots:
-				if r.hp > 0 and (o.p as Vector2).distance_to(r.p) < 420.0:
-					var d := (u.p as Vector2).distance_to(r.p)
-					if d < bd:
-						bd = d
-						u.et = r
-		tg = u.et
-	if tg != null and u.t != "k" and u.hp < u.mh * 0.25 and (u.p as Vector2).distance_to(o.p) > 50.0:
+			u.et = e_pick(u, bots.filter(func(r): return op.distance_to(r.p) < 420.0), o)
+		p = o.ft if (o.ft != null and (u.p as Vector2).distance_to(o.ft.p) < u.rng + 140.0) else u.et
+	if p != null and u.t != "k" and u.hp < u.mh * 0.25 and (u.p as Vector2).distance_to(o.p) > 50.0:
 		step_to(u, o.p, dt)
-		if u.cd <= 0.0 and (u.p as Vector2).distance_to(tg.p) <= u.rng:
-			hit(u, tg, u.atk)
+		if u.cd <= 0.0 and (u.p as Vector2).distance_to(p.p) <= u.rng:
+			hit(u, p, u.atk)
 			u.cd = 1.0 / u.aspd
 		return
-	if tg != null:
-		engage(u, tg, dt)
+	if p != null:
+		_e_fight(u, p, dt)
 	else:
 		step_to(u, u.home, dt)
 
@@ -970,6 +1238,9 @@ func click(w: Vector2, add: bool) -> void:
 	var s := selected()
 	if s.is_empty():
 		return
+	for q in s:
+		q.sq = null
+		q.spc = 0.0
 	var e = foe_at(w)
 	if e != null:
 		var n := 0
@@ -978,9 +1249,15 @@ func click(w: Vector2, add: bool) -> void:
 				q.tgt = e
 				q.goal = null
 				n += 1
+			elif q.t == "h":
+				q.tgt = null
+				q.goal = null
 		if n > 0:
 			fx.append({"k": "atk", "p": e.p, "t": 0.75})
+			if e.has("op"):
+				squad(s.filter(func(q): return q.t == "c" or q.t == "r" or q.t == "h"), e)
 			return
+		msg("공격할 수 있는 로봇이 선택되지 않았어요")
 	var m = mine_at(w)
 	if m != null and s.any(func(q): return q.t == "m"):
 		var n := 0
@@ -1004,9 +1281,15 @@ func command_move(s: Array, w: Vector2) -> void:
 	var ok := 0
 	var fail := 0
 	var mw := float(MAPW)
+	var msp := 1e9
+	for u in s:
+		if u.t != "s":
+			msp = minf(msp, u.sp)
 	for k in n:
 		var u = s[k]
-		var off := Vector2.ZERO if n == 1 else Vector2.from_angle(TAU * k / float(n)) * (16.0 + 7.0 * sqrt(float(n)))
+		# 웹과 같은 해바라기 대형 · 여러 대면 가장 느린 로봇 속도로 함께
+		var off := Vector2.ZERO if k == 0 else Vector2.from_angle(k * 2.4) * (19.0 * sqrt(float(k)))
+		u.spc = msp if (n > 1 and u.t != "s" and msp < 1e8) else 0.0
 		var goal := (w + off).clamp(Vector2(10, 10), Vector2(mw - 10, mw - 10))
 		u.tgt = null
 		if u.t == "m":
@@ -2578,7 +2861,12 @@ func _selftest() -> void:
 	do_upgrade()
 	do_upgrade()
 	click(o0.p, false)
-	await _wait(14.0)
+	print("SQUAD n=", bots.filter(func(q): return q.sq != null).size(), " msg=", msg_text)
+	await _wait(5.0)
+	cam_to(o0.p)
+	await _shot("04a_gather")
+	print("SQUAD2 ph=", bots.filter(func(q): return q.sq != null).map(func(q): return q.sq.ph), " msg=", msg_text)
+	await _wait(9.0)
 	cam_to(o0.p)
 	await _shot("04_battle")
 	await _wait(40.0)
