@@ -155,8 +155,17 @@ func _ready() -> void:
 	sv_load()
 	new_game()
 	scene = "lobby"
+	acct = preload("res://scripts/account.gd").new()
+	acct.g = self
+	acct.srv = "m" if touch_mode else "pc"
+	add_child(acct)
+	get_tree().set_auto_accept_quit(false)
 	if OS.get_cmdline_user_args().has("--selftest"):
 		_selftest()
+	else:
+		var had: bool = await acct.boot()
+		if not had:
+			acct.show_login("")
 
 func _sb(bg: Color, border: Color) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
@@ -2170,7 +2179,9 @@ const SV_P := "user://sv.dat"
 var scene := "lobby"
 var lsec := "main"
 var lmsg := ""
-var SV := {"cs": 0, "ss": 0, "vol_s": 70, "vol_b": 35, "mute": false, "uis": 100, "tut_done": false, "bpxp": 0}
+const SV_BASE := {"cs": 0, "ss": 0, "vol_s": 70, "vol_b": 35, "mute": false, "uis": 100, "tut_done": false}
+var SV := SV_BASE.duplicate(true)
+var acct = null
 var save_acc := 0.0
 var slider_drag = null
 var wipe_arm := ""
@@ -2189,10 +2200,12 @@ func sv_load() -> void:
 	_sv_defaults()
 	_apply_sv()
 
-func sv_save() -> void:
+func sv_save(from_cloud: bool = false) -> void:
 	var f := FileAccess.open(SV_P, FileAccess.WRITE)
 	if f != null:
 		f.store_var(SV)
+	if not from_cloud and acct != null:
+		acct.mark()
 
 func _apply_sv() -> void:
 	muted = SV.mute
@@ -2229,6 +2242,8 @@ func save_game() -> void:
 	var f := FileAccess.open(SAVE_P, FileAccess.WRITE)
 	if f != null:
 		f.store_var(S)
+	if acct != null:
+		acct.mark()
 
 func load_game() -> bool:
 	if not has_save():
@@ -2543,6 +2558,7 @@ func _build_lobby() -> void:
 			_add("lmute", Rect2(pr.position.x + 20.0, y + 192.0, 140.0, 36.0))
 			_add("lbgm", Rect2(pr.position.x + 20.0, y + 234.0, 320.0, 36.0))
 			_add("lkeys", Rect2(pr.position.x + 20.0, y + 300.0, 220.0, 38.0))
+			_add("lacct", Rect2(pr.position.x + 252.0, y + 300.0, 220.0, 38.0))
 			_add("lwipe", Rect2(pr.position.x + 20.0, y + 366.0, 200.0, 38.0))
 			_add("lwipeall", Rect2(pr.position.x + 232.0, y + 366.0, 200.0, 38.0))
 
@@ -2589,6 +2605,11 @@ func _lobby(f: Font) -> void:
 
 func _logo(f: Font) -> void:
 	var u := ui_size()
+	if acct != null:
+		var who := "로그인 안 함 · 이 기기에만 저장"
+		if acct.ses != null and str(acct.ses.get("nick", "")) != "":
+			who = str(acct.ses.nick) + "#" + str(acct.ses.get("tag", "SR1")) + " · " + ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨")
+		draw_string(f, Vector2(14, 22), who, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
 	draw_string(f, Vector2(0, 92), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#5a3a08"))
 	draw_string(f, Vector2(0, 88), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#f2c86a"))
 	draw_string(f, Vector2(0, 118), "외 계  기 지  정 복  전 략", HORIZONTAL_ALIGNMENT_CENTER, u.x, 12, Color("#8a9bad"))
@@ -2690,6 +2711,7 @@ func _lobby_set(f: Font, hov) -> void:
 				var nm: String = "자동 (장착한 테마 곡)" if b == "auto" else ("기본 배경음" if b == "base" else item(b).get("n", b) + " 테마곡")
 				_btn(f, r, "배경음: " + nm + "  ▸", hov == it, 14)
 			"lkeys": _btn(f, r, "조작법 전체 보기", hov == it, 14)
+			"lacct": _btn(f, r, "계정 관리", hov == it, 14)
 			"lwipe": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", hov == it, 14, Color("#ffb0a0"))
 			"lwipeall": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipeall" else "게임 전체 초기화", hov == it, 14, Color("#ff9a8a"))
 			"lback": _btn(f, r, "뒤로", hov == it, 15)
@@ -2704,7 +2726,7 @@ func _lobby_set(f: Font, hov) -> void:
 				draw_string(f, Vector2(r.end.x + 14.0, r.position.y + 21.0), str(int(v)) + "%", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd76a"))
 	draw_string(f, Vector2(x, y + 68.0), "화면 · 소리", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
 	draw_string(f, Vector2(x + 150.0, y + 215.0), "게임 중에도 M 키로 음소거를 켜고 끌 수 있어요", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
-	draw_string(f, Vector2(x, y + 292.0), "조작", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x, y + 292.0), "조작 · 계정", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
 	draw_string(f, Vector2(x, y + 358.0), "데이터", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
 
 const NOTES := [["고도판 첫 버전", ["웹 SOROK을 고도 엔진으로 옮겼어요 (PC · 모바일 같은 코드)", "웹과 같은 전투 AI · 공격 대형 돌격 · 지원 로봇 · 적 카이팅", "올렸을 때 말풍선 · 휠 이동 · 가장자리 이동 · 깃발 · 조작법 창", "로봇끼리 안 겹치게 밀어내기 (고도판에서 새로 추가)", "효과 · 효과음 · 배경음 · 승리/패배 연출", "로비 · 설정 · 저장 · 이어하기 · 튜토리얼"]]]
@@ -2765,6 +2787,9 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			_apply_sv()
 			sv_save()
 		"lkeys": keys_open = true
+		"lacct":
+			if acct != null:
+				acct.show_panel()
 		"lbgm":
 			var opts: Array = ["auto", "base"]
 			for id in MUS_IDS:
@@ -5183,6 +5208,8 @@ func _shop(f: Font, hov) -> void:
 
 # ═════════ 입력 ═════════
 func _unhandled_input(e: InputEvent) -> void:
+	if acct != null and acct.is_open():
+		return
 	if scene == "lobby":
 		_lobby_input(e)
 		return
@@ -5433,13 +5460,24 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		if scene == "game":
 			save_game()
+		if acct != null and what != NOTIFICATION_WM_CLOSE_REQUEST:
+			acct.push()
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_quit_saved()
 	if what == NOTIFICATION_WM_MOUSE_EXIT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		mouse_in = false
 	elif what == NOTIFICATION_WM_MOUSE_ENTER:
 		mouse_in = true
 
+func _quit_saved() -> void:
+	if acct != null and acct.ses != null:
+		await acct.push()
+	get_tree().quit()
+
 func _process(dt: float) -> void:
 	t_real += dt
+	if acct != null:
+		acct.tick(dt)
 	_tick_fx(dt)
 	_bgm_tick()
 	msg_t = maxf(0.0, msg_t - dt)
@@ -5961,6 +5999,18 @@ func _selftest() -> void:
 	print("BP ", lmsg, " cs=", SV.cs, " fbox=", SV.fbox)
 	lsec = "main"
 	await _shot("00i_main_skin")
+	var pk: String = acct.pack()
+	var cs0: int = SV.cs
+	SV.cs = 1
+	acct.apply_cloud(pk)
+	print("ACCT pack->apply cs ", cs0, "->", SV.cs, " eq=", SV.eq, " own=", SV.own.size(), " bp=", SV.bp.xp)
+	acct.show_login("")
+	await _shot("00j_login")
+	var jr: Dictionary = await acct.idt("signInWithPassword", {"email": "nobody-ci-test@sorok.invalid", "password": "wrongpass1", "returnSecureToken": true})
+	print("ACCT net ", jr.get("err", "ok"), " -> ", acct.err_txt(str(jr.get("err", ""))))
+	acct.show_create()
+	await _shot("00k_signup")
+	acct.hide_ui()
 	start_game(false)
 	await _wait(0.3)
 	await _shot("01_start")

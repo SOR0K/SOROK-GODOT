@@ -58,6 +58,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ls build/SOROK.exe build/SOROK.apk
+          ls build
           gh release delete app-latest -y --cleanup-tag || true
-          gh release create app-latest build/SOROK.exe build/SOROK.apk --title "SOROK 최신 버전 (${GITHUB_SHA::7})" --notes "main 가지에 올라온 최신 코드로 자동으로 만든 파일이에요. PC는 SOROK.exe, 안드로이드는 SOROK.apk를 받아서 실행하세요." --latest
+          gh release create app-latest build/SOROK.* --title "SOROK 최신 버전 (${GITHUB_SHA::7})" --notes "main 가지에 올라온 최신 코드로 자동으로 만든 파일이에요. PC는 SOROK.exe, 안드로이드는 SOROK.apk를 받아서 실행하세요." --latest
