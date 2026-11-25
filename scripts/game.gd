@@ -145,6 +145,7 @@ func _ready() -> void:
 	cam = Camera2D.new()
 	add_child(cam)
 	cam.make_current()
+	_snd_init()
 	new_game()
 	if OS.get_cmdline_user_args().has("--selftest"):
 		_selftest()
@@ -526,6 +527,14 @@ func shm(o: Dictionary) -> float:
 	return f + (1.0 - f) * (1.0 - float(o.n) / float(o.dt))
 
 func hit(a: Dictionary, b: Dictionary, dmg: float) -> void:
+	if a.has("base"):
+		sfx_at("myturret", a.p if a.has("p") else B)
+	elif a.has("op"):
+		sfx_at("turret", a.p)
+	elif a.team == 0:
+		sfx_at("shoot" if float(a.get("rng", 0.0)) > 40.0 else "hit", a.p)
+	else:
+		sfx_at("ehit", a.p)
 	a.cbt = t
 	b.cbt = t
 	if b.has("op") and a.team == 0:
@@ -542,6 +551,7 @@ func hit(a: Dictionary, b: Dictionary, dmg: float) -> void:
 		boom(b.p, Color("#fff6d6") if a.team == 0 else Color("#ff7a66"))
 
 func hit_base(u: Dictionary) -> void:
+	sfx("basehit")
 	base.hp -= u.atk
 	u.cd = 1.0 / u.aspd
 	fx.append({"k": "imp", "p": B + Vector2(rng.randf_range(-20, 20), rng.randf_range(-20, 20)), "t": 0.18, "c": Color("#ff7a66")})
@@ -874,6 +884,7 @@ func _miner(u: Dictionary, dt: float) -> void:
 			else:
 				var g: float = u.c * eco()
 				ore += g
+				sfx_at("ore", u.p)
 				u.mo += g
 				SS.earn += g
 			u.c = 0
@@ -1044,6 +1055,7 @@ func raid() -> void:
 			ev = mini(3, tier - 1)
 		ens.append(mk_raid("c" if rng.randf() < 0.55 else "r", lv, ev, a + Vector2(rng.randf_range(-80, 80), rng.randf_range(-80, 80))))
 	var nm: String = ["약한", "보통", "강한", "매우 강한", "재앙급"][tier]
+	sfx("raid")
 	msg("레이드 출현! " + nm + " 적 " + str(n) + "마리가 기지로 몰려와요 (Lv " + str(lv) + ")")
 
 # ═════════ 생산·업그레이드 ═════════
@@ -1056,9 +1068,11 @@ func produce(k: String) -> void:
 		return
 	if ore < c:
 		msg("광석이 부족해요 (" + str(c) + " 필요)")
+		sfx("err")
 		return
 	ore -= c
 	SS.made += 1
+	sfx("spawn")
 	SS.spRobot += c
 	var u := mk_bot(k, B + Vector2(rng.randf_range(-40, 50), rng.randf_range(-50, 40)) + Vector2(70, 0))
 	bots.append(u)
@@ -1085,8 +1099,10 @@ func do_upgrade() -> void:
 		n += 1
 	if n > 0:
 		msg(str(n) + "대 업그레이드 완료!")
+		sfx("up")
 	elif s.any(func(u): return u.lv < 11):
 		msg("광석이 부족해요")
+		sfx("err")
 	else:
 		msg("이미 최고 레벨이에요")
 
@@ -1107,8 +1123,10 @@ func do_evolve() -> void:
 		n += 1
 	if n > 0:
 		msg("진화 성공! 로봇이 보랏빛으로 변했어요")
+		sfx("evo")
 	elif need > 0:
 		msg("진화석이 부족해요 (필요 " + str(need) + ")")
+		sfx("err")
 	else:
 		msg("11레벨 로봇만 진화할 수 있어요")
 
@@ -1147,6 +1165,7 @@ func revive(d: Dictionary) -> void:
 	calc(u)
 	u.hp = u.mh
 	bots.append(u)
+	sfx("spawn")
 	fx.append({"k": "txt", "p": u.p + Vector2(0, -30), "t": 1.2, "s": "부활!"})
 
 func rev_time(d: Dictionary) -> float:
@@ -1271,6 +1290,7 @@ func click(w: Vector2, add: bool) -> void:
 				q.tgt = null
 				q.goal = null
 		if n > 0:
+			sfx("cmd_atk")
 			fx.append({"k": "atk", "p": e.p, "t": 0.75, "tg": e, "big": e.has("op"), "pts": s.filter(func(q): return q.t == "c" or q.t == "r").map(func(q): return q.p)})
 			if e.has("op"):
 				squad(s.filter(func(q): return q.t == "c" or q.t == "r" or q.t == "h"), e)
@@ -1290,6 +1310,7 @@ func click(w: Vector2, add: bool) -> void:
 			q.goal = null
 			n += 1
 		if n > 0:
+			sfx("cmd_mv")
 			fx.append({"k": "mine", "p": m.p, "t": 0.75, "pts": s.filter(func(q): return q.t == "m").map(func(q): return q.p)})
 		return
 	command_move(s, w)
@@ -1321,6 +1342,7 @@ func command_move(s: Array, w: Vector2) -> void:
 		u.pk = -1
 		ok += 1
 	if ok > 0:
+		sfx("cmd_mv")
 		fx.append({"k": "mv", "p": w, "t": 0.75, "pts": s.map(func(q): return q.p)})
 	if fail > 0:
 		msg("밝혀진 길이 없어서 갈 수 없어요 · 정찰 로봇으로 길을 먼저 밝혀 주세요")
@@ -1584,6 +1606,10 @@ func _build_ctl(sr: Rect2) -> void:
 			_add("cu_see", Rect2(x0 + w - 62.0, ry + 7.0, 56.0, 28.0), true, "", q)
 
 func ui_press(it: Dictionary, rclick: bool = false) -> void:
+	if it.id in ["pause", "resume"]:
+		sfx("pause")
+	elif not (it.id in ["shopbg", "infobg", "ctllist", "card"]):
+		sfx("click")
 	match it.id:
 		"restart":
 			paused = false
@@ -1785,6 +1811,7 @@ func throw_at(w: Vector2) -> void:
 				sc += 1
 		oil -= 1
 		fx.append({"k": "ring", "p": w, "t": 0.6, "r": 70.0})
+		sfx("oil")
 		msg("기름 뿌리기! 로봇 " + str(us_.size()) + "대가 20초간 이속·공속 +20%" + ("" if sc == 0 else " · 정찰 로봇 " + str(sc) + "대 연료 +50%"))
 	elif aim == "vb":
 		ore -= 60.0
@@ -1793,12 +1820,14 @@ func throw_at(w: Vector2) -> void:
 		reveal(w, 180.0)
 		fx.append({"k": "ring", "p": w, "t": 0.6, "r": 180.0})
 		msg("시야 폭탄! 주변이 영구적으로 밝혀졌어요")
+		sfx("vbomb")
 	elif aim == "dr":
 		ore -= 25.0
 		SS.spItem += 25
 		dr_cd = d_cd()
 		drones.append({"p": w, "t": 4.0})
 		msg("정찰 드론 투하! 4초 동안 보여요")
+		sfx("drone")
 	aim = ""
 
 func vis2(p: Vector2) -> bool:
@@ -2087,6 +2116,78 @@ func _hud(f: Font) -> void:
 	elif tip == "" and hov == null and not shop_open and not info_open and not paused and not won and not lost and dn == null and not box_active:
 		_world_tip(f)
 
+# ═════════ 소리 (웹 효과음·배경음을 WAV로 만든 것) ═════════
+const SFX_GAP := {"shoot": 0.06, "hit": 0.06, "ehit": 0.08, "die": 0.05, "ore": 0.12, "turret": 0.06, "myturret": 0.1, "basehit": 0.15, "up": 0.05, "click": 0.03, "cmd_atk": 0.05, "cmd_mv": 0.05}
+var snd_cache := {}
+var snd_last := {}
+var sfx_pool: Array = []
+var sfx_i := 0
+var bgm_p: AudioStreamPlayer = null
+var bgm_k := ""
+var vol_s := 70
+var vol_b := 35
+
+func _snd(k: String) -> AudioStream:
+	if not snd_cache.has(k):
+		var s = load("res://sounds/" + k + ".wav")
+		if s is AudioStreamWAV and k.begins_with("bgm_"):
+			var w := s as AudioStreamWAV
+			w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+			w.loop_begin = 0
+			w.loop_end = int(w.get_length() * w.mix_rate)
+		snd_cache[k] = s
+	return snd_cache[k]
+
+func _snd_init() -> void:
+	for i in 12:
+		var p := AudioStreamPlayer.new()
+		add_child(p)
+		sfx_pool.append(p)
+	bgm_p = AudioStreamPlayer.new()
+	add_child(bgm_p)
+	_vol_apply()
+
+func _vol_apply() -> void:
+	var sv := linear_to_db(maxf(0.0001, vol_s / 70.0))
+	for p in sfx_pool:
+		p.volume_db = sv
+	if bgm_p != null:
+		bgm_p.volume_db = linear_to_db(maxf(0.0001, vol_b / 35.0))
+
+func sfx(k: String) -> void:
+	if muted or vol_s <= 0 or sfx_pool.is_empty():
+		return
+	var gap: float = SFX_GAP.get(k, 0.0)
+	if gap > 0.0 and t_real - float(snd_last.get(k, -9.0)) < gap:
+		return
+	snd_last[k] = t_real
+	var s := _snd(k)
+	if s == null:
+		return
+	var p: AudioStreamPlayer = sfx_pool[sfx_i]
+	sfx_i = (sfx_i + 1) % sfx_pool.size()
+	p.stream = s
+	p.play()
+
+func sfx_at(k: String, p: Vector2) -> void:
+	if view_rect().grow(60.0).has_point(p):
+		sfx(k)
+
+func _bgm_tick() -> void:
+	if bgm_p == null:
+		return
+	var want := ""
+	if not muted and vol_b > 0 and not paused and not lost:
+		want = "bgm_raid" if raid_alive else "bgm_game"
+	if want == bgm_k:
+		return
+	bgm_k = want
+	if want == "":
+		bgm_p.stop()
+	else:
+		bgm_p.stream = _snd(want)
+		bgm_p.play()
+
 # ═════════ 효과: 파티클 · 레이드 띠 · 화살표 · 비네트 · 승리/패배 ═════════
 func boom(p: Vector2, c: Color) -> void:
 	for i in 6:
@@ -2342,6 +2443,7 @@ func toggle_flag(w: Vector2) -> void:
 		return
 	flags.append(w)
 	fx.append({"k": "ring", "p": w, "t": 0.6, "r": 40.0})
+	sfx("flag")
 	msg("깃발 " + str(flags.size()) + "번을 꽂았어요 (같은 곳에서 T를 다시 누르면 뽑혀요)")
 
 func _flags(f: Font) -> void:
@@ -2850,6 +2952,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			return
 		if kc == KEY_P:
 			paused = not paused
+			sfx("pause")
 			shop_open = false
 			return
 		if paused or won or lost:
@@ -2980,6 +3083,7 @@ func _notification(what: int) -> void:
 func _process(dt: float) -> void:
 	t_real += dt
 	_tick_fx(dt)
+	_bgm_tick()
 	msg_t = maxf(0.0, msg_t - dt)
 	tap_tip_t = maxf(0.0, tap_tip_t - dt)
 	if ctl_arm != -1 and t > ctl_arm_t:
@@ -3076,6 +3180,7 @@ func update_game(dt: float) -> void:
 	if t >= next_raid - 30.0 and not raid_warned:
 		raid_warned = true
 		msg("30초 뒤 레이드가 와요! 기지 방어를 준비하세요")
+		sfx("alarm")
 	if t >= next_raid:
 		raid_warned = false
 		raid()
@@ -3117,10 +3222,12 @@ func update_game(dt: float) -> void:
 			var oid: int = o.id
 			ens = ens.filter(func(e): return e.oid != oid or e.ag != null)
 			fx.append({"k": "ring", "p": o.p, "t": 0.8, "r": 90.0})
+			sfx("capture")
 			msg("기지 정복! 광석 +" + str(int(g)) + " · 진화석 +" + str(sg) + " · 수입 x" + str(snappedf(eco(), 0.01)))
 			if captured() >= outs.size():
 				won = true
 				won_at = t_real
+				sfx("victory")
 				wfx = []
 	# 죽은 로봇 정리
 	var ra: bool = ens.any(func(e): return e.raid)
@@ -3131,8 +3238,12 @@ func update_game(dt: float) -> void:
 	bots = bots.filter(func(u): return u.hp > 0)
 	lost_n += r0 - bots.size()
 	SS.lost += r0 - bots.size()
+	if bots.size() < r0:
+		sfx("lost")
 	var e0 := ens.size()
 	ens = ens.filter(func(e): return e.hp > 0)
+	if ens.size() < e0:
+		sfx("die")
 	kills += e0 - ens.size()
 	SS.kills += e0 - ens.size()
 	# 부활
@@ -3146,10 +3257,12 @@ func update_game(dt: float) -> void:
 		msg(UT[rdy[0].t].n + " 로봇이 기지에서 부활했어요")
 	if raid_alive and not ra:
 		msg("레이드 방어 성공!")
+		sfx("capture")
 	raid_alive = ra
 	if base.hp <= 0.0 and not lost:
 		lost = true
 		lost_at = t_real
+		sfx("boom")
 		cam_to(B)
 		msg("기지가 파괴됐어요")
 
@@ -3525,7 +3638,7 @@ func _selftest() -> void:
 	cam_to(B)
 	await _shot("06b_raid_ui")
 	Engine.time_scale = 1.0
-	base.hp = 0.0
+	base.hp = -100.0
 	await _wait(0.9)
 	await _shot("07_boom")
 	await _wait(2.4)
@@ -3538,6 +3651,7 @@ func _selftest() -> void:
 	await _shot("09_win_a")
 	await _wait(2.4)
 	await _shot("10_win_b")
+	print("SND bgm=", _snd("bgm_game") != null, " len=", snappedf(_snd("bgm_game").get_length(), 0.01), " victory=", _snd("victory") != null)
 	print("SELFTEST_DONE")
 	get_tree().quit()
 
