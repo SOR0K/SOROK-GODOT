@@ -3869,7 +3869,7 @@ func draw_preview(r: Rect2, kind: String, id, tm: float) -> void:
 				amb(P[2], tm, Vector2.ZERO, 140, 84, 0, 0, 0.8)
 		"box":
 			draw_rect(Rect2(0, 0, 140, 84), Color("#1a1420"))
-			var gold := id == "gold"
+			var gold: bool = str(id) == "gold"
 			draw_rect(Rect2(46, 30, 48, 36), Color("#8a5a20") if gold else Color("#5a3a7a"))
 			draw_rect(Rect2(42, 22, 56, 12), Color("#c9a23a") if gold else Color("#8a5ab0"))
 			draw_rect(Rect2(66, 22, 8, 44), Color("#ffd76a"))
@@ -4203,7 +4203,7 @@ func _draw_card(f: Font, r: Rect2, c: Dictionary) -> void:
 	for i in mini(2, L.size()):
 		draw_string(f, Vector2(r.position.x + 10, y + 38 + i * 15), L[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#9fb3c2"))
 	if c.get("st", "") != "":
-		var by := r.end.y - 38.0 - c.get("btns", []).size() * 34.0 - 4.0
+		var by: float = r.end.y - 38.0 - float(c.get("btns", []).size()) * 34.0 - 4.0
 		if c.get("bar", -1.0) >= 0.0:
 			draw_rect(Rect2(r.position.x + 8, by - 18, r.size.x - 16, 16), Color(1, 1, 1, 0.08))
 			draw_rect(Rect2(r.position.x + 8, by - 18, (r.size.x - 16) * clampf(c.bar, 0, 1), 16), Color("#5a7a9a"))
