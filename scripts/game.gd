@@ -74,6 +74,27 @@ var box_b := Vector2.ZERO
 var touches := {}
 var pinch = null
 var last_tap := {"t": -9.0, "k": ""}
+var last_num := {"t": -9.0, "k": ""}
+var mouse_ui := Vector2(-999, -999)
+var ui: Array = []
+var us := 1.0
+var touch_mode := false
+var shop_open := false
+var shop_tab := "prod"
+var shop_desc := ""
+var paused := false
+var aim := ""
+var vb_cd := 0.0
+var dr_cd := 0.0
+var drones: Array = []
+var sb_red: StyleBoxFlat
+var sb_hud: StyleBoxFlat
+var sb_badge: StyleBoxFlat
+var sb_btn_hi: StyleBoxFlat
+var sb_shop: StyleBoxFlat
+var sb_tab_on: StyleBoxFlat
+var sb_card: StyleBoxFlat
+var sb_card_hi: StyleBoxFlat
 
 func _ready() -> void:
 	get_window().content_scale_size = Vector2i(1280, 720)
@@ -83,6 +104,16 @@ func _ready() -> void:
 	sb_btn = _sb(Color(0.08, 0.11, 0.15, 0.94), Color("#c9a255"))
 	sb_dis = _sb(Color(0.06, 0.07, 0.09, 0.85), Color(0.3, 0.34, 0.4))
 	sb_panel = _sb(PANEL, Color(0.79, 0.64, 0.33, 0.7))
+	sb_red = _sb(Color(0.35, 0.08, 0.08, 0.92), Color("#ff6a55"))
+	sb_hud = _sb(Color(0.05, 0.07, 0.1, 0.94), Color(0.79, 0.64, 0.33, 0.55))
+	sb_badge = _sb(Color("#1c1406"), Color("#c9a255"))
+	sb_btn_hi = _sb(Color(0.16, 0.2, 0.26, 0.98), Color("#ffd76a"))
+	sb_shop = _sb(Color(0.06, 0.08, 0.11, 0.98), Color("#c9a255"))
+	sb_tab_on = _sb(Color(0.2, 0.15, 0.06, 0.95), Color("#ffd76a"))
+	sb_card = _sb(Color(0.09, 0.12, 0.16, 0.95), Color("#2f6a4a"))
+	sb_card_hi = _sb(Color(0.13, 0.18, 0.22, 0.98), Color("#5fe0a0"))
+	touch_mode = DisplayServer.is_touchscreen_available() or OS.get_cmdline_user_args().has("--touchui")
+	us = 1.3 if touch_mode else 1.0
 	rng.randomize()
 	RenderingServer.set_default_clear_color(FOG)
 	cam = Camera2D.new()
@@ -117,6 +148,10 @@ func new_game() -> void:
 	ore = 70.0
 	stone = 0
 	t = 0.0
+	vb_cd = 0.0
+	dr_cd = 0.0
+	drones.clear()
+	aim = ""
 	won = false
 	lost = false
 	kills = 0
@@ -551,14 +586,14 @@ func _nearest_foe(p: Vector2, r: float):
 		if e.hp <= 0:
 			continue
 		var d := p.distance_to(e.p)
-		if d < bd and seen(e.p):
+		if d < bd and vis2(e.p):
 			bd = d
 			best = e
 	for o in outs:
 		if o.cap:
 			continue
 		var d := p.distance_to(o.p)
-		if d < bd and seen(o.p):
+		if d < bd and vis2(o.p):
 			bd = d
 			best = o
 	return best
@@ -868,13 +903,13 @@ func foe_at(w: Vector2):
 	var bd := 26.0
 	for e in ens:
 		var d := (e.p as Vector2).distance_to(w)
-		if d < bd and seen(e.p):
+		if d < bd and vis2(e.p):
 			bd = d
 			best = e
 	if best != null:
 		return best
 	for o in outs:
-		if not o.cap and (o.p as Vector2).distance_to(w) < 44.0 and seen(o.p):
+		if not o.cap and (o.p as Vector2).distance_to(w) < 44.0 and vis2(o.p):
 			return o
 	return null
 
@@ -993,57 +1028,527 @@ func msg(s: String) -> void:
 	msg_text = s
 	msg_t = 4.0
 
-# ═════════ 화면 버튼 ═════════
-func buttons() -> Array:
-	var vs := vsize()
-	var out: Array = []
-	if won or lost:
-		out.append({"id": "restart", "r": Rect2(vs.x / 2.0 - 110.0, vs.y / 2.0 + 40.0, 220.0, 56.0), "l": "다시 시작", "sub": "", "on": true})
-		return out
-	var bw := 104.0
-	var bh := 76.0
-	var y := vs.y - bh - 12.0
-	for i in ORDER.size():
-		var k: String = ORDER[i]
-		var c: int = UT[k].c
-		out.append({"id": "p", "k": k, "r": Rect2(12.0 + i * (bw + 8.0), y, bw, bh), "l": UT[k].n, "sub": str(c), "on": ore >= c and cap_n(k) < CAP[k]})
-	var s := selected()
-	if not s.is_empty():
-		var y2 := y - 54.0
-		var cost := 0
-		for u in s:
-			if u.lv < 11:
-				cost += lvup_cost(u)
-		var evn := 0
-		for u in s:
-			if u.lv >= 11 and u.ev < 3:
-				evn += 1
-		out.append({"id": "up", "r": Rect2(12, y2, 170, 46), "l": "업그레이드", "sub": str(cost) if cost > 0 else "최고", "on": cost > 0 and ore >= 15})
-		out.append({"id": "evo", "r": Rect2(190, y2, 110, 46), "l": "진화", "sub": str(evn) + "대", "on": evn > 0})
-		out.append({"id": "sell", "r": Rect2(308, y2, 110, 46), "l": "한 번 더" if t < sell_arm else "판매", "sub": "", "on": true})
-		out.append({"id": "desel", "r": Rect2(426, y2, 90, 46), "l": "선택 해제", "sub": "", "on": true})
-	return out
+# ═════════ 화면 UI (웹 SOROK 틀 + PC/모바일 맞춤) ═════════
+# UI 좌표계: 화면 좌표 ÷ us (모바일은 us가 커서 버튼이 큼)
+func touch_ui() -> bool:
+	return touch_mode
 
-func btn_at(p: Vector2):
-	for b in buttons():
-		if (b.r as Rect2).has_point(p):
-			return b
+func ui_size() -> Vector2:
+	return vsize() / us
+
+func ui_hit(sp: Vector2):
+	var p := sp / us
+	for i in range(ui.size() - 1, -1, -1):
+		var it: Dictionary = ui[i]
+		if (it.r as Rect2).has_point(p):
+			return it
 	return null
 
-func press_btn(b: Dictionary) -> void:
-	match b.id:
-		"p":
-			produce(b.k)
-		"up":
-			do_upgrade()
-		"evo":
-			do_evolve()
-		"sell":
-			do_sell()
+func _add(id: String, r: Rect2, on: bool = true, tip: String = "", arg = null) -> Dictionary:
+	var it := {"id": id, "r": r, "on": on, "tip": tip, "arg": arg}
+	ui.append(it)
+	return it
+
+func hud_rect() -> Rect2:
+	var u := ui_size()
+	var mmw := mm_rect().size.x / us + 24.0
+	var w := 690.0
+	var x := maxf(12.0, (u.x - mmw - w) / 2.0)
+	if touch_ui():
+		x = 12.0
+	return Rect2(x, u.y - 128.0, w, 118.0)
+
+func _build_ui() -> void:
+	ui.clear()
+	var u := ui_size()
+	if won or lost:
+		_add("restart", Rect2(u.x / 2.0 - 110.0, u.y / 2.0 + 40.0, 220.0, 56.0))
+		return
+	if paused:
+		_add("resume", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 - 30.0, 240.0, 54.0))
+		_add("restart", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 + 34.0, 240.0, 54.0))
+		return
+	# 모바일: 왼쪽 위 일시정지 · 선택 해제
+	if touch_ui():
+		_add("pause", Rect2(12, 12, 52, 52))
+		if not selected().is_empty():
+			_add("desel", Rect2(72, 12, 150, 52))
+	# 아래 HUD
+	var h := hud_rect()
+	var ox := h.position.x
+	var oy := h.position.y
+	var bl: Array = [["all", "E", "전체", "모든 로봇 선택"], ["home", "Q", "기지", "기지로 화면 이동"], ["shop", "Y", "상점", "상점 열기"], ["pause", "P", "정지", "일시정지"]]
+	for i in bl.size():
+		var b: Array = bl[i]
+		_add(b[0], Rect2(ox + 244.0 + i * 70.0, oy + 8.0, 64.0, 42.0), true, b[3], b[1])
+	for i in 6:
+		var r := Rect2(ox + 530.0 + (i % 3) * 52.0, oy + 8.0 + int(i / 3) * 38.0, 48.0, 34.0)
+		if i < 5:
+			var k: String = ORDER[i]
+			_add("slot", r, true, UT[k].n + " 로봇 선택 (" + str(i + 1) + ") · 두 번 누르면 그쪽으로 이동", k)
+		else:
+			_add("vb", r, vb_cd <= 0.0 and ore >= 60.0, "시야 폭탄 (6) · 광석 60 · 던진 곳 주변을 영구히 밝혀요", null)
+	# 상점
+	if shop_open:
+		var sr := shop_rect()
+		_add("shopbg", sr, true)
+		_add("shopx", Rect2(sr.end.x - 44.0, sr.position.y + 10.0, 34.0, 30.0))
+		var tabs := [["prod", "로봇 생산"], ["item", "아이템"], ["up", "업그레이드 · 진화"]]
+		for i in tabs.size():
+			_add("tab", Rect2(sr.position.x + 12.0, sr.position.y + 56.0 + i * 46.0, 150.0, 38.0), true, "", tabs[i][0])
+		var cards := shop_cards()
+		var cw := 200.0
+		var cols := maxi(1, int((sr.size.x - 190.0) / (cw + 10.0)))
+		for i in cards.size():
+			var c: Dictionary = cards[i]
+			var r := Rect2(sr.position.x + 176.0 + (i % cols) * (cw + 10.0), sr.position.y + 56.0 + int(i / cols) * 72.0, cw, 62.0)
+			_add("card", r, c.on, c.desc, c)
+
+func shop_rect() -> Rect2:
+	var u := ui_size()
+	var w := minf(u.x - 40.0, 860.0)
+	var hh := minf(u.y - 160.0, 420.0)
+	return Rect2((u.x - w) / 2.0, maxf(20.0, (u.y - 140.0 - hh) / 2.0), w, hh)
+
+func shop_cards() -> Array:
+	var out: Array = []
+	if shop_tab == "prod":
+		for k in ORDER:
+			var c: int = UT[k].c
+			out.append({"act": "prod", "k": k, "n": UT[k].n + " 로봇 (" + str(cap_n(k)) + "/" + str(CAP[k]) + ")", "cost": str(c), "on": ore >= c and cap_n(k) < CAP[k], "desc": _unit_desc(k)})
+		var best = _best_dead()
+		if best == null:
+			out.append({"act": "rev", "n": "즉시 부활 (대기 없음)", "cost": "-", "on": false, "desc": "전투 로봇은 죽어도 레벨·진화 그대로 기지에서 부활해요. 기다리기 싫으면 광석으로 바로 살릴 수 있어요."})
+		else:
+			var rc := 15 * int(best.lv) + 30 * int(best.ev)
+			out.append({"act": "rev", "n": "즉시 부활 · " + UT[best.t].n + " Lv" + str(best.lv), "cost": str(rc), "on": ore >= rc, "desc": "부활 대기 중인 가장 강한 로봇을 바로 살려요 (레벨×15 + 진화×30)."})
+	elif shop_tab == "item":
+		out.append({"act": "vb", "n": "시야 폭탄" + ("" if vb_cd <= 0.0 else " (" + str(ceili(vb_cd)) + "초)"), "cost": "60", "on": vb_cd <= 0.0 and ore >= 60.0, "desc": "던진 곳 반경 180을 영구히 밝혀요. 재사용 대기 2분."})
+		out.append({"act": "dr", "n": "정찰 드론" + ("" if dr_cd <= 0.0 else " (" + str(ceili(dr_cd)) + "초)"), "cost": "25", "on": dr_cd <= 0.0 and ore >= 25.0, "desc": "던진 곳 반경 260을 4초 동안 보여줘요. 적 위치 확인용."})
+	else:
+		var s := selected()
+		var cost := 0
+		for q in s:
+			if q.lv < 11:
+				cost += lvup_cost(q)
+		out.append({"act": "upsel", "n": "선택 로봇 업그레이드 (" + str(s.size()) + "대)", "cost": str(cost) if cost > 0 else "-", "on": cost > 0 and ore >= 15.0, "desc": "선택한 로봇을 레벨이 낮은 순서대로 1레벨씩 올려요 (15 + 레벨×10)."})
+		for k in ORDER:
+			var n := 0
+			for q in bots:
+				if q.t == k:
+					n += 1
+			out.append({"act": "uptype", "k": k, "n": UT[k].n + " 전체 업그레이드 (" + str(n) + "대)", "cost": "", "on": n > 0 and ore >= 15.0, "desc": UT[k].n + " 로봇 전부를 레벨 낮은 순서로 1레벨씩 올려요."})
+		var evn := 0
+		for q in s:
+			if q.lv >= 11 and q.ev < 3:
+				evn += 1
+		out.append({"act": "evo", "n": "선택 로봇 진화 (" + str(evn) + "대)", "cost": "진화석", "on": evn > 0, "desc": "11레벨 로봇을 진화석으로 진화시켜요 (11 · 22 · 33개). 보랏빛으로 바뀌고 훨씬 강해져요."})
+		out.append({"act": "sell", "n": "한 번 더 누르면 판매" if t < sell_arm else "선택 로봇 판매", "cost": "", "on": not s.is_empty(), "desc": "판매하면 광석을 일부 돌려받아요. 진화석은 절반만 돌려받아요."})
+	return out
+
+func _unit_desc(k: String) -> String:
+	match k:
+		"s":
+			return "빠르고 시야가 넓어요. 암흑을 밝히는 유일한 로봇. 연료가 떨어지면 고장나요. 최대 3대."
+		"m":
+			return "광산을 눌러 지정하면 캐서 기지로 날라요. 6레벨부터 보라색 진화 광산에서 진화석을 캐요."
+		"c":
+			return "체력이 높은 탱커. 앞에서 적을 막아요."
+		"r":
+			return "사거리 150의 딜러. 근접 로봇 뒤에서 쏴요."
+		_:
+			return "다친 아군을 따라다니며 치료해요."
+
+func _best_dead():
+	var best = null
+	for d in dead:
+		if best == null or d.lv * 10 + d.ev * 30 > best.lv * 10 + best.ev * 30:
+			best = d
+	return best
+
+func ui_press(it: Dictionary) -> void:
+	match it.id:
+		"restart":
+			paused = false
+			shop_open = false
+			new_game()
+		"resume":
+			paused = false
+		"pause":
+			paused = true
+			shop_open = false
 		"desel":
 			clear_sel()
-		"restart":
-			new_game()
+		"all":
+			clear_sel()
+			for q in bots:
+				q.sel = true
+		"home":
+			cam_to(B)
+		"shop":
+			shop_open = not shop_open
+		"shopx":
+			shop_open = false
+		"tab":
+			shop_tab = it.arg
+		"slot":
+			num_key(ORDER.find(it.arg))
+		"vb":
+			start_aim("vb")
+		"card":
+			var c: Dictionary = it.arg
+			shop_desc = c.desc
+			if not it.on:
+				return
+			match c.act:
+				"prod":
+					produce(c.k)
+				"rev":
+					var d = _best_dead()
+					if d != null:
+						var rc := 15 * int(d.lv) + 30 * int(d.ev)
+						ore -= rc
+						dead.erase(d)
+						revive(d)
+				"vb":
+					shop_open = false
+					start_aim("vb")
+				"dr":
+					shop_open = false
+					start_aim("dr")
+				"upsel":
+					do_upgrade()
+				"uptype":
+					var lst: Array = bots.filter(func(q): return q.t == c.k)
+					lst.sort_custom(func(a, b): return a.lv < b.lv)
+					var n := 0
+					for q in lst:
+						var cc := lvup_cost(q)
+						if q.lv < 11 and ore >= cc:
+							ore -= cc
+							q.lv += 1
+							calc(q)
+							n += 1
+					msg((str(n) + "대 업그레이드 완료!") if n > 0 else "광석이 부족하거나 이미 최고 레벨이에요")
+				"evo":
+					do_evolve()
+				"sell":
+					do_sell()
+
+func start_aim(k: String) -> void:
+	if k == "vb":
+		if vb_cd > 0.0:
+			msg("시야 폭탄 재사용 대기 " + str(ceili(vb_cd)) + "초")
+			return
+		if ore < 60.0:
+			msg("광석이 부족해요 (60 필요)")
+			return
+	elif k == "dr":
+		if dr_cd > 0.0:
+			msg("드론 재사용 대기 " + str(ceili(dr_cd)) + "초")
+			return
+		if ore < 25.0:
+			msg("광석이 부족해요 (25 필요)")
+			return
+	aim = k
+	msg(("시야 폭탄" if k == "vb" else "드론") + "을 던질 곳을 지도에서 누르세요")
+
+func throw_at(w: Vector2) -> void:
+	if aim == "vb":
+		ore -= 60.0
+		vb_cd = 120.0
+		reveal(w, 180.0)
+		fx.append({"k": "ring", "p": w, "t": 0.6, "r": 180.0})
+	elif aim == "dr":
+		ore -= 25.0
+		dr_cd = 8.0
+		drones.append({"p": w, "t": 4.0})
+		msg("정찰 드론 투하! 4초 동안 보여요")
+	aim = ""
+
+func vis2(p: Vector2) -> bool:
+	if seen(p):
+		return true
+	for d in drones:
+		if p.distance_to(d.p) < 260.0:
+			return true
+	return false
+
+# 숫자키·슬롯: 같은 종류 선택, 두 번이면 그쪽으로 화면 이동
+func num_key(i: int) -> void:
+	if i < 0 or i >= ORDER.size():
+		return
+	var k: String = ORDER[i]
+	var dbl: bool = last_num.k == k and t - last_num.t < 0.4
+	last_num = {"k": k, "t": t}
+	if dbl:
+		var lst: Array = bots.filter(func(q): return q.t == k)
+		if not lst.is_empty():
+			var c := Vector2.ZERO
+			for q in lst:
+				c += q.p
+			cam_to(c / lst.size())
+		return
+	select_type(k)
+
+# ═════════ 화면 UI 그리기 ═════════
+func _ui_tf(pos: Vector2, rot: float, scl: float) -> void:
+	draw_set_transform_matrix(inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(rot, Vector2(scl, scl), 0.0, pos))
+
+func _ui_reset() -> void:
+	draw_set_transform_matrix(inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO))
+
+func _diamond(c: Vector2, r: float, col: Color) -> void:
+	draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r), c + Vector2(r, 0), c + Vector2(0, r), c + Vector2(-r, 0)]), col)
+
+func _hud(f: Font) -> void:
+	_build_ui()
+	_ui_reset()
+	var u := ui_size()
+	var hov = null
+	if not touch_ui():
+		hov = ui_hit(mouse_ui * us)
+	# 오른쪽 위 정보 띠
+	var items: Array = [["flag", str(captured()) + "/50", Color("#e6edf3")], ["stone", str(stone), Color("#c08cff")], ["base", str(int(base.hp)), Color("#8be28b") if base.hp / base.mh > 0.3 else Color("#ff8a6b")], ["raid", "진행 중" if raid_alive else "%d:%02d" % [int(maxf(0.0, next_raid - t) / 60.0), int(maxf(0.0, next_raid - t)) % 60], Color("#ff8a6b")], ["time", "%d:%02d" % [int(t / 60.0), int(t) % 60], Color("#e6edf3")]]
+	var tw := 0.0
+	for it in items:
+		tw += f.get_string_size(it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 34.0
+	var tx := u.x - tw - 12.0
+	sb_panel.draw(get_canvas_item(), Rect2(tx - 8.0, 8.0, tw + 16.0, 34.0))
+	for it in items:
+		var c := Vector2(tx + 9.0, 25.0)
+		match it[0]:
+			"flag":
+				draw_line(c + Vector2(-4, 7), c + Vector2(-4, -7), Color("#e6edf3"), 2.0)
+				draw_colored_polygon(PackedVector2Array([c + Vector2(-3, -7), c + Vector2(6, -4), c + Vector2(-3, -1)]), Color("#ffcf3a"))
+			"stone":
+				_diamond(c, 6.0, Color("#c08cff"))
+			"base":
+				draw_colored_polygon(Transform2D(0.0, c) * oct(7.0), Color("#5fe0c4"))
+			"raid":
+				draw_circle(c, 5.5, Color("#ff3a2a") if (raid_alive or next_raid - t < 30.0) else Color("#a8352a"))
+			"time":
+				draw_arc(c, 6.0, 0.0, TAU, 16, Color("#aab8c5"), 1.5)
+				draw_line(c, c + Vector2(0, -4), Color("#aab8c5"), 1.5)
+		draw_string(f, Vector2(tx + 20.0, 31.0), it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, it[2])
+		tx += f.get_string_size(it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 34.0
+	# 모바일 왼쪽 위 버튼
+	for it in ui:
+		if it.id == "pause" and (it.r as Rect2).position.y < 40.0:
+			sb_btn.draw(get_canvas_item(), it.r)
+			var r: Rect2 = it.r
+			draw_rect(Rect2(r.position + Vector2(18, 15), Vector2(5, 22)), Color.WHITE)
+			draw_rect(Rect2(r.position + Vector2(29, 15), Vector2(5, 22)), Color.WHITE)
+		elif it.id == "desel":
+			sb_red.draw(get_canvas_item(), it.r)
+			draw_string(f, (it.r as Rect2).position + Vector2(0, 34), "X  선택 해제", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
+	# 아래 HUD
+	var h := hud_rect()
+	sb_hud.draw(get_canvas_item(), h)
+	var ox := h.position.x
+	var oy := h.position.y
+	var s := selected()
+	var su = s[0] if not s.is_empty() else null
+	var stats: Array = []
+	if su != null:
+		var mo := "-"
+		if su.t == "m":
+			mo = str(carry(su))
+		elif su.t == "s":
+			mo = str(int(vis(su)))
+		stats = [[Color("#ff8a5a"), str(snappedf(patk(su), 0.1)) if UT[su.t].atk > 0 else "-", "공격력"], [Color("#ffd25a"), str(snappedf(su.aspd, 0.01)) if UT[su.t].atk > 0 else "-", "공격 속도"],
+			[Color("#7fd8ff"), str(int(su.sp)), "이동 속도"], [Color("#c0a0ff"), str(su.ev) + "/3", "진화 단계"],
+			[Color("#8be28b"), str(snappedf(heal_v(su), 0.1)) if su.t == "h" else (str(int(su.rng)) if su.rng > 0 else "-"), "초당 치유량" if su.t == "h" else "사거리"],
+			[Color("#f2a64e"), mo, "운반량" if su.t == "m" else ("시야" if su.t == "s" else "-")], [Color("#b8c2cc"), str(s.size()), "선택한 로봇 수"], [Color("#5fe0c4"), str(su.lv), "레벨"]]
+	else:
+		stats = [[Color("#ff8a5a"), str(snappedf(45.0 * (1.0 + 0.05 * captured()), 0.1)), "기지 포탑 공격력"], [Color("#ffd25a"), "1.00", "기지 포탑 공격 속도"], [Color("#7fd8ff"), "280", "기지 포탑 사거리"], [Color("#8be28b"), "2", "기지 체력 회복 (초당)"],
+			[Color("#b8c2cc"), str(captured()), "정복한 기지"], [Color("#f2d14e"), str(snappedf(income(), 0.1)), "초당 광석 수입"], [Color("#c0a0ff"), str(stone), "보유 진화석"], [Color("#5fe0c4"), str(bots.size()), "우리 로봇 수"]]
+	for i in 8:
+		var st_: Array = stats[i]
+		var px := ox + 12.0 + (i / 4) * 66.0
+		var py := oy + 22.0 + (i % 4) * 24.0
+		_diamond(Vector2(px + 5.0, py - 5.0), 5.0, st_[0])
+		draw_string(f, Vector2(px + 14.0, py), st_[1], HORIZONTAL_ALIGNMENT_LEFT, 52, 14, Color.WHITE)
+		if hov == null and not touch_ui() and Rect2(px, py - 14.0, 62.0, 20.0).has_point(mouse_ui):
+			_tooltip(f, st_[2])
+	# 초상화
+	var pr := Rect2(ox + 146.0, oy + 8.0, 90.0, 90.0)
+	draw_rect(pr, Color("#0a1016"))
+	draw_circle(pr.get_center(), 40.0, Color("#16222e"))
+	if su != null:
+		var col: Color = UT[su.t].col
+		if su.ev > 0:
+			col = [Color("#a98ae0"), Color("#9462e0"), Color("#7d3fdc")][su.ev - 1]
+		_ui_tf(pr.get_center(), -0.5, 2.6)
+		art_bot(self, su.t, col, UT[su.t].acc, t)
+	else:
+		_ui_tf(pr.get_center() + Vector2(0, 2), 0.0, 0.62)
+		art_base(self, Vector2.ZERO, t, inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(0.0, Vector2(0.62, 0.62), 0.0, pr.get_center() + Vector2(0, 2)))
+	_ui_reset()
+	var badge := ("x" + str(s.size())) if s.size() > 1 else (("Lv " + str(su.lv)) if su != null else "기지")
+	sb_badge.draw(get_canvas_item(), Rect2(pr.get_center().x - 26.0, pr.end.y - 4.0, 52.0, 18.0))
+	draw_string(f, Vector2(pr.get_center().x - 26.0, pr.end.y + 9.0), badge, HORIZONTAL_ALIGNMENT_CENTER, 52, 11, GOLD)
+	# 명령 버튼
+	for it in ui:
+		if it.id in ["all", "home", "shop", "pause"] and (it.r as Rect2).position.y > 40.0:
+			var r: Rect2 = it.r
+			(sb_btn_hi if hov == it else sb_btn).draw(get_canvas_item(), r)
+			var lab: String = {"all": "전체", "home": "기지", "shop": "상점", "pause": "정지"}[it.id]
+			if touch_ui():
+				draw_string(f, r.position + Vector2(0, 27), lab, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 15, Color.WHITE)
+			else:
+				draw_string(f, r.position + Vector2(0, 18), it.arg, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 14, GOLD)
+				draw_string(f, r.position + Vector2(0, 35), lab, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#c9d4dc"))
+	# 체력바 · 두 번째 바
+	var hpv: float
+	var hpm: float
+	if su != null:
+		hpv = 0.0
+		hpm = 0.0
+		for q in s:
+			hpv += maxf(0.0, q.hp)
+			hpm += q.mh
+	else:
+		hpv = maxf(0.0, base.hp)
+		hpm = base.mh
+	var rr := hpv / maxf(hpm, 1.0)
+	var hb := Rect2(ox + 244.0, oy + 58.0, 274.0, 22.0)
+	draw_rect(hb, Color("#081018"))
+	draw_rect(Rect2(hb.position, Vector2(hb.size.x * rr, hb.size.y)), Color("#46c060") if rr > 0.5 else (Color("#d8b040") if rr > 0.25 else Color("#d04a3a")))
+	draw_string(f, hb.position + Vector2(0, 16), ("" if su != null else "기지 ") + str(int(ceilf(hpv))) + " / " + str(int(hpm)), HORIZONTAL_ALIGNMENT_CENTER, hb.size.x, 13, Color.WHITE)
+	var b2 := 0.0
+	var b2t := ""
+	var b2c := Color("#3a7ae0")
+	if su != null:
+		if su.t == "s":
+			b2 = su.f / su.fm
+			b2t = "연료 " + str(int(su.f)) + " / " + str(int(su.fm))
+			b2c = Color("#e8c04a")
+		else:
+			b2 = su.lv / 11.0
+			b2t = "레벨 " + str(su.lv) + " / 11"
+	else:
+		var rl := next_raid - t
+		b2 = 1.0 if raid_alive else clampf(1.0 - rl / 600.0, 0.0, 1.0)
+		b2t = "레이드 진행 중!" if raid_alive else ("다음 레이드 %d:%02d" % [int(maxf(0.0, rl) / 60.0), int(maxf(0.0, rl)) % 60])
+		if raid_alive:
+			b2c = Color("#d04a3a")
+	var b2r := Rect2(ox + 244.0, oy + 86.0, 274.0, 18.0)
+	draw_rect(b2r, Color("#081018"))
+	draw_rect(Rect2(b2r.position, Vector2(b2r.size.x * b2, b2r.size.y)), b2c)
+	draw_string(f, b2r.position + Vector2(0, 14), b2t, HORIZONTAL_ALIGNMENT_CENTER, b2r.size.x, 12, Color.WHITE)
+	# 슬롯 (1~5 로봇 · 6 시야 폭탄)
+	for it in ui:
+		if it.id == "slot" or it.id == "vb":
+			var r: Rect2 = it.r
+			var on: bool = it.on
+			(sb_btn_hi if hov == it else (sb_btn if on else sb_dis)).draw(get_canvas_item(), r)
+			if it.id == "slot":
+				var k: String = it.arg
+				var n := 0
+				for q in bots:
+					if q.t == k:
+						n += 1
+				_ui_tf(r.get_center() + Vector2(-2, 0), 0.0, 1.15)
+				art_bot(self, k, UT[k].col, UT[k].acc, t)
+				_ui_reset()
+				draw_string(f, r.position + Vector2(3, 11), str(ORDER.find(k) + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 1, 1, 0.6))
+				draw_string(f, r.position + Vector2(0, 31), str(n), HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 4.0, 11, Color.WHITE)
+			else:
+				draw_circle(r.get_center() + Vector2(-2, 1), 8.0, Color("#ffe27a") if on else Color(0.5, 0.5, 0.5))
+				draw_circle(r.get_center() + Vector2(-2, 1), 4.0, Color("#0b1118"))
+				draw_string(f, r.position + Vector2(3, 11), "6", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 1, 1, 0.6))
+				if vb_cd > 0.0:
+					draw_string(f, r.position + Vector2(0, 31), str(ceili(vb_cd)), HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 4.0, 10, Color("#ff8a6b"))
+	# 광석
+	var orr := Rect2(ox + 530.0, oy + 86.0, 152.0, 26.0)
+	draw_rect(orr, Color("#081018"))
+	draw_string(f, orr.position + Vector2(8, 19), str(int(ore)), HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#5fe0c4"))
+	draw_string(f, orr.position + Vector2(0, 18), "+" + str(snappedf(income(), 0.1)) + "/s", HORIZONTAL_ALIGNMENT_RIGHT, orr.size.x - 8.0, 11, Color("#aab8c5"))
+	# 조준 중 안내
+	if aim != "":
+		var at := ("시야 폭탄" if aim == "vb" else "드론") + " 던질 곳을 누르세요 · " + ("오른쪽 클릭으로 취소" if not touch_ui() else "다시 누르면 취소")
+		var aw := f.get_string_size(at, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 30.0
+		draw_rect(Rect2(u.x / 2.0 - aw / 2.0, 52.0, aw, 30.0), Color(0.3, 0.24, 0.05, 0.9))
+		draw_string(f, Vector2(u.x / 2.0 - aw / 2.0 + 15.0, 72.0), at, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD)
+	# 메시지
+	if msg_t > 0.0:
+		var a := minf(1.0, msg_t)
+		var w := f.get_string_size(msg_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x + 36.0
+		var my := h.position.y - 24.0
+		draw_rect(Rect2(u.x / 2.0 - w / 2.0, my - 24.0, w, 36.0), Color(0.04, 0.055, 0.08, 0.88 * a))
+		draw_string(f, Vector2(u.x / 2.0 - w / 2.0 + 18.0, my), msg_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, a))
+	# 상점
+	if shop_open:
+		_shop(f, hov)
+	# 일시정지
+	if paused:
+		draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
+		draw_string(f, Vector2(0, u.y / 2.0 - 60.0), "일시정지", HORIZONTAL_ALIGNMENT_CENTER, u.x, 34, GOLD)
+		for it in ui:
+			sb_btn.draw(get_canvas_item(), it.r)
+			draw_string(f, (it.r as Rect2).position + Vector2(0, 34), "계속하기" if it.id == "resume" else "다시 시작", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
+	# 승리·패배
+	if won or lost:
+		draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
+		var big := "승리! 모든 기지를 정복했어요" if won else "패배 · 기지가 파괴됐어요"
+		draw_string(f, Vector2(0, u.y / 2.0 - 20.0), big, HORIZONTAL_ALIGNMENT_CENTER, u.x, 40, GOLD if won else Color("#ff8a6b"))
+		draw_string(f, Vector2(0, u.y / 2.0 + 16.0), "시간 " + "%d:%02d" % [int(t / 60.0), int(t) % 60] + "  ·  처치 " + str(kills) + "  ·  정복 " + str(captured()), HORIZONTAL_ALIGNMENT_CENTER, u.x, 16, Color.WHITE)
+		for it in ui:
+			sb_btn.draw(get_canvas_item(), it.r)
+			draw_string(f, (it.r as Rect2).position + Vector2(0, 36), "다시 시작", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
+	# PC 툴팁
+	if hov != null and hov.tip != "" and not shop_open:
+		_tooltip(f, hov.tip)
+
+func _tooltip(f: Font, s: String) -> void:
+	var w := minf(360.0, f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 20.0)
+	var lines := ceili((f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 20.0) / 360.0)
+	var hh := 12.0 + lines * 18.0
+	var p := mouse_ui + Vector2(16, -hh - 8.0)
+	var u := ui_size()
+	p.x = clampf(p.x, 6.0, u.x - w - 6.0)
+	p.y = clampf(p.y, 6.0, u.y - hh - 6.0)
+	draw_rect(Rect2(p, Vector2(w, hh)), Color(0.04, 0.055, 0.08, 0.96))
+	draw_rect(Rect2(p, Vector2(w, hh)), Color("#3a4a58"), false, 1.0)
+	draw_multiline_string(f, p + Vector2(10, 19), s, HORIZONTAL_ALIGNMENT_LEFT, w - 20.0, 13, -1, Color.WHITE)
+
+func _shop(f: Font, hov) -> void:
+	var sr := shop_rect()
+	draw_rect(Rect2(Vector2.ZERO, ui_size()), Color(0, 0, 0, 0.35))
+	sb_shop.draw(get_canvas_item(), sr)
+	draw_string(f, sr.position + Vector2(18, 34), "상 점", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, GOLD)
+	var hint := "누르면 바로 구매해요 · X로 닫기" if touch_ui() else "Y 키로 열고 닫아요 · 클릭하면 구매 · 마우스를 올리면 설명이 나와요"
+	draw_string(f, sr.position + Vector2(84, 32), hint, HORIZONTAL_ALIGNMENT_LEFT, sr.size.x - 140.0, 12, Color("#96aab9"))
+	draw_line(sr.position + Vector2(0, 48), sr.position + Vector2(sr.size.x, 48), Color(0.79, 0.64, 0.33, 0.4), 1.0)
+	draw_line(sr.position + Vector2(170, 48), sr.position + Vector2(170, sr.size.y - 44.0), Color(1, 1, 1, 0.06), 1.0)
+	for it in ui:
+		var r: Rect2 = it.r
+		match it.id:
+			"shopx":
+				sb_btn.draw(get_canvas_item(), r)
+				draw_string(f, r.position + Vector2(0, 21), "X", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 15, Color.WHITE)
+			"tab":
+				(sb_tab_on if it.arg == shop_tab else sb_btn).draw(get_canvas_item(), r)
+				var nm: String = {"prod": "로봇 생산", "item": "아이템", "up": "업그레이드 · 진화"}[it.arg]
+				draw_string(f, r.position + Vector2(12, 25), nm, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 16.0, 14, GOLD if it.arg == shop_tab else Color("#c9d4dc"))
+			"card":
+				var c: Dictionary = it.arg
+				var on: bool = it.on
+				(sb_card_hi if hov == it else (sb_card if on else sb_dis)).draw(get_canvas_item(), r)
+				if on:
+					draw_rect(Rect2(r.position, Vector2(4, r.size.y)), Color("#3fcf7a"))
+				draw_string(f, r.position + Vector2(14, 25), c.n, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20.0, 14, Color.WHITE if on else Color(1, 1, 1, 0.45))
+				if c.cost != "":
+					_diamond(r.position + Vector2(20, 45), 5.0, Color("#5fe0c4") if c.cost != "진화석" else Color("#c08cff"))
+					draw_string(f, r.position + Vector2(30, 50), c.cost, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#5fe0c4") if on else Color(0.37, 0.88, 0.77, 0.45))
+	var desc := shop_desc
+	if hov != null and hov.id == "card":
+		desc = hov.tip
+	if desc == "":
+		desc = "항목을 누르면 설명이 나와요" if touch_ui() else "항목에 마우스를 올려 보세요"
+	draw_line(sr.position + Vector2(170, sr.size.y - 44.0), sr.position + Vector2(sr.size.x, sr.size.y - 44.0), Color(1, 1, 1, 0.08), 1.0)
+	draw_string(f, sr.position + Vector2(186, sr.size.y - 17.0), desc, HORIZONTAL_ALIGNMENT_LEFT, sr.size.x - 200.0, 13, Color("#c9d4dc"))
 
 # ═════════ 입력 ═════════
 func _unhandled_input(e: InputEvent) -> void:
@@ -1060,9 +1565,15 @@ func _unhandled_input(e: InputEvent) -> void:
 			set_zoom(zm - 0.1, mb.position)
 		elif mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				var b = btn_at(mb.position)
-				if b != null:
-					press_btn(b)
+				var it = ui_hit(mb.position)
+				if it != null:
+					if it.id != "shopbg":
+						ui_press(it)
+					return
+				if shop_open or paused or won or lost:
+					return
+				if aim != "":
+					throw_at(s2w(mb.position))
 					return
 				if mm_rect().has_point(mb.position):
 					mm_drag = true
@@ -1076,6 +1587,12 @@ func _unhandled_input(e: InputEvent) -> void:
 						click(s2w(mb.position), mb.shift_pressed)
 					dn = null
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
+			if mb.pressed and aim != "":
+				aim = ""
+				msg("취소했어요")
+				return
+			if mb.pressed and (shop_open or paused):
+				return
 			if mb.pressed:
 				box_active = true
 				box_a = s2w(mb.position)
@@ -1086,6 +1603,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				box_active = false
 	elif e is InputEventMouseMotion:
 		var mm := e as InputEventMouseMotion
+		mouse_ui = mm.position / us
 		if mm_drag:
 			mm_go(mm.position)
 			return
@@ -1102,21 +1620,51 @@ func _unhandled_input(e: InputEvent) -> void:
 		if not ke.pressed or ke.echo:
 			return
 		var kc: int = ke.keycode
-		if kc >= KEY_1 and kc <= KEY_5:
-			select_type(ORDER[kc - KEY_1])
-		elif kc == KEY_SPACE or kc == KEY_HOME:
-			cam_to(B)
-		elif kc == KEY_ESCAPE:
+		if kc == KEY_ESCAPE:
+			if shop_open:
+				shop_open = false
+			elif aim != "":
+				aim = ""
+			elif paused:
+				paused = false
+			elif not selected().is_empty():
+				clear_sel()
+			else:
+				paused = true
+			return
+		if kc == KEY_P:
+			paused = not paused
+			shop_open = false
+			return
+		if paused or won or lost:
+			return
+		if kc == KEY_Y:
+			shop_open = not shop_open
+		elif kc >= KEY_1 and kc <= KEY_5:
+			num_key(kc - KEY_1)
+		elif kc == KEY_6:
+			start_aim("vb")
+		elif kc == KEY_E:
 			clear_sel()
+			for q in bots:
+				q.sel = true
+		elif kc == KEY_SPACE or kc == KEY_HOME or kc == KEY_Q:
+			cam_to(B)
 
 func _touch(e: InputEvent) -> void:
 	if e is InputEventScreenTouch:
 		var st := e as InputEventScreenTouch
 		if st.pressed:
 			if touches.is_empty():
-				var b = btn_at(st.position)
-				if b != null:
-					press_btn(b)
+				var it = ui_hit(st.position)
+				if it != null:
+					if it.id != "shopbg":
+						ui_press(it)
+					return
+				if shop_open or paused or won or lost:
+					return
+				if aim != "":
+					throw_at(s2w(st.position))
 					return
 				if mm_rect().grow(4).has_point(st.position):
 					mm_drag = true
@@ -1204,10 +1752,8 @@ func _process(dt: float) -> void:
 	if v != Vector2.ZERO:
 		cam.position += v.normalized() * 900.0 * dt / zm
 		_clamp_cam()
-	if not won and not lost:
+	if not won and not lost and not paused:
 		update_game(dt)
-	else:
-		t += dt
 	for f in fx:
 		f.t -= dt
 	fx = fx.filter(func(f): return f.t > 0.0)
@@ -1219,6 +1765,11 @@ func _process(dt: float) -> void:
 func update_game(dt: float) -> void:
 	t += dt
 	ore += income() * dt
+	vb_cd = maxf(0.0, vb_cd - dt)
+	dr_cd = maxf(0.0, dr_cd - dt)
+	for d in drones:
+		d.t -= dt
+	drones = drones.filter(func(d): return d.t > 0.0)
 	for o in outs:
 		o.n = 0
 	for e in ens:
@@ -1339,10 +1890,10 @@ func _draw() -> void:
 			art_mine(self, m, t)
 			_bar(m.p.x, m.p.y + 20.0, 28.0, float(m.amt) / (150.0 if m.ev else 700.0), Color("#c08cff") if m.ev else Color("#5fe0c4"), 3.0)
 	for o in outs:
-		if vr.grow(60).has_point(o.p) and seen(o.p):
+		if vr.grow(60).has_point(o.p) and vis2(o.p):
 			_outpost(o, f)
 	for u in ens:
-		if vr.has_point(u.p) and seen(u.p):
+		if vr.has_point(u.p) and vis2(u.p):
 			_enemy(u, f)
 	for u in bots:
 		if vr.has_point(u.p):
@@ -1361,6 +1912,10 @@ func _draw() -> void:
 		draw_rect(r, Color("#8be28b"), false, 1.0 / zm)
 	_fx(f)
 	_fog(i0, j0, i1, j1)
+	for d in drones:
+		draw_arc(d.p, 260.0, 0.0, TAU, 64, Color(1.0, 0.88, 0.47, 0.5), 2.0)
+		draw_circle(d.p, 9.0, Color("#0b1118"))
+		draw_circle(d.p, 6.0, Color("#ffe27a"))
 	# 화면 고정 그리기
 	inv = get_canvas_transform().affine_inverse()
 	draw_set_transform_matrix(inv)
@@ -1552,78 +2107,6 @@ func _minimap() -> void:
 	var vr := view_rect()
 	draw_rect(Rect2(o + vr.position * k, vr.size * k), Color(1, 1, 1, 0.65), false, 1.0)
 
-func _tf_screen(pos: Vector2, rot: float, scl: float) -> void:
-	draw_set_transform_matrix(inv * Transform2D(rot, Vector2(scl, scl), 0.0, pos))
-
-func _hud(f: Font) -> void:
-	var vs := vsize()
-	# 왼쪽 위: 자원
-	sb_panel.draw(get_canvas_item(), Rect2(12, 12, 430, 64))
-	draw_string(f, Vector2(26, 42), "SOROK", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, GOLD)
-	draw_circle(Vector2(118, 35), 6, Color("#5fe0c4"))
-	draw_string(f, Vector2(130, 42), str(int(ore)), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
-	draw_circle(Vector2(212, 35), 6, Color("#c08cff"))
-	draw_string(f, Vector2(224, 42), str(stone), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
-	draw_string(f, Vector2(280, 42), "기지 " + str(int(base.hp)), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8be28b") if base.hp / base.mh > 0.3 else Color("#ff8a6b"))
-	var inc := income()
-	draw_string(f, Vector2(26, 66), "수입 +" + str(snappedf(inc, 0.1)) + "/초  ·  정복 " + str(captured()) + "/50  ·  로봇 " + str(bots.size()) + ("  ·  부활 대기 " + str(dead.size()) if dead.size() > 0 else ""), HORIZONTAL_ALIGNMENT_LEFT, 410, 13, Color("#aab8c5"))
-	# 위 가운데: 시간·레이드
-	var tm := "%d:%02d" % [int(t / 60.0), int(t) % 60]
-	var rl := next_raid - t
-	var rt := "레이드 진행 중!" if raid_alive else ("다음 레이드 %d:%02d" % [int(rl / 60.0), int(rl) % 60])
-	sb_panel.draw(get_canvas_item(), Rect2(vs.x / 2.0 - 130, 12, 260, 40))
-	draw_string(f, Vector2(vs.x / 2.0 - 120, 38), tm + "   " + rt, HORIZONTAL_ALIGNMENT_CENTER, 240, 15, Color("#ff8a6b") if (raid_alive or rl < 30.0) else Color("#e6edf3"))
-	draw_string(f, Vector2(vs.x - 70, 30), str(roundi(zm * 100.0)) + "%", HORIZONTAL_ALIGNMENT_RIGHT, 56, 14, Color(0.81, 0.89, 1.0, 0.7))
-	# 선택 정보
-	var s := selected()
-	if s.size() == 1:
-		var u: Dictionary = s[0]
-		var line: String = UT[u.t].n + "  Lv " + str(u.lv) + "/11  진화 " + str(u.ev) + "/3  ·  체력 " + str(int(u.hp)) + "/" + str(int(u.mh))
-		if u.t == "c" or u.t == "r":
-			line += "  ·  공격 " + str(snappedf(patk(u), 0.1))
-		elif u.t == "h":
-			line += "  ·  치유 " + str(snappedf(heal_v(u), 0.1)) + "/초"
-		elif u.t == "m":
-			line += "  ·  운반 " + str(carry(u)) + "  ·  캔 광석 " + str(int(u.mo))
-		elif u.t == "s":
-			line += "  ·  연료 " + str(int(100.0 * u.f / u.fm)) + "%"
-		draw_string(f, Vector2(14, vs.y - 158), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-	elif s.size() > 1:
-		draw_string(f, Vector2(14, vs.y - 158), "로봇 " + str(s.size()) + "대 선택", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-	# 버튼
-	for b in buttons():
-		var r: Rect2 = b.r
-		(sb_btn if b.on else sb_dis).draw(get_canvas_item(), r)
-		var tc := Color.WHITE if b.on else Color(1, 1, 1, 0.4)
-		if b.id == "p":
-			var k: String = b.k
-			_tf_screen(r.position + Vector2(r.size.x / 2.0, 26), -PI / 2.0, 2.0)
-			art_bot(self, k, UT[k].col if b.on else Color(0.4, 0.42, 0.45), UT[k].acc, t)
-			draw_set_transform_matrix(inv)
-			draw_string(f, r.position + Vector2(0, 56), b.l, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 14, tc)
-			draw_circle(r.position + Vector2(r.size.x / 2.0 - 18, 66), 4, Color("#5fe0c4"))
-			draw_string(f, r.position + Vector2(r.size.x / 2.0 - 10, 71), b.sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(GOLD, 1.0 if b.on else 0.5))
-		else:
-			var lab: String = b.l if b.sub == "" else (b.l + "  " + b.sub)
-			draw_string(f, r.position + Vector2(0, r.size.y / 2.0 + 6), lab, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 16, tc)
-	# 메시지
-	if msg_t > 0.0:
-		var a := minf(1.0, msg_t)
-		var fs := 16
-		var w := f.get_string_size(msg_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 36.0
-		var y := 100.0
-		draw_rect(Rect2(vs.x / 2.0 - w / 2.0, y - 26, w, 38), Color(0.04, 0.055, 0.08, 0.88 * a))
-		draw_string(f, Vector2(vs.x / 2.0 - w / 2.0 + 18, y), msg_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, a))
-	# 승리·패배
-	if won or lost:
-		draw_rect(Rect2(Vector2.ZERO, vs), Color(0, 0, 0, 0.6))
-		var big := "승리! 모든 기지를 정복했어요" if won else "패배 · 기지가 파괴됐어요"
-		draw_string(f, Vector2(0, vs.y / 2.0 - 20), big, HORIZONTAL_ALIGNMENT_CENTER, vs.x, 40, GOLD if won else Color("#ff8a6b"))
-		draw_string(f, Vector2(0, vs.y / 2.0 + 16), "시간 " + tm + "  ·  처치 " + str(kills) + "  ·  정복 " + str(captured()), HORIZONTAL_ALIGNMENT_CENTER, vs.x, 16, Color.WHITE)
-		for b in buttons():
-			sb_btn.draw(get_canvas_item(), b.r)
-			draw_string(f, (b.r as Rect2).position + Vector2(0, 36), b.l, HORIZONTAL_ALIGNMENT_CENTER, (b.r as Rect2).size.x, 18, Color.WHITE)
-
 # ═════════ 자동 점검 (GitHub에서만 돌아가요) ═════════
 func _shot(name: String) -> void:
 	await get_tree().process_frame
@@ -1667,6 +2150,25 @@ func _selftest() -> void:
 		if u.t == "c" or u.t == "r" or u.t == "h":
 			u.sel = true
 	await _shot("02_units")
+	shop_open = true
+	shop_tab = "prod"
+	await _shot("02b_shop")
+	shop_tab = "up"
+	await _shot("02c_shop_up")
+	shop_open = false
+	for u in bots:
+		u.sel = u.t == "r" and u.sel
+	var one = null
+	for u in bots:
+		if u.t == "c":
+			one = u
+	clear_sel()
+	one.sel = true
+	await _shot("02d_one")
+	clear_sel()
+	for u in bots:
+		if u.t == "c" or u.t == "r" or u.t == "h":
+			u.sel = true
 	Engine.time_scale = 4.0
 	await _wait(16.0)
 	cam_to(o0.p)
@@ -1724,9 +2226,9 @@ func oct(r: float) -> PackedVector2Array:
 		p.append(Vector2(cos(a), sin(a)) * r)
 	return p
 
-func art_base(ci: CanvasItem, p: Vector2, t: float) -> void:
+func art_base(ci: CanvasItem, p: Vector2, t: float, xf: Transform2D = Transform2D.IDENTITY) -> void:
 	ell_fill(ci, p + Vector2(6, 40), 58, 18, Color(0, 0, 0, 0.32))
-	ci.draw_set_transform(p, 0.0, Vector2.ONE)
+	ci.draw_set_transform_matrix(xf * Transform2D(0.0, Vector2.ONE, 0.0, p))
 	var o := oct(54)
 	ci.draw_colored_polygon(o, PL)
 	o.append(o[0])
@@ -1735,9 +2237,9 @@ func art_base(ci: CanvasItem, p: Vector2, t: float) -> void:
 	o2.append(o2[0])
 	ci.draw_polyline(o2, Color(1, 1, 1, 0.1), 1.0, true)
 	for i in 4:
-		ci.draw_set_transform(p, i * PI / 2.0, Vector2.ONE)
+		ci.draw_set_transform_matrix(xf * Transform2D(i * PI / 2.0, Vector2.ONE, 0.0, p))
 		ci.draw_rect(Rect2(-8, -50, 16, 3), Color(LT, 0.55))
-	ci.draw_set_transform(p, 0.0, Vector2.ONE)
+	ci.draw_set_transform_matrix(xf * Transform2D(0.0, Vector2.ONE, 0.0, p))
 	ci.draw_rect(Rect2(-25, -19, 56, 46), Color(0, 0, 0, 0.35))
 	ci.draw_rect(Rect2(-28, -22, 56, 44), BD)
 	ci.draw_rect(Rect2(-18, -32, 36, 64), BD)
@@ -1754,17 +2256,17 @@ func art_base(ci: CanvasItem, p: Vector2, t: float) -> void:
 	ci.draw_circle(Vector2(-3, -9), 3.5, Color(1, 1, 1, 0.55))
 	ci.draw_line(Vector2(-20, -27), Vector2(-20, -42), RIM, 2.0)
 	ci.draw_circle(Vector2(-20, -43), 2.5, LT if int(t * 1.5) % 2 == 1 else Color("#3a2a10"))
-	ci.draw_set_transform(p + Vector2(20, -25), t * 1.6, Vector2.ONE)
+	ci.draw_set_transform_matrix(xf * Transform2D(t * 1.6, Vector2.ONE, 0.0, p + Vector2(20, -25)))
 	ci.draw_arc(Vector2.ZERO, 7, -0.9, 0.9, 12, TP, 2.0)
 	ci.draw_line(Vector2.ZERO, Vector2(7, 0), TP, 2.0)
 	ci.draw_rect(Rect2(-2, -2, 4, 4), K)
-	ci.draw_set_transform(p, 0.0, Vector2.ONE)
+	ci.draw_set_transform_matrix(xf * Transform2D(0.0, Vector2.ONE, 0.0, p))
 	var corners := [Vector2(-46, -19), Vector2(46, -19), Vector2(-46, 19), Vector2(46, 19)]
 	for i in 4:
 		var c: Vector2 = corners[i]
 		ci.draw_rect(Rect2(c.x - 4, c.y - 4, 8, 8), K)
 		ci.draw_rect(Rect2(c.x - 2, c.y - 2, 4, 4), LT if int(t * 2 + i * 0.5) % 2 == 1 else Color(0, 0, 0, 0.4))
-	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	ci.draw_set_transform_matrix(xf)
 
 func art_mine(ci: CanvasItem, m: Dictionary, t: float) -> void:
 	var p: Vector2 = m.p

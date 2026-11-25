@@ -20,11 +20,14 @@ jobs:
         run: |
           mkdir -p shots
           timeout 180 xvfb-run -a -s "-screen 0 1280x720x24" ./godot --path . --rendering-driver opengl3 --resolution 1280x720 -- --selftest 2>&1 | tee log.txt || true
+          mkdir -p shots_pc && mv shots/* shots_pc/ 2>/dev/null || true
+          timeout 180 xvfb-run -a -s "-screen 0 1600x720x24" ./godot --path . --rendering-driver opengl3 --resolution 1600x720 -- --selftest --touchui 2>&1 | tee log_touch.txt || true
+          mkdir -p shots_touch && mv shots/* shots_touch/ 2>/dev/null || true
           echo "----- 에러 -----"
-          grep -E "ERROR|SCRIPT ERROR|Parse Error|Invalid" log.txt || echo "에러 없음"
+          grep -E "ERROR|SCRIPT ERROR|Parse Error|Invalid" log.txt log_touch.txt || echo "에러 없음"
       - name: 결과를 ci-results 가지에 올리기
         run: |
-          mkdir -p out && cp log.txt out/ && cp -r shots out/ 2>/dev/null || true
+          mkdir -p out && cp log*.txt out/ && cp -r shots_pc shots_touch out/ 2>/dev/null || true
           cd out && git init -q && git checkout -q -b ci-results
           git config user.name "ci" && git config user.email "ci@users.noreply.github.com"
           git add -A && git commit -q -m "결과 ${GITHUB_SHA::7}"
