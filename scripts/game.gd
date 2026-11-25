@@ -86,6 +86,8 @@ var pinch = null
 var last_tap := {"t": -9.0, "k": ""}
 var last_num := {"t": -9.0, "k": ""}
 var mouse_ui := Vector2(-999, -999)
+var tap_tip_t := 0.0
+var tap_tip_p := Vector2.ZERO
 var ui: Array = []
 var us := 1.0
 var touch_mode := false
@@ -2045,6 +2047,176 @@ func _hud(f: Font) -> void:
 			draw_string(f, (it.r as Rect2).position + Vector2(0, 36), "다시 시작", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
 	if tip != "" and not shop_open and not info_open:
 		_tooltip(f, tip)
+	elif tip == "" and hov == null and not shop_open and not info_open and not paused and not won and not lost and dn == null and not box_active:
+		_world_tip(f)
+
+# ═════════ 올렸을 때 말풍선 (웹 hovObj·info·einfo) ═════════
+func info_txt(u: Dictionary) -> String:
+	var d: Dictionary = UT[u.t]
+	var s: String = d.n + " Lv " + str(u.lv) + "/11 · 진화 " + str(u.ev) + "/3\n공격력 " + ("%.1f" % patk(u) if float(d.atk) > 0.0 else "-") + " · 체력 " + str(ceili(u.hp)) + "/" + str(roundi(u.mh)) + " · 이속 " + str(roundi(u.sp))
+	if not (u.t == "m" or u.t == "s" or u.t == "h"):
+		s += "\n공속 " + "%.2f" % float(u.aspd) + "회/초"
+	if u.t == "m":
+		s += "\n캔 광석 " + str(int(u.mo)) + " · 진화석 " + str(u.ms) + (" · 운반 중 " + str(u.c) if u.c > 0 else "") + "\n운반량 " + str(carry(u)) + " (진화 광산은 6레벨부터)"
+	if u.t == "s":
+		s += "\n시야 " + str(roundi(vis(u))) + " · 연료 " + str(roundi(u.f)) + "/" + str(roundi(u.fm))
+	if u.t == "h":
+		s += "\n치유 " + "%.1f" % heal_v(u) + "/초"
+	if u.oilT > 0.0:
+		s += "\n기름 효과 " + str(ceili(u.oilT)) + "초 (이속·공속 +20%)"
+	return s
+
+func einfo_txt(u: Dictionary) -> String:
+	var n := "외계 사격병"
+	if u.t == "k":
+		n = "외계 추격자" + (" (추격 중!)" if u.ag != null else " · 건드리면 끝까지 쫓아와요")
+	elif u.t == "c":
+		n = "외계 근접병"
+	var s: String = n + " Lv " + str(u.lv) + "/11" + (" · 진화 " + str(u.ev) if u.ev > 0 else "")
+	s += "\n공격력 " + "%.1f" % float(u.atk) + " · 체력 " + str(ceili(u.hp)) + "/" + str(roundi(u.mh)) + " · 이속 " + str(roundi(u.sp))
+	s += "\n공속 " + "%.2f" % float(u.aspd) + "회/초"
+	return s
+
+func hov_obj(w: Vector2):
+	var best = null
+	var bd := 20.0
+	for q in bots:
+		var d := w.distance_to(q.p)
+		if d < bd:
+			bd = d
+			best = q
+	for q in ens:
+		if q.hp <= 0 or not vis2(q.p):
+			continue
+		var d := w.distance_to(q.p)
+		if d < bd:
+			bd = d
+			best = q
+	if best != null:
+		return {"p": best.p, "ev": best.ev > 0, "tip": info_txt(best) if best.team == 0 else einfo_txt(best)}
+	if w.distance_to(B) < 58.0:
+		var cap := captured()
+		return {"p": B + Vector2(0, -30), "ev": false, "tip": "우리 기지\n체력 " + str(ceili(base.hp)) + " / " + str(roundi(base.mh)) + " · 초당 2 회복\n포탑 공격력 " + "%.1f" % (45.0 * (1.0 + 0.05 * cap)) + " · 1초마다 · 사거리 280\n정복한 기지 1개마다 포탑 +5%\n우물(반경 300): 초당 체력 10% · 전투 중 3%"}
+	for o in outs:
+		if w.distance_to(o.p) < 42.0 and seen(o.p):
+			var z: int = o.tr + 1
+			if o.cap:
+				return {"p": (o.p as Vector2) + Vector2(0, -30), "ev": false, "tip": "정복한 기지 · " + str(z) + "구역\n기지 수입 초당 +" + "%.2f" % ((0.3 + 0.25 * o.s) * eco()) + "\n우리 기지 포탑 +5%"}
+			var df: Array = ens.filter(func(e): return e.hp > 0 and e.get("oid", -1) == o.id and e.ag == null)
+			var de := df.filter(func(e): return e.ev > 0).size()
+			var g := roundi(20.0 + 20.0 * o.s * o.s)
+			var s := "외계 기지 · " + str(z) + "구역 · Lv " + str(o.lv) + (" · 진화 " + str(o.ev) + "단계" if o.ev > 0 else "")
+			s += "\n체력 " + str(ceili(o.hp)) + " / " + str(roundi(o.mx))
+			s += "\n포탑 공격력 " + "%.1f" % (o.atk * 3.0) + " · 1.3초마다 · 사거리 200\n같은 로봇 연속 공격 시 최대 +120%"
+			s += "\n수비대 " + str(df.size()) + "마리" + (" (진화 " + str(de) + ")" if de > 0 else "") + " · 기지를 부수면 사라져요"
+			s += "\n보호막: 받는 피해 " + str(roundi(shm(o) * 100.0)) + "% (수비대를 잡을수록 약해져요)"
+			s += "\n정복 보상: 광석 " + str(g) + " · 진화석 " + str(4 * z) + " · 게임 끝 청석 +" + str(10 * z)
+			return {"p": (o.p as Vector2) + Vector2(0, -30), "ev": o.ev > 0, "tip": s}
+	for m in mines:
+		if w.distance_to(m.p) < 24.0 and seen(m.p):
+			var n := bots.filter(func(q): return q.mine != null and is_same(q.mine, m)).size()
+			if m.ev:
+				return {"p": (m.p as Vector2) + Vector2(0, -14), "ev": true, "tip": "진화 광산" + (" · 안전 지역" if m.get("safe", false) else "") + "\n남은 진화석 " + str(m.amt) + " / 150\n6레벨 이상 채굴 로봇만 캘 수 있어요\n채굴 중인 로봇 " + str(n) + "대"}
+			return {"p": (m.p as Vector2) + Vector2(0, -14), "ev": false, "tip": "광산\n남은 광석 " + str(ceili(m.amt)) + " / 700\n채굴 중인 로봇 " + str(n) + "대\n채굴 로봇을 선택하고 광산을 누르면 캐요"}
+	return null
+
+func _wrap(f: Font, line: String, fs: int, mw: float) -> Array:
+	if f.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x <= mw:
+		return [line]
+	var out: Array = []
+	var cur := ""
+	for wd in line.split(" "):
+		var tr := wd if cur == "" else cur + " " + wd
+		if f.get_string_size(tr, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > mw and cur != "":
+			out.append(cur)
+			cur = wd
+		else:
+			cur = tr
+	if cur != "":
+		out.append(cur)
+	return out
+
+func _world_tip(f: Font) -> void:
+	var sp := mouse_ui * us
+	if touch_ui():
+		if tap_tip_t <= 0.0:
+			return
+		sp = tap_tip_p
+	elif mm_rect().has_point(sp):
+		return
+	var hv = hov_obj(s2w(sp))
+	if hv == null:
+		return
+	var u := ui_size()
+	var mw := minf(380.0, u.x - 24.0) - 20.0
+	var rows: Array = []
+	var L: PackedStringArray = (hv.tip as String).split("\n")
+	for i in L.size():
+		for r in _wrap(f, L[i], 13, mw):
+			rows.append([r, i])
+	var w2 := 0.0
+	for r in rows:
+		w2 = maxf(w2, f.get_string_size(r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x)
+	w2 = ceilf(w2) + 20.0
+	var LH := 18.0
+	var h2 := rows.size() * LH + 12.0
+	var a: Vector2 = (get_canvas_transform() * (hv.p as Vector2)) / us
+	var tx := a.x + 18.0
+	var ty := a.y - h2 - 10.0
+	if tx + w2 > u.x - 6.0:
+		tx = a.x - w2 - 18.0
+	tx = maxf(tx, 6.0)
+	if ty < 6.0:
+		ty = a.y + 18.0
+	ty = minf(ty, u.y - 6.0 - h2)
+	var rr := Rect2(tx, ty, w2, h2)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(10 / 255.0, 14 / 255.0, 20 / 255.0, 0.95)
+	sb.border_color = Color("#b080ff") if hv.ev else Color("#3a4a58")
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(8)
+	sb.draw(get_canvas_item(), rr)
+	for k in rows.size():
+		var r: Array = rows[k]
+		draw_string(f, Vector2(tx + 10.0, ty + LH + k * LH), r[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE if r[1] == 0 else Color("#c9d4dc"))
+
+# 로봇끼리 겹치지 않게 살짝 밀어내기 (격자로 가까운 것만 비교)
+func separate(arr: Array, r: float, dt: float) -> void:
+	var G := {}
+	for i in arr.size():
+		var q = arr[i]
+		var key := int(q.p.x / r) * 10000 + int(q.p.y / r)
+		if not G.has(key):
+			G[key] = []
+		G[key].append(i)
+	var k := minf(1.0, dt * 8.0)
+	for i in arr.size():
+		var a = arr[i]
+		var ax := int(a.p.x / r)
+		var ay := int(a.p.y / r)
+		for gx in range(ax - 1, ax + 2):
+			for gy in range(ay - 1, ay + 2):
+				var key := gx * 10000 + gy
+				if not G.has(key):
+					continue
+				for j in G[key]:
+					if j <= i:
+						continue
+					var b = arr[j]
+					var dv: Vector2 = (a.p as Vector2) - (b.p as Vector2)
+					var d := dv.length()
+					if d >= r:
+						continue
+					if d < 0.01:
+						dv = Vector2.from_angle(float(i * 7 + j)) 
+						d = 0.01
+					var push := dv / maxf(d, 0.01) * (r - d) * 0.5 * k
+					var na: Vector2 = (a.p as Vector2) + push
+					var nb: Vector2 = (b.p as Vector2) - push
+					if a.team == 1 or seen(na):
+						a.p = na
+					if b.team == 1 or seen(nb):
+						b.p = nb
 
 func _tooltip(f: Font, s: String) -> void:
 	var tw := f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 20.0
@@ -2359,6 +2531,8 @@ func _touch(e: InputEvent) -> void:
 				box_active = false
 			elif dn != null and not dn.m and touches.is_empty() and pinch == null:
 				click(s2w(st.position), false)
+				tap_tip_t = 2.5
+				tap_tip_p = st.position
 			if touches.is_empty():
 				dn = null
 				pinch = null
@@ -2402,6 +2576,7 @@ func _touch(e: InputEvent) -> void:
 # ═════════ 매 프레임 ═════════
 func _process(dt: float) -> void:
 	msg_t = maxf(0.0, msg_t - dt)
+	tap_tip_t = maxf(0.0, tap_tip_t - dt)
 	if ctl_arm != -1 and t > ctl_arm_t:
 		ctl_arm = -1
 	if dn != null and dn.touch and not dn.m and not box_active and t - dn.t0 > 0.45:
@@ -2486,6 +2661,9 @@ func update_game(dt: float) -> void:
 		ctrl(u, dt)
 	for u in ens:
 		ectrl(u, dt)
+	separate(bots.filter(func(q): return q.t != "m"), 16.0, dt)
+	var near_e: Array = ens.filter(func(q): return q.hp > 0 and (q.raid or q.cbt > t - 3.0 or vis2(q.p)))
+	separate(near_e, 16.0, dt)
 	# 탄환
 	for p in prs:
 		var tg: Dictionary = p.tg
@@ -2857,6 +3035,16 @@ func _selftest() -> void:
 	await _wait(16.0)
 	cam_to(o0.p)
 	await _shot("03_scouted")
+	for pair in [[o0.p, "03b_tip_out"], [mines[0].p, "03c_tip_mine"], [B, "03d_tip_base"]]:
+		cam_to(pair[0])
+		await _wait(0.1)
+		var sp: Vector2 = get_canvas_transform() * (pair[0] as Vector2)
+		mouse_ui = sp / us
+		tap_tip_p = sp
+		tap_tip_t = 9.0
+		await _shot(pair[1])
+	mouse_ui = Vector2(-999, -999)
+	tap_tip_t = 0.0
 	do_upgrade()
 	do_upgrade()
 	do_upgrade()
