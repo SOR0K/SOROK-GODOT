@@ -1386,12 +1386,15 @@ const CMDS := [["all", "E", "전체", "[E] 모든 로봇 선택"], ["home", "Q",
 func _build_ui() -> void:
 	ui.clear()
 	var u := ui_size()
+	if keys_open:
+		return
 	if won or lost:
 		_add("restart", Rect2(u.x / 2.0 - 110.0, u.y / 2.0 + 40.0, 220.0, 56.0))
 		return
 	if paused:
 		_add("resume", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 - 30.0, 240.0, 54.0))
 		_add("restart", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 + 34.0, 240.0, 54.0))
+		_add("keys", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 + 98.0, 240.0, 54.0))
 		return
 	if touch_ui():
 		_add("pause", Rect2(12, 12, 44, 44))
@@ -1579,6 +1582,8 @@ func ui_press(it: Dictionary, rclick: bool = false) -> void:
 			new_game()
 		"resume":
 			paused = false
+		"keys":
+			keys_open = true
 		"pause":
 			paused = true
 			shop_open = false
@@ -2052,7 +2057,7 @@ func _hud(f: Font) -> void:
 		draw_string(f, Vector2(0, u.y / 2.0 - 60.0), "일시정지", HORIZONTAL_ALIGNMENT_CENTER, u.x, 34, GOLD)
 		for it in ui:
 			sb_btn.draw(get_canvas_item(), it.r)
-			draw_string(f, (it.r as Rect2).position + Vector2(0, 34), "계속하기" if it.id == "resume" else "다시 시작", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
+			draw_string(f, (it.r as Rect2).position + Vector2(0, 34), {"resume": "계속하기", "restart": "다시 시작", "keys": "조작법"}.get(it.id, ""), HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
 	if won or lost:
 		draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
 		var big := "승리! 모든 기지를 정복했어요" if won else "패배 · 기지가 파괴됐어요"
@@ -2073,9 +2078,9 @@ func _hud(f: Font) -> void:
 # ═════════ 조작: 깃발 · 조작법 창 · 확대 표시 ═════════
 const KEYS := [["마우스", [["좌클릭", "명령 (이동 · 공격 · 채굴) / 로봇 선택"], ["좌클릭 드래그", "지도 이동"], ["우클릭 누른 채 드래그", "로봇 여러 대 묶어서 선택"], ["Ctrl + 휠", "화면 확대 · 축소 (60~180%)"], ["휠", "지도 위아래 이동 (Shift+휠: 좌우)"], ["미니맵 클릭·드래그", "그 위치로 화면 이동"], ["마우스 올리기", "로봇 · 적 · 기지 · 광산 정보 보기"]]],
 	["화면 · 선택", [["W A S D / 화면 가장자리", "지도 이동"], ["E", "모든 로봇 선택"], ["Q", "우리 기지로 화면 이동"], ["1 ~ 5", "정찰 · 채굴 · 근접 · 원거리 · 지원 로봇 전체 선택"], ["Ctrl+1~5 · 숫자 두 번", "그 로봇들이 모인 곳으로 화면 이동"], ["T", "마우스 위치에 깃발 꽂기 / 뽑기"]]],
-	["기능", [["Y", "상점 열기 · 닫기"], ["I", "게임 정보"], ["6 · Space", "기름 들기 (Esc · 우클릭으로 취소)"], ["Esc", "일시정지 · 창 닫기"], ["M", "소리 켜기 · 끄기"], ["Tab", "이 조작법 창 열기 · 닫기"]]]]
+	["기능", [["Y", "상점 열기 · 닫기"], ["I", "게임 정보"], ["6 · Space", "기름 들기 (Esc · 우클릭으로 취소)"], ["Esc", "일시정지 · 창 닫기 (일시정지 메뉴에도 조작법)"], ["M", "소리 켜기 · 끄기"], ["Tab", "이 조작법 창 열기 · 닫기"]]]]
 const KEYS_T := [["터치", [["탭", "로봇 선택 · 이동 · 공격 · 채굴 명령"], ["한 손가락 드래그", "지도 이동"], ["두 손가락 벌리기 · 오므리기", "확대 · 축소"], ["길게 누른 채 드래그", "로봇 여러 대 묶기"], ["미니맵 탭 · 드래그", "그 위치로 화면 이동"], ["기지 · 광산 · 적 탭", "정보가 잠깐 떠요"]]],
-	["버튼", [["아래 1~5 칸", "정찰 · 채굴 · 근접 · 원거리 · 지원 전체 선택"], ["아래 6 칸", "기름 들기"], ["전체 · 기지 · 정보 · 상점", "전체 선택 · 기지로 · 게임 기록 · 상점"], ["왼쪽 위 ⏸", "일시정지 · 아이템 취소 · 창 닫기"], ["선택 해제", "선택한 로봇 해제"]]],
+	["버튼", [["아래 1~5 칸", "정찰 · 채굴 · 근접 · 원거리 · 지원 전체 선택"], ["아래 6 칸", "기름 들기"], ["전체 · 기지 · 정보 · 상점", "전체 선택 · 기지로 · 게임 기록 · 상점"], ["왼쪽 위 일시정지 버튼", "일시정지 · 조작법 · 창 닫기"], ["선택 해제", "선택한 로봇 해제"]]],
 	["상점", [["항목 탭", "바로 구매"], ["아래 수치 누르고 있기", "설명 보기"]]]]
 
 func toggle_flag(w: Vector2) -> void:
@@ -2627,6 +2632,9 @@ func _unhandled_input(e: InputEvent) -> void:
 func _touch(e: InputEvent) -> void:
 	if e is InputEventScreenTouch:
 		var st := e as InputEventScreenTouch
+		if st.pressed and keys_open:
+			keys_open = false
+			return
 		if st.pressed:
 			if touches.is_empty():
 				var it = ui_hit(st.position)
