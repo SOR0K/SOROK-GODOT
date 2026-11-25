@@ -2543,7 +2543,8 @@ func _build_lobby() -> void:
 				_add("sl", Rect2(pr.position.x + 120.0, y, pr.size.x - 220.0, 30.0), true, "", k)
 				y += 40.0
 			_add("lmute", Rect2(pr.position.x + 20.0, y, 140.0, 38.0))
-			y += 84.0
+			_add("lbgm", Rect2(pr.position.x + 20.0, y + 46.0, 320.0, 38.0))
+			y += 130.0
 			_add("lkeys", Rect2(pr.position.x + 20.0, y, 220.0, 40.0))
 			y += 84.0
 			_add("lwipe", Rect2(pr.position.x + 20.0, y, 200.0, 40.0))
@@ -2574,8 +2575,16 @@ func _lobby(f: Font) -> void:
 	draw_string(f, Vector2(0, 88), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#f2c86a"))
 	draw_string(f, Vector2(0, 118), "외 계  기 지  정 복  전 략", HORIZONTAL_ALIGNMENT_CENTER, u.x, 12, Color("#8a9bad"))
 	var chips := [["청석", str(SV.cs), Color("#7fd8ff"), Color("#33414d")], ["별석", str(SV.ss), Color("#c79bff"), Color("#5a4a8a")]]
+	var cwid: Array = []
+	var ctot := 0.0
+	for ch_ in chips:
+		var w0: float = 46.0 + f.get_string_size(ch_[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 16.0
+		cwid.append(w0)
+		ctot += w0
+	var cx0 := u.x / 2.0 - (ctot + 6.0) / 2.0
 	for i in 2:
-		var r := Rect2(u.x / 2.0 - 84.0 + i * 88.0, 134.0, 82.0, 36.0)
+		var r := Rect2(cx0, 134.0, cwid[i], 36.0)
+		cx0 += cwid[i] + 6.0
 		draw_rect(r, Color("#10161c"))
 		draw_rect(r, chips[i][3], false, 1.0)
 		draw_string(f, r.position + Vector2(10, 23), chips[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8a9bad"))
@@ -2670,6 +2679,10 @@ func _lobby_set(f: Font, hov) -> void:
 		match it.id:
 			"ltut": _btn(f, r, "튜토리얼 다시하기 (새 게임으로 시작)", hov == it, 14)
 			"lmute": _btn(f, r, "음소거 켜짐" if SV.mute else "음소거", hov == it or SV.mute, 14)
+			"lbgm":
+				var b: String = str(SV.get("bgm", "auto"))
+				var nm := "자동 (장착한 테마 곡)" if b == "auto" else ("기본 배경음" if b == "base" else item(b).get("n", b) + " 테마곡")
+				_btn(f, r, "배경음: " + nm + "  ▸", hov == it, 14)
 			"lkeys": _btn(f, r, "조작법 전체 보기", hov == it, 14)
 			"lwipe": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", hov == it, 14, Color("#ffb0a0"))
 			"lwipeall": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipeall" else "게임 전체 초기화", hov == it, 14, Color("#ff9a8a"))
@@ -2685,8 +2698,8 @@ func _lobby_set(f: Font, hov) -> void:
 				draw_string(f, Vector2(r.end.x + 14.0, r.position.y + 21.0), str(int(v)) + "%", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd76a"))
 	draw_string(f, Vector2(x, y + 88.0), "화면 · 소리", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
 	draw_string(f, Vector2(x + 150.0, y + 240.0), "게임 중에도 M 키로 음소거를 켜고 끌 수 있어요", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
-	draw_string(f, Vector2(x, y + 290.0), "조작", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
-	draw_string(f, Vector2(x, y + 374.0), "데이터", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x, y + 336.0), "조작", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x, y + 420.0), "데이터", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
 
 const NOTES := [["고도판 첫 버전", ["웹 SOROK을 고도 엔진으로 옮겼어요 (PC · 모바일 같은 코드)", "웹과 같은 전투 AI · 공격 대형 돌격 · 지원 로봇 · 적 카이팅", "올렸을 때 말풍선 · 휠 이동 · 가장자리 이동 · 깃발 · 조작법 창", "로봇끼리 안 겹치게 밀어내기 (고도판에서 새로 추가)", "효과 · 효과음 · 배경음 · 승리/패배 연출", "로비 · 설정 · 저장 · 이어하기 · 튜토리얼"]]]
 
@@ -2746,6 +2759,14 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			_apply_sv()
 			sv_save()
 		"lkeys": keys_open = true
+		"lbgm":
+			var opts: Array = ["auto", "base"]
+			for id in MUS_IDS:
+				if SV.town.has(id):
+					opts.append(id)
+			var cur: String = str(SV.get("bgm", "auto"))
+			SV.bgm = opts[(opts.find(cur) + 1) % opts.size()]
+			sv_save()
 		"sl":
 			slider_drag = it.arg
 			_slider_set(it.arg, sp)
@@ -4073,7 +4094,7 @@ func _layout_rows(R: Array, cr: Rect2, f: Font) -> void:
 			y += bh + 12.0
 		elif row.has("cards"):
 			var cw := 172.0
-			var ch := 238.0
+			var ch := 262.0
 			var cols := maxi(1, int((W + 12.0) / (cw + 12.0)))
 			cw = (W - 12.0 * (cols - 1)) / cols
 			var n: int = row.cards.size()
@@ -4220,9 +4241,7 @@ func _box_overlay(f: Font, hov) -> void:
 	var bc := Vector2(u.x / 2.0, pr.position.y + 70.0)
 	var gold := box_res.any(func(q): return q.get("g", "") == "kro" or q.res in ["jack", "star", "starx"] or int(q.get("a", 0)) >= 3)
 	var sh := sin(et * 40.0) * 4.0 * clampf(1.0 - et, 0.0, 1.0)
-	_ui_tf(bc + Vector2(sh, 0), 0.0, 0.9)
-	draw_preview(Rect2(-70, -42, 140, 84), "star" if box_star else "box", "gold" if gold else "", t_real)
-	_ui_reset()
+	draw_preview(Rect2(bc + Vector2(sh - 63.0, -38.0), Vector2(126, 76)), "star" if box_star else "box", "gold" if gold else "", t_real)
 	if et > 0.9 and et < 1.3:
 		draw_circle(bc, 60 + (et - 0.9) * 400, Color(1, 0.95, 0.8, 0.5 * (1.3 - et) / 0.4))
 	var tot := 0
@@ -4426,7 +4445,13 @@ var vol_b := 35
 
 func _snd(k: String) -> AudioStream:
 	if not snd_cache.has(k):
-		var s = load("res://sounds/" + k + ".wav")
+		var s = null
+		if ResourceLoader.exists("res://sounds/" + k + ".ogg"):
+			s = load("res://sounds/" + k + ".ogg")
+			if s is AudioStreamOggVorbis:
+				(s as AudioStreamOggVorbis).loop = true
+		else:
+			s = load("res://sounds/" + k + ".wav")
 		if s is AudioStreamWAV and k.begins_with("bgm_"):
 			var w := s as AudioStreamWAV
 			w.loop_mode = AudioStreamWAV.LOOP_FORWARD
@@ -4470,14 +4495,34 @@ func sfx_at(k: String, p: Vector2) -> void:
 	if view_rect().grow(60.0).has_point(p):
 		sfx(k)
 
+const MUS_IDS := ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10", "t11", "t12", "t13", "tk1", "tk2", "tk3", "tk4", "tk5", "tk6", "tk7", "tk8", "tk9", "tk10", "tk11", "tm1", "tm2", "tm3"]
+func bgm_theme() -> String:
+	var b: String = str(SV.get("bgm", "auto"))
+	if b == "base":
+		return ""
+	if b != "auto" and SV.get("town", []).has(b) and MUS_IDS.has(b):
+		return b
+	var te: String = str(SV.get("teq", ""))
+	return te if MUS_IDS.has(te) else ""
+
+func mset_done(id: String) -> bool:
+	for S in MSET:
+		if S.t == id:
+			return owns(S.r) and owns(S.b) and owns(S.t)
+	return false
+
 func _bgm_tick() -> void:
 	if bgm_p == null:
 		return
 	var want := ""
-	if not muted and vol_b > 0 and scene == "lobby":
-		want = "bgm_lobby"
-	elif not muted and vol_b > 0 and not paused and not lost:
-		want = "bgm_raid" if raid_alive else "bgm_game"
+	var tid := bgm_theme()
+	if not muted and vol_b > 0 and scene == "lobby" and box_res.is_empty():
+		want = ("bgm_" + tid) if tid != "" else "bgm_lobby"
+	elif not muted and vol_b > 0 and scene == "game" and not paused and not lost:
+		if tid != "":
+			want = "bgm_" + tid + (("_raidx" if mset_done(tid) else "_raid") if raid_alive else "")
+		else:
+			want = "bgm_raid" if raid_alive else "bgm_game"
 	if want == bgm_k:
 		return
 	bgm_k = want

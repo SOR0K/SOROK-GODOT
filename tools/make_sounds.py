@@ -187,3 +187,74 @@ if __name__ == '__main__':
     sfx()
     for m in BGC: bgm(m)
     print('done', sorted(os.listdir(OUT)))
+
+
+# ── 테마 배경음 (웹 MUS · bgTick 그대로) ──
+MP = {'maj': [[262, 330, 392], [220, 262, 330], [175, 220, 262], [196, 247, 294]], 'min': [[220, 262, 330], [175, 220, 262], [196, 247, 294], [165, 208, 247]],
+      'dor': [[147, 175, 220], [196, 247, 294], [131, 165, 196], [175, 220, 262]], 'lyd': [[262, 330, 392], [294, 370, 440], [247, 311, 370], [220, 277, 330]]}
+MUS = {'t1': ['min', 1.12, 330, 'cold'], 't2': ['dor', .92, 270, 'warm'], 't3': ['maj', 1, 270, 'warm'], 't4': ['min', .84, 240, 'dark'], 't5': ['lyd', 1.06, 340, 'cold'], 't6': ['min', .79, 280, 'dark'], 't7': ['maj', 1.12, 250, 'warm'], 't8': ['dor', 1, 290, 'warm'], 't9': ['lyd', .94, 220, 'tech'], 't10': ['min', .89, 300, 'dark'], 't11': ['min', 1, 190, 'tech'], 't12': ['maj', .94, 310, 'warm'], 't13': ['dor', .84, 240, 'dark'],
+       'tk1': ['min', .75, 300, 'tech'], 'tk2': ['maj', 1.19, 280, 'warm'], 'tk3': ['min', 1.19, 320, 'cold'], 'tk4': ['dor', .79, 220, 'dark'], 'tk5': ['min', .71, 230, 'dark'], 'tk6': ['lyd', 1.12, 340, 'cold'], 'tk7': ['lyd', 1, 260, 'tech'], 'tk8': ['min', 1.06, 180, 'tech'], 'tk10': ['maj', 1.06, 300, 'warm'], 'tk9': ['dor', .94, 230, 'tech'], 'tk11': ['lyd', 1.12, 280, 'tech'],
+       'tm1': ['maj', 1, 300, 'epic'], 'tm2': ['min', .75, 280, 'epic'], 'tm3': ['lyd', 1.06, 260, 'epic']}
+KRO_T = {'tk1', 'tk2', 'tk3', 'tk4', 'tk5', 'tk6', 'tk7', 'tk8', 'tk9', 'tk10', 'tk11'}
+
+def theme(id_, raid, setdone=False):
+    pk, k, tp, sty = MUS[id_]
+    P = MP[pk]; T2 = (round(tp * .8) if raid else tp) / 1000.0; dur = T2 * 8; kro = id_ in KRO_T
+    n = 32; s = S(T2 * n * 3 + 4)
+    for g in range(n * 3):
+        t0 = g * T2; ch = [f * k for f in P[(g // 8) % 4]]; s8 = g % 8
+        if sty == 'epic':
+            if s8 == 0:
+                for f in ch: s.tn(f / 2, dur * 1.1, 'sine', .05, t0); s.tn(f, dur, 'triangle', .02, t0)
+                s.tn(ch[0] * 1.004, dur, 'sawtooth', .007, t0); s.tn(ch[2] * .997, dur, 'sawtooth', .006, t0); s.tn(ch[0] / 4, 1.4, 'sine', .13, t0)
+            if s8 == 0 or s8 == 4 or (raid and s8 % 2 == 0): s.tn(55 if id_ == 'tm2' else 73, .55, 'sine', .32 if raid else .22, t0, 30 if id_ == 'tm2' else 44)
+            mel = [0, 1, 2, 1, 2, 0, 1, 2]; s.tn(ch[mel[s8]] * (4 if id_ == 'tm1' else 2), .5, 'sine' if id_ == 'tm3' else 'triangle', .03, t0)
+            if id_ == 'tm1' and s8 % 4 == 2: s.tn(ch[2] * 8, .9, 'sine', .013, t0)
+            if id_ == 'tm3': s.tn(ch[(s8 + 1) % 3] * 8, .25, 'sine', .011, t0)
+            if id_ == 'tm2' and s8 % 2 == 1: s.tn(ch[0] / 2, .15, 'square', .02, t0)
+            if raid:
+                if setdone:
+                    s.nz(.05, .06, t0, 5000, 'highpass')
+                    if s8 % 2 == 1: s.tn(ch[0] / 2, .12, 'sawtooth', .03, t0)
+                    if s8 == 7: s.tn(ch[2] * 2, .3, 'sawtooth', .02, t0)
+                elif s8 % 2 == 1: s.nz(.04, .05, t0, 7000, 'highpass')
+        else:
+            if s8 == 0:
+                for f in ch: s.tn(f / 2, dur * 1.05, 'sine', .045, t0)
+            if sty == 'cold':
+                if s8 % 2 == 0: s.tn(ch[(s8 >> 1) % 3] * 4, .9, 'sine', .022, t0)
+                if s8 == 3 or s8 == 7: s.tn(ch[2] * 8, .5, 'sine', .01, t0)
+            elif sty == 'warm':
+                if s8 % 2 == 0: s.tn(ch[[0, 1, 2, 1][s8 >> 1]] * 2, .42, 'triangle', .035, t0)
+                if s8 == 0 or s8 == 4: s.tn(ch[0] / 4, .35, 'sine', .08, t0)
+            elif sty == 'dark':
+                s.tn(ch[0] / 4, .18, 'square', .016, t0)
+                if s8 % 4 == 0: s.tn(70 * k, .2, 'sine', .25, t0, 40)
+                if s8 % 4 == 2: s.tn(ch[s8 % 3] * 2, .3, 'triangle', .03, t0)
+            else:
+                s.tn(ch[s8 % 3] * (2 if s8 < 4 else 4), .16, 'sawtooth', .011, t0)
+                if s8 % 2 == 0: s.nz(.03, .03, t0, 8000, 'highpass')
+                if s8 == 0: s.tn(ch[0] / 4, .5, 'sine', .07, t0)
+            if kro and s8 == 6: s.tn(ch[1] * 4, .6, 'sine', .016, t0)
+            if raid:
+                if s8 % 2 == 0: s.tn(62 * k, .16, 'sine', .28, t0, 38)
+                if s8 % 2 == 1: s.nz(.04, .05, t0, 7000, 'highpass')
+    L = int(T2 * n * SR)
+    return s.b.a[L:2 * L]
+
+def save_ogg(name, x, gain):
+    import subprocess
+    wav = os.path.join(OUT, name + '.tmp.wav')
+    pcm = (np.clip(x * gain, -1, 1) * 32767).astype('<i2')
+    with wave.open(wav, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes(pcm.tobytes())
+    subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', wav, '-c:a', 'libvorbis', '-q:a', '3', os.path.join(OUT, name + '.ogg')], check=True)
+    os.remove(wav)
+
+if __name__ == '__main__':
+    for id_ in MUS:
+        save_ogg('bgm_' + id_, theme(id_, False), 0.52)
+        save_ogg('bgm_' + id_ + '_raid', theme(id_, True), 0.52)
+        if MUS[id_][3] == 'epic':
+            save_ogg('bgm_' + id_ + '_raidx', theme(id_, True, True), 0.52)
+    print('themes done')
