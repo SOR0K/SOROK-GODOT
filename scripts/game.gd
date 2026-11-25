@@ -2053,7 +2053,7 @@ func _hud(f: Font) -> void:
 # ═════════ 올렸을 때 말풍선 (웹 hovObj·info·einfo) ═════════
 func info_txt(u: Dictionary) -> String:
 	var d: Dictionary = UT[u.t]
-	var s: String = d.n + " Lv " + str(u.lv) + "/11 · 진화 " + str(u.ev) + "/3\n공격력 " + ("%.1f" % patk(u) if float(d.atk) > 0.0 else "-") + " · 체력 " + str(ceili(u.hp)) + "/" + str(roundi(u.mh)) + " · 이속 " + str(roundi(u.sp))
+	var s: String = d.n + " Lv " + str(u.lv) + "/11 · 진화 " + str(u.ev) + "/3\n공격력 " + ("%.1f" % patk(u) if float(d.atk) > 0.0 else "-") + " · 체력 " + str(mini(ceili(u.hp), roundi(u.mh))) + "/" + str(roundi(u.mh)) + " · 이속 " + str(roundi(u.sp))
 	if not (u.t == "m" or u.t == "s" or u.t == "h"):
 		s += "\n공속 " + "%.2f" % float(u.aspd) + "회/초"
 	if u.t == "m":
@@ -2073,7 +2073,7 @@ func einfo_txt(u: Dictionary) -> String:
 	elif u.t == "c":
 		n = "외계 근접병"
 	var s: String = n + " Lv " + str(u.lv) + "/11" + (" · 진화 " + str(u.ev) if u.ev > 0 else "")
-	s += "\n공격력 " + "%.1f" % float(u.atk) + " · 체력 " + str(ceili(u.hp)) + "/" + str(roundi(u.mh)) + " · 이속 " + str(roundi(u.sp))
+	s += "\n공격력 " + "%.1f" % float(u.atk) + " · 체력 " + str(mini(ceili(u.hp), roundi(u.mh))) + "/" + str(roundi(u.mh)) + " · 이속 " + str(roundi(u.sp))
 	s += "\n공속 " + "%.2f" % float(u.aspd) + "회/초"
 	return s
 
@@ -2096,7 +2096,7 @@ func hov_obj(w: Vector2):
 		return {"p": best.p, "ev": best.ev > 0, "tip": info_txt(best) if best.team == 0 else einfo_txt(best)}
 	if w.distance_to(B) < 58.0:
 		var cap := captured()
-		return {"p": B + Vector2(0, -30), "ev": false, "tip": "우리 기지\n체력 " + str(ceili(base.hp)) + " / " + str(roundi(base.mh)) + " · 초당 2 회복\n포탑 공격력 " + "%.1f" % (45.0 * (1.0 + 0.05 * cap)) + " · 1초마다 · 사거리 280\n정복한 기지 1개마다 포탑 +5%\n우물(반경 300): 초당 체력 10% · 전투 중 3%"}
+		return {"p": B + Vector2(0, -30), "ev": false, "tip": "우리 기지\n체력 " + str(mini(ceili(base.hp), roundi(base.mh))) + " / " + str(roundi(base.mh)) + " · 초당 2 회복\n포탑 공격력 " + "%.1f" % (45.0 * (1.0 + 0.05 * cap)) + " · 1초마다 · 사거리 280\n정복한 기지 1개마다 포탑 +5%\n우물(반경 300): 초당 체력 10% · 전투 중 3%"}
 	for o in outs:
 		if w.distance_to(o.p) < 42.0 and seen(o.p):
 			var z: int = o.tr + 1
@@ -2106,7 +2106,7 @@ func hov_obj(w: Vector2):
 			var de := df.filter(func(e): return e.ev > 0).size()
 			var g := roundi(20.0 + 20.0 * o.s * o.s)
 			var s := "외계 기지 · " + str(z) + "구역 · Lv " + str(o.lv) + (" · 진화 " + str(o.ev) + "단계" if o.ev > 0 else "")
-			s += "\n체력 " + str(ceili(o.hp)) + " / " + str(roundi(o.mx))
+			s += "\n체력 " + str(mini(ceili(o.hp), roundi(o.mx))) + " / " + str(roundi(o.mx))
 			s += "\n포탑 공격력 " + "%.1f" % (o.atk * 3.0) + " · 1.3초마다 · 사거리 200\n같은 로봇 연속 공격 시 최대 +120%"
 			s += "\n수비대 " + str(df.size()) + "마리" + (" (진화 " + str(de) + ")" if de > 0 else "") + " · 기지를 부수면 사라져요"
 			s += "\n보호막: 받는 피해 " + str(roundi(shm(o) * 100.0)) + "% (수비대를 잡을수록 약해져요)"
