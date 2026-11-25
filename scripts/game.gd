@@ -1539,7 +1539,7 @@ func _shop(f: Font, hov) -> void:
 				if on:
 					draw_rect(Rect2(r.position, Vector2(4, r.size.y)), Color("#3fcf7a"))
 				draw_string(f, r.position + Vector2(14, 25), c.n, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20.0, 14, Color.WHITE if on else Color(1, 1, 1, 0.45))
-				if c.cost != "":
+				if c.cost != "" and c.cost != "-":
 					_diamond(r.position + Vector2(20, 45), 5.0, Color("#5fe0c4") if c.cost != "진화석" else Color("#c08cff"))
 					draw_string(f, r.position + Vector2(30, 50), c.cost, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#5fe0c4") if on else Color(0.37, 0.88, 0.77, 0.45))
 	var desc := shop_desc
