@@ -125,6 +125,14 @@ def sfx():
     mk('cmd_mv', cm_mv)
     def flag(s): s.tn(660, .08, 'triangle', .05); s.tn(990, .12, 'triangle', .04, .06)
     mk('flag', flag)
+    def ding(s):
+        # 인트로 띵: 세 사인파를 하나의 볼륨으로 (0.18 → 1.6초 동안 사라짐)
+        n = int(1.7 * SR); t = np.arange(n) / SR
+        x = sum(np.sin(2 * np.pi * f * t) for f in [1318.5, 1975.5, 2637])
+        e = np.concatenate([expramp(1e-4, .18, int(.01 * SR)), expramp(.18, 1e-4, int(1.59 * SR))])
+        e = np.concatenate([e, np.full(n - len(e), 1e-4)])
+        s.b.add(0, x * e / 0.42 * 0.6)
+    mk('ding', ding)
     def box(s):
         for i in range(5): s.nz(.08, .2, i * .16, 420, 'bandpass'); s.tn(150 - i * 6, .09, 'sine', .14, i * .16, 90)
         s.nz(.04, .18, .84, 4200, 'highpass'); s.sw(.25, .1, .64, 6000)

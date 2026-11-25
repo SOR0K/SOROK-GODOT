@@ -164,9 +164,14 @@ func _ready() -> void:
 		_selftest()
 	else:
 		_check_update()
-		var had: bool = await acct.boot()
-		if not had:
-			acct.show_login("")
+		intro_start()
+
+func _after_intro() -> void:
+	if OS.get_cmdline_user_args().has("--selftest"):
+		return
+	var had: bool = await acct.boot()
+	if not had:
+		acct.show_login("")
 
 func _sb(bg: Color, border: Color) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
@@ -1371,7 +1376,7 @@ func box_rect() -> Rect2:
 func finish_box(add: bool) -> void:
 	var r := box_rect()
 	if r.size.length() < 8.0:
-		return
+		r = r.grow(22.0)
 	var hit_: Array = bots.filter(func(u): return r.has_point(u.p))
 	if hit_.is_empty():
 		return
@@ -1379,6 +1384,8 @@ func finish_box(add: bool) -> void:
 		clear_sel()
 	for u in hit_:
 		u.sel = true
+	if touch_ui():
+		msg(str(hit_.size()) + "대를 묶었어요 · 땅을 누르면 이동, 적을 누르면 공격해요")
 
 func select_type(k: String) -> void:
 	clear_sel()
@@ -2528,7 +2535,7 @@ func _lobby_w() -> float:
 	return minf(1000.0, ui_size().x - 40.0)
 
 func _build_lobby() -> void:
-	if not box_res.is_empty() or lsec in ["shop", "store", "pass"]:
+	if not box_res.is_empty() or lsec in ["shop", "store", "pass", "prob"]:
 		_build_cos()
 		return
 	var u := ui_size()
@@ -2550,6 +2557,12 @@ func _build_lobby() -> void:
 		_add("lnotes", Rect2(x0, 529.0, cw, 42.0))
 		if upd_url != "":
 			_add("lupd", Rect2(x0 + cw + 12.0, 529.0, W - cw - 12.0, 42.0))
+		var PR := promos()
+		if not PR.is_empty() and u.y >= 700.0:
+			var pr := Rect2(x0, 583.0, W, minf(118.0, u.y - 595.0))
+			_add("lpromo", pr, true, "", PR[promo_i % PR.size()])
+			for i in PR.size():
+				_add("pdot", Rect2(pr.end.x - 18.0 - (PR.size() - 1 - i) * 18.0, pr.end.y - 18.0, 12.0, 12.0), true, "", i)
 	else:
 		var pr := _lsec_rect()
 		_add("lback", Rect2(pr.end.x - 130.0, pr.end.y - 54.0, 116.0, 40.0))
@@ -2561,7 +2574,8 @@ func _build_lobby() -> void:
 			_add("lmute", Rect2(pr.position.x + 20.0, y + 192.0, 140.0, 36.0))
 			_add("lbgm", Rect2(pr.position.x + 20.0, y + 234.0, 320.0, 36.0))
 			_add("lkeys", Rect2(pr.position.x + 20.0, y + 300.0, 220.0, 38.0))
-			_add("lacct", Rect2(pr.position.x + 252.0, y + 300.0, 220.0, 38.0))
+			_add("lacct", Rect2(pr.position.x + 252.0, y + 300.0, 200.0, 38.0))
+			_add("lprob", Rect2(pr.position.x + 464.0, y + 300.0, 160.0, 38.0))
 			_add("lwipe", Rect2(pr.position.x + 20.0, y + 366.0, 200.0, 38.0))
 			_add("lwipeall", Rect2(pr.position.x + 232.0, y + 366.0, 200.0, 38.0))
 
@@ -2585,7 +2599,7 @@ func _lobby(f: Font) -> void:
 	ui.clear()
 	_build_lobby()
 	var hov = null if touch_ui() else ui_hit(mouse_ui * us)
-	if lsec in ["shop", "store", "pass"]:
+	if lsec in ["shop", "store", "pass", "prob"]:
 		_lobby_cos(f, hov)
 	elif lsec == "main":
 		_lobby_main(f, hov)
@@ -2593,9 +2607,9 @@ func _lobby(f: Font) -> void:
 		_lobby_set(f, hov)
 	elif lsec == "notes":
 		_lobby_notes(f, hov)
-	if not (lsec in ["shop", "store", "pass"]):
+	if not (lsec in ["shop", "store", "pass", "prob"]):
 		_logo(f)
-	if lsec in ["shop", "store", "pass"]:
+	if lsec in ["shop", "store", "pass", "prob"]:
 		var pr := _wide_rect()
 		draw_rect(Rect2(0, 0, u.x, pr.position.y), Color("#0b1015"))
 		draw_rect(Rect2(0, pr.end.y + 1.0, u.x, u.y - pr.end.y), Color("#0b1015"))
@@ -2633,6 +2647,51 @@ func _logo(f: Font) -> void:
 		draw_string(f, r.position + Vector2(0, 25), chips[i][1], HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12.0, 18, chips[i][2])
 	if lmsg != "":
 		draw_string(f, Vector2(0, 192), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 13, Color("#ffd76a"))
+
+var promo_i := 0
+var promo_t := 0.0
+func promos() -> Array:
+	var P: Array = []
+	var day := int(Time.get_unix_time_from_system() / 86400.0)
+	var lv := bp_lv()
+	if SV.fbox > 0:
+		var tl: Array = TS.filter(func(q): return not q.has("ex"))
+		P.append({"c": "g", "tag": "선물 도착", "t": "무료 소로 상자 " + str(SV.fbox) + "개", "d": "배틀패스에서 받은 상자가 기다리고 있어요 · 지금 바로 열어 보세요", "b": "상자 열러 가기", "go": "box", "pv": ["t", tl[day % tl.size()].id]})
+	if SV.sfrag >= 30:
+		P.append({"c": "s", "tag": "★ 별 파편 30개 달성", "t": "걸작을 제작할 수 있어요", "d": "원하는 걸작 로봇·기지·테마를 골라 바로 만들어 보세요", "b": "걸작 제작하기", "go": "star", "pv": ["mset", day % 3]})
+	var pass_ := {"c": "s", "tag": "배틀패스 · " + SEASON.n, "t": "패스 전용 은하 세트", "d": ("프리미엄 진행 중 · " + str(lv) + " / 30단계 · 30단계에 은하 사령관") if bp().prem else "청석 2,000으로 프리미엄 해금 · 10 · 20 · 30단계에서 은하 세트 획득", "b": "배틀패스 보기", "go": "pass", "pv": ["set", {"r": "k11", "b": "b12", "t": "tk11"}]}
+	var S: Dictionary = MSET[(day + 1) % 3]
+	var star := {"c": "s", "tag": "★ 걸작 · 별 뽑기 한정", "t": S.n, "d": item(S.r).n + " · " + item(S.b).n + " · " + item(S.t).n + " · 로봇 모양부터 기지까지 완전히 새로운 모습", "b": "별 뽑기 보러 가기", "go": "star", "pv": ["mset", (day + 1) % 3]}
+	var K: Array = SK.filter(func(q): return q.g == "kro" and not q.has("ex"))
+	var k: Dictionary = K[day % K.size()]
+	var dly := {"c": "g", "tag": "오늘의 추천 스킨", "t": k.n, "d": k.d + " · 크로 등급 · 청석 " + str(k.p) + (" · 보유 중" if owns(k.id) else ""), "b": "로봇 스킨 보기", "go": "r", "pv": ["s", k.id]}
+	if bp().prem:
+		P.append_array([star, dly, pass_])
+	else:
+		P.append_array([pass_, star, dly])
+	return P
+
+func _promo_draw(f: Font, it: Dictionary, hov) -> void:
+	var r: Rect2 = it.r
+	var q: Dictionary = it.arg
+	var sb := StyleBoxFlat.new()
+	sb.set_corner_radius_all(10)
+	sb.set_border_width_all(1)
+	sb.bg_color = Color("#1a1430") if q.c == "s" else Color("#1c1a10")
+	sb.border_color = Color("#8a6ad0") if q.c == "s" else Color("#c9a255")
+	sb.draw(get_canvas_item(), r)
+	var pw := minf(r.size.y * 1.66, 220.0)
+	draw_preview(Rect2(r.position + Vector2(8, 8), Vector2(pw - 16.0, (pw - 16.0) * 0.6)), q.pv[0], q.pv[1], t_real)
+	var x := r.position.x + pw + 6.0
+	draw_string(f, Vector2(x, r.position.y + 24.0), q.tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#c79bff") if q.c == "s" else Color("#ffd76a"))
+	draw_string(f, Vector2(x, r.position.y + 50.0), q.t, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - pw - 200.0, 19, Color.WHITE)
+	draw_string(f, Vector2(x, r.position.y + 74.0), q.d, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - pw - 30.0, 12, Color("#9fb3c2"))
+	var br := Rect2(r.end.x - 180.0, r.position.y + 28.0, 164.0, 36.0)
+	var gold := StyleBoxFlat.new()
+	gold.set_corner_radius_all(6)
+	gold.bg_color = Color("#8a5ad8") if q.c == "s" else Color("#d9b04e")
+	gold.draw(get_canvas_item(), br)
+	draw_string(f, Vector2(br.position.x, br.position.y + 24.0), q.b, HORIZONTAL_ALIGNMENT_CENTER, br.size.x, 13, Color.WHITE if q.c == "s" else Color("#2a1a02"))
 
 func _lobby_main(f: Font, hov) -> void:
 	var u := ui_size()
@@ -2679,6 +2738,10 @@ func _lobby_main(f: Font, hov) -> void:
 				draw_string(f, Vector2(r.position.x, r.position.y + 35.0), "새 게임", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 18, Color("#2a1a02"))
 			"lcont":
 				_btn(f, r, "이어하기", hov == it, 18, Color("#ffe6a6"))
+			"lpromo":
+				_promo_draw(f, it, hov)
+			"pdot":
+				draw_circle(r.get_center(), 4.0, Color("#ffd76a") if int(it.arg) == promo_i % maxi(1, promos().size()) else Color(1, 1, 1, 0.25))
 			"lnotes":
 				_btn(f, r, "패치 노트", hov == it, 14)
 			"lupd":
@@ -2725,6 +2788,7 @@ func _lobby_set(f: Font, hov) -> void:
 				_btn(f, r, "배경음: " + nm + "  ▸", hov == it, 14)
 			"lkeys": _btn(f, r, "조작법 전체 보기", hov == it, 14)
 			"lacct": _btn(f, r, "계정 관리", hov == it, 14)
+			"lprob": _btn(f, r, "확률표", hov == it, 14)
 			"lwipe": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", hov == it, 14, Color("#ffb0a0"))
 			"lwipeall": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipeall" else "게임 전체 초기화", hov == it, 14, Color("#ff9a8a"))
 			"lback": _btn(f, r, "뒤로", hov == it, 15)
@@ -2778,6 +2842,17 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			lsec = "set"
 			lob_scroll = 0.0
 		"lnotes": lsec = "notes"
+		"pdot":
+			promo_i = int(it.arg)
+			promo_t = t_real
+		"lpromo":
+			var go: String = it.arg.go
+			if go == "pass":
+				lsec = "pass"
+			else:
+				lsec = "shop"
+				shop_tab2 = go
+			lob_scroll = 0.0
 		"lupd":
 			OS.shell_open(upd_url)
 			lmsg = "새 버전을 받는 중이에요 · 받은 파일을 실행해서 설치해 주세요"
@@ -2794,7 +2869,7 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			else:
 				box_res = []
 		"lback":
-			lsec = "main"
+			lsec = "set" if lsec == "prob" else "main"
 			_apply_sv()
 			sv_save()
 		"ltut": start_game(false, true)
@@ -2803,6 +2878,9 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			_apply_sv()
 			sv_save()
 		"lkeys": keys_open = true
+		"lprob":
+			lsec = "prob"
+			lob_scroll = 0.0
 		"lacct":
 			if acct != null:
 				acct.show_panel()
@@ -2863,7 +2941,7 @@ func _lobby_input(e: InputEvent) -> void:
 				lob_scroll = clampf(lob_scroll + dd * 0.7, 0.0, 200.0)
 			elif e.pressed and lsec == "pass" and not (e.shift_pressed):
 				pass_scroll = clampf(pass_scroll + dd * 1.5, 0.0, _pass_max())
-			elif e.pressed and lsec in ["shop", "store"] and box_res.is_empty():
+			elif e.pressed and lsec in ["shop", "store", "prob"] and box_res.is_empty():
 				lob_scroll = clampf(lob_scroll + dd, 0.0, lob_max)
 			return
 		if e.button_index != MOUSE_BUTTON_LEFT:
@@ -2889,7 +2967,7 @@ func _lobby_input(e: InputEvent) -> void:
 			if lob_drag.m:
 				if lsec == "pass":
 					pass_scroll = clampf(pass_scroll - e.relative.x / us, 0.0, _pass_max())
-				elif lsec in ["shop", "store", "set"]:
+				elif lsec in ["shop", "store", "set", "prob"]:
 					lob_scroll = clampf(lob_scroll - e.relative.y / us, 0.0, lob_max if lsec != "set" else 200.0)
 		return
 	if pos == null:
@@ -3925,7 +4003,7 @@ func draw_preview(r: Rect2, kind: String, id, tm: float) -> void:
 		"t":
 			_pv_theme(M, item(id) if str(id) != "" else {}, tm)
 		"set", "mset":
-			var S: Dictionary = (SETS if kind == "set" else MSET)[int(id)]
+			var S: Dictionary = id if id is Dictionary else (SETS if kind == "set" else MSET)[int(id)]
 			var P := set_parts(S)
 			_pv_tiles(P[2].tn, 7, 4, 20, 21)
 			_pv_base(M, P[1], Vector2(36, 46), 0.42, tm)
@@ -4029,6 +4107,44 @@ func _rows_shop() -> Array:
 			R.append({"cards": cards})
 	return R
 
+func _pc(n: float) -> String:
+	var v := n * 100.0
+	var d := 4 if v < 0.01 else (3 if v < 1.0 else 2)
+	var s := String.num(v, d)
+	if "." in s:
+		s = s.rstrip("0").rstrip(".")
+	return s + "%"
+
+func _rows_prob() -> Array:
+	var JN := 1.0 - 1e-4
+	var cnt := func(L: Array, g: String) -> int: return L.filter(func(q): return q.get("g", "") == g and not q.has("ex")).size()
+	var rj: int = cnt.call(SK, "ju")
+	var rk: int = cnt.call(SK, "kro")
+	var bn: int = BS.filter(func(q): return not q.has("ex")).size()
+	var tj: int = cnt.call(TS, "ju")
+	var tk: int = cnt.call(TS, "kro")
+	var ks: int = SETS.filter(func(S): return item(S.r).g == "kro").size()
+	var ms := star_all().size()
+	var R: Array = []
+	R.append({"p": "모든 확률은 게임 안에서 실제로 쓰이는 값과 같아요. 확률은 매번 독립적으로 적용돼요."})
+	R.append({"h": "소로 상자 · 청석 600"})
+	R.append({"tbl": [["결과", "확률", "비고"],
+		["주 등급 로봇 스킨 파편", _pc(0.4 * 0.82 * JN), "1종당 " + _pc(0.4 * 0.82 * JN / rj) + " · " + str(rj) + "종"],
+		["크로 등급 로봇 스킨 파편", _pc(0.4 * 0.18 * JN), "1종당 " + _pc(0.4 * 0.18 * JN / rk) + " · " + str(rk) + "종"],
+		["기지 스킨 파편", _pc(0.25 * JN), "1종당 " + _pc(0.25 * JN / bn) + " · " + str(bn) + "종"],
+		["주 등급 테마 파편", _pc(0.35 * 0.82 * JN), "1종당 " + _pc(0.35 * 0.82 * JN / tj) + " · " + str(tj) + "종"],
+		["크로 등급 테마 파편", _pc(0.35 * 0.18 * JN), "1종당 " + _pc(0.35 * 0.18 * JN / tk) + " · " + str(tk) + "종"],
+		["크로 세트 통째로 (잭팟)", _pc(1e-4), "1세트당 " + _pc(1e-4 / ks) + " · " + str(ks) + "세트"]]})
+	R.append({"tbl": [["파편 개수", "확률", "완성 필요"], ["1개", _pc(0.65), "로봇 6개"], ["2개", _pc(0.25), "기지 5개"], ["3개", _pc(0.10), "테마 4개"]]})
+	R.append({"p": "이미 가진 스킨의 파편은 청석으로 돌려받아요 · 주 15 · 기지 20 · 크로 60 (파편 1개당)"})
+	R.append({"h": "★ 별 뽑기 · 별석 15"})
+	var Q := 1.0 - 1e-5
+	R.append({"tbl": [["결과", "확률", "비고"], ["★ 별 파편 1개", _pc(0.54 * Q), ""], ["★ 별 파편 2개", _pc(0.32 * Q), ""], ["★ 별 파편 3개", _pc(0.11 * Q), ""], ["★ 별 파편 4개", _pc(0.03 * Q), ""], ["★ 걸작 완품", _pc(1e-5), "미보유 걸작 " + str(ms) + "종 중 1개 균등"]]})
+	R.append({"p": "천장: 500번째 뽑기는 걸작 완품 확정 · 완품이 나오면 천장 초기화 · 별 파편 30개로 원하는 걸작 제작 · 걸작을 모두 가졌다면 완품 대신 별 파편 30개"})
+	R.append({"h": "배틀패스"})
+	R.append({"p": "배틀패스 보상은 확률이 아닌 확정 보상이에요. 크로 파편 보상은 아직 없는 크로 로봇·테마 중 1종에 균등하게 들어가요."})
+	return R
+
 func _store_gr(it: Dictionary) -> String:
 	if it.get("g", "") == "star":
 		return "star"
@@ -4123,6 +4239,12 @@ func _layout_rows(R: Array, cr: Rect2, f: Font) -> void:
 		elif row.has("bar"):
 			lob_draw.append({"k": "bar", "r": Rect2(x0, y, W, 22.0), "v": row.bar, "s": row.bt})
 			y += 32.0
+		elif row.has("tbl"):
+			var T: Array = row.tbl
+			for ri in T.size():
+				lob_draw.append({"k": "trow", "r": Rect2(x0, y, W, 26.0), "c": T[ri], "head": ri == 0})
+				y += 26.0
+			y += 10.0
 		elif row.has("btns") or row.has("chips"):
 			var B: Array = row.btns if row.has("btns") else row.chips
 			var bx := x0
@@ -4195,6 +4317,17 @@ func _draw_rows(f: Font, hov) -> void:
 			"p":
 				if e.p.y > cr.position.y and e.p.y < cr.end.y + 10.0:
 					draw_string(f, e.p, e.s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#9fb3c2"))
+			"trow":
+				var r: Rect2 = e.r
+				if r.end.y < cr.position.y or r.position.y > cr.end.y:
+					continue
+				draw_rect(r, Color(1, 1, 1, 0.08) if e.head else Color(1, 1, 1, 0.02))
+				draw_line(Vector2(r.position.x, r.end.y), r.end, Color(1, 1, 1, 0.08), 1.0)
+				var ws_ := [0.42, 0.18, 0.40]
+				var xx := r.position.x + 8.0
+				for ci in 3:
+					draw_string(f, Vector2(xx, r.position.y + 18.0), str(e.c[ci]), HORIZONTAL_ALIGNMENT_LEFT, r.size.x * ws_[ci] - 10.0, 13, Color("#ffe6a6") if e.head else (Color.WHITE if ci < 2 else Color("#9fb3c2")))
+					xx += r.size.x * ws_[ci]
 			"bar":
 				var r: Rect2 = e.r
 				draw_rect(r, Color(1, 1, 1, 0.08))
@@ -4368,7 +4501,7 @@ func _build_cos() -> void:
 			_add("cb", Rect2(x, pr.position.y + 50.0, w, 36.0), true, "", {"a": "tab", "k": tb[0], "lb": tb[1]})
 			x += w + 6.0
 	var cr := _content_rect()
-	var R: Array = _rows_shop() if lsec == "shop" else (_rows_store() if lsec == "store" else _rows_pass())
+	var R: Array = _rows_shop() if lsec == "shop" else (_rows_store() if lsec == "store" else (_rows_pass() if lsec == "pass" else _rows_prob()))
 	_layout_rows(R, cr, ThemeDB.fallback_font)
 
 func _pass_max() -> float:
@@ -4382,7 +4515,7 @@ func _lobby_cos(f: Font, hov) -> void:
 	var mk := Color("#0a0e14")
 	draw_rect(Rect2(pr.position.x + 2, pr.position.y + 2, pr.size.x - 4, cr.position.y - pr.position.y - 2), mk)
 	draw_rect(Rect2(pr.position.x + 2, cr.end.y, pr.size.x - 4, pr.end.y - cr.end.y - 2), mk)
-	draw_string(f, pr.position + Vector2(18, 34), {"shop": "상점", "store": "창고", "pass": "배틀패스"}[lsec], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, GOLD)
+	draw_string(f, pr.position + Vector2(18, 34), {"shop": "상점", "store": "창고", "pass": "배틀패스", "prob": "확률표"}[lsec], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, GOLD)
 	var info := "청석 " + str(SV.cs) + " · 별석 " + str(SV.ss)
 	if lsec == "shop":
 		info += " · 게임이 끝나면 번 광석의 4% + 정복 보너스가 청석으로 들어와요"
@@ -4478,6 +4611,150 @@ func cos_press(a: Dictionary) -> void:
 						G += 1
 			lmsg = ("보상 " + str(G) + "개 받기 완료!") if G > 0 else "받을 보상이 없어요"
 			sv_save()
+
+# ═════════ SOROMA GAMES 인트로 → SOROK 로고 (웹과 같은 순서 · 건너뛰기 없음) ═════════
+var intro_t0 := 0.0
+var intro_P: Array = []
+var intro_ding := false
+var intro_out := -9.0
+var rad_tex: Texture2D = null
+
+func intro_start() -> void:
+	scene = "intro"
+	intro_t0 = t_real
+	intro_ding = false
+	intro_P.clear()
+	var sd := 11
+	var rn := func() -> float:
+		sd = (sd * 16807) % 2147483647
+		return float(sd) / 2147483647.0
+	for a in 2:
+		for i in 1100:
+			var tt: float = pow(rn.call(), 0.8) * 3.1
+			var r := 24.0 * exp(0.704 * tt)
+			if r > 330.0:
+				continue
+			var sa: float = rn.call() * 7.0
+			var sr: float = 420.0 + rn.call() * 380.0
+			intro_P.append({"r": r * (1.0 + (rn.call() - 0.5) * 0.12), "a": a * PI + tt * 2.2 + (rn.call() - 0.5) * (0.2 + 0.08 * tt), "k": r / 330.0,
+				"s": (1.1 + 1.4 * rn.call()) * (1.2 - r / 660.0), "sx": cos(sa) * sr, "sy": sin(sa) * sr, "dl": rn.call() * 0.45})
+
+func _rad() -> Texture2D:
+	if rad_tex == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 1))
+		g.set_color(1, Color(1, 1, 1, 0))
+		var gt := GradientTexture2D.new()
+		gt.gradient = g
+		gt.fill = GradientTexture2D.FILL_RADIAL
+		gt.fill_from = Vector2(0.5, 0.5)
+		gt.fill_to = Vector2(1.0, 0.5)
+		gt.width = 128
+		gt.height = 128
+		rad_tex = gt
+	return rad_tex
+
+func _glow(c: Vector2, rx: float, ry: float, col: Color) -> void:
+	draw_texture_rect(_rad(), Rect2(c - Vector2(rx, ry), Vector2(rx, ry) * 2.0), false, col)
+
+func _ease3(x: float) -> float:
+	return 1.0 - pow(1.0 - clampf(x, 0.0, 1.0), 3.0)
+
+func _spaced(f: Font, s: String, cx: float, y: float, fs: int, em: float, col: Color) -> void:
+	var gap := fs * em
+	var w := 0.0
+	for ch in s:
+		w += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + gap
+	w -= gap
+	var x := cx - w / 2.0
+	for ch in s:
+		draw_string(f, Vector2(x, y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+		x += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + gap
+
+func _intro(f: Font) -> void:
+	_ui_reset()
+	var u := ui_size()
+	var ti := t_real - intro_t0
+	draw_rect(Rect2(Vector2.ZERO, u), Color.BLACK)
+	var cw := minf(minf(u.x * 0.9, u.y * 1.1), 1000.0)
+	var k := cw / 900.0
+	var ch := 560.0 * k
+	var top := (u.y - ch - 60.0) / 2.0
+	var C0 := Vector2(u.x / 2.0, top + 290.0 * k)
+	var s1 := 1.0 - clampf((ti - 2.7) / 0.6, 0.0, 1.0)
+	if ti < 3.3 and s1 > 0.0:
+		var ap := _ease3(ti / 1.1)
+		_glow(C0, 280 * k, 280 * k, Color(60 / 255.0, 170 / 255.0, 190 / 255.0, 0.25 * ap * s1))
+		var rot := ti * 0.3
+		for p in intro_P:
+			var q := _ease3((ti - p.dl) / 1.05)
+			if q <= 0.0:
+				continue
+			var an: float = p.a + rot
+			var fx: float = cos(an) * p.r
+			var fy: float = sin(an) * p.r * 0.58
+			var pos := Vector2(p.sx + (fx - p.sx) * q, p.sy * 0.7 + (fy - p.sy * 0.7) * q)
+			var kk: float = p.k
+			draw_circle(C0 + pos * k, maxf(0.6, p.s * k), Color((255 - 150 * kk) / 255.0, 220 / 255.0, (140 + 90 * kk) / 255.0, q * (0.92 - 0.62 * kk) * s1))
+		_glow(C0, 90 * k, 70 * k, Color(1.0, 236 / 255.0, 180 / 255.0, ap * s1))
+		var dk := ti - 1.5
+		var sp := 0.0 if ti < 1.2 else minf(1.0, (ti - 1.2) / 0.3) * 0.55
+		if dk > 0.0:
+			sp = 0.55 + 0.9 * maxf(0.0, 1.0 - dk / 0.6)
+		if sp > 0.0:
+			var L := 90.0 * sp * k
+			var w := 6.0 * k
+			var sc := Color(1.0, 250 / 255.0, 230 / 255.0, minf(1.0, sp) * s1)
+			draw_colored_polygon(PackedVector2Array([C0 + Vector2(0, -L), C0 + Vector2(w, 0), C0 + Vector2(0, L), C0 + Vector2(-w, 0)]), sc)
+			draw_colored_polygon(PackedVector2Array([C0 + Vector2(-L * 0.75, 0), C0 + Vector2(0, -w), C0 + Vector2(L * 0.75, 0), C0 + Vector2(0, w)]), sc)
+		if dk > 0.0 and dk < 0.9:
+			var kq := dk / 0.9
+			var rr := (40.0 + 420.0 * _ease3(kq)) * k
+			ell_line(self, C0, rr, rr * 0.6, Color(1.0, 236 / 255.0, 190 / 255.0, 0.8 * (1.0 - kq) * s1), 3.0 * (1.0 - kq) + 0.5)
+			_glow(C0, 260 * k, 260 * k, Color(1.0, 250 / 255.0, 235 / 255.0, 0.75 * maxf(0.0, 1.0 - dk / 0.35) * s1))
+		# SOROMA · GAMES
+		var ta := clampf((ti - 0.95) / 0.7, 0.0, 1.0) * s1
+		if ta > 0.0:
+			var ty := top + ch - u.y * 0.04 + (1.0 - ta) * 10.0
+			var fs := int(clampf(u.x * 0.055, 34.0, 68.0))
+			var pulse := 0.0
+			if ti > 1.5 and ti < 2.4:
+				pulse = sin((ti - 1.5) / 0.9 * PI)
+			var tc := Color(236 / 255.0, 196 / 255.0, 110 / 255.0, ta).lerp(Color(1, 0.97, 0.85, ta), pulse * 0.6)
+			_spaced(f, "SOROMA", u.x / 2.0, ty + fs * 0.4, fs, 0.2, tc)
+			_spaced(f, "GAMES", u.x / 2.0, ty + fs * 0.4 + 30.0, int(clampf(u.x * 0.013, 11.0, 15.0)), 0.7, Color(150 / 255.0, 170 / 255.0, 185 / 255.0, ta))
+	if ti > 1.5 and not intro_ding:
+		intro_ding = true
+		sfx("ding")
+	# SOROK 로고
+	var s2 := clampf((ti - 3.4) / 0.6, 0.0, 1.0)
+	if s2 > 0.0:
+		var e := _ease3((ti - 3.4) / 1.2)
+		var fs := int(clampf(u.x * 0.1, 64.0, 150.0))
+		var sp := lerpf(0.6, 0.14, e)
+		var sc := lerpf(1.08, 1.0, e)
+		var cy := u.y / 2.0
+		_ui_tf(Vector2(u.x / 2.0, cy), 0.0, sc)
+		_spaced(f, "SOROK", 0.0, fs * 0.36 + 4.0, fs, sp, Color(0.6, 0.38, 0.1, 0.35 * s2 * e))
+		_spaced(f, "SOROK", 0.0, fs * 0.36, fs, sp, Color(1.0, 215 / 255.0, 106 / 255.0, s2 * (0.35 + 0.65 * e)))
+		_ui_reset()
+		var lw := minf(u.x * 0.6, 640.0) * _ease3((ti - 3.9) / 1.0)
+		if lw > 1.0:
+			draw_polyline_colors(PackedVector2Array([Vector2(u.x / 2.0 - lw / 2.0, cy + fs * 0.5 + 18.0), Vector2(u.x / 2.0, cy + fs * 0.5 + 18.0), Vector2(u.x / 2.0 + lw / 2.0, cy + fs * 0.5 + 18.0)]),
+				PackedColorArray([Color(1, 0.84, 0.42, 0), Color(1, 0.84, 0.42, 1), Color(1, 0.84, 0.42, 0)]), 2.0)
+		var sa := clampf((ti - 4.2) / 0.8, 0.0, 1.0)
+		if sa > 0.0:
+			_spaced(f, "외계 기지 정복 전략", u.x / 2.0, cy + fs * 0.5 + 52.0, int(clampf(u.x * 0.016, 14.0, 19.0)), 0.3, Color(201 / 255.0, 212 / 255.0, 220 / 255.0, sa))
+	if ti > 5.6:
+		scene = "lobby"
+		intro_out = t_real
+		_after_intro()
+
+func _intro_fade() -> void:
+	var a := 1.0 - (t_real - intro_out) / 0.5
+	if a > 0.0:
+		_ui_reset()
+		draw_rect(Rect2(Vector2.ZERO, ui_size()), Color(0, 0, 0, a))
 
 # ═════════ 소리 (웹 효과음·배경음을 WAV로 만든 것) ═════════
 const SFX_GAP := {"shoot": 0.06, "hit": 0.06, "ehit": 0.08, "die": 0.05, "ore": 0.12, "turret": 0.06, "myturret": 0.1, "basehit": 0.15, "up": 0.05, "click": 0.03, "cmd_atk": 0.05, "cmd_mv": 0.05}
@@ -4690,12 +4967,17 @@ func _raid_ui(f: Font) -> void:
 			draw_string(f, ap + Vector2(-40, 24), "레이드", HORIZONTAL_ALIGNMENT_CENTER, 80, 12, Color("#ffdcd6"))
 
 # 기지 파괴 (웹 baseBoom 기본 모양)
+const BXS := {"b1": "petal", "b2": "ice", "b3": "fire", "b4": "star", "b5": "bubble", "b7": "aurora", "b8": "bolt", "b9": "bolt", "b10": "aurora", "b11": "petal", "b12": "star", "mb1": "star", "mb2": "fire", "mb3": "aurora"}
 func _base_boom(lt: float) -> void:
 	var X := B
 	var h := func(i: int) -> float: return fmod(i * 9301.0 + 49297.0, 233280.0) / 233280.0
+	var sty: String = BXS.get(bsk.get("id", ""), "normal")
+	var A := C(bsk.lt) if sty != "normal" else Color("#ffd25a")
+	var Bc := C(bsk.gl) if sty != "normal" else Color("#ff6a1f")
 	if lt < 0.45:
 		var sh := (1.0 - lt / 0.45) * 7.0
 		art_base(self, X + Vector2(rng.randf() - 0.5, rng.randf() - 0.5) * sh, t, Transform2D.IDENTITY, bsk)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		draw_circle(X, 58.0, Color(1, 1, 1, lt / 0.45 * 0.85))
 		return
 	var tt := lt - 0.45
@@ -4703,24 +4985,73 @@ func _base_boom(lt: float) -> void:
 	for i in 10:
 		draw_rect(Rect2(X.x - 42.0 + h.call(i) * 84.0, X.y - 16.0 + h.call(i + 20) * 36.0, 6.0 + h.call(i + 40) * 11.0, 4.0 + h.call(i + 60) * 7.0), C(bsk.get("bd", "#38434d")) if i % 2 else C(bsk.get("tp", "#5a6a78")))
 	if tt < 0.8:
-		draw_arc(X, 20.0 + tt * 280.0, 0, TAU, 64, Color(C(bsk.lt) if bsk.has("lt") else Color(1.0, 0.95, 0.75), 1.0 - tt / 0.8), 7.0 * (1.0 - tt / 0.8) + 1.0)
+		draw_arc(X, 20.0 + tt * 280.0, 0, TAU, 64, Color(Color(1.0, 0.95, 0.75) if sty == "normal" else A, 1.0 - tt / 0.8), 7.0 * (1.0 - tt / 0.8) + 1.0)
 	if tt < 1.2:
-		draw_circle(X, 32.0 + tt * 55.0, Color(C(bsk.gl) if bsk.has("gl") else Color(1.0, 0.42, 0.12), (1.0 - tt / 1.2) * 0.85))
-		draw_circle(X, 18.0 + tt * 26.0, Color(C(bsk.lt) if bsk.has("lt") else Color(1.0, 0.82, 0.35), 1.0 - tt / 1.2))
+		draw_circle(X, 32.0 + tt * 55.0, Color(Bc, (1.0 - tt / 1.2) * 0.85))
+		draw_circle(X, 18.0 + tt * 26.0, Color(A, 1.0 - tt / 1.2))
 	var fade := maxf(0.0, 1.0 - tt / 2.3)
 	for i in 48:
 		var a: float = h.call(i) * TAU
 		var v: float = 60.0 + h.call(i + 7) * 230.0
 		var d := v * tt * (1.0 - minf(tt, 2.0) / 4.0)
 		var z: float = 2.0 + h.call(i + 11) * 4.0
-		var pp := X + Vector2(cos(a) * d, sin(a) * d + tt * tt * 30.0)
-		var col := Color(0.35, 0.35, 0.35, 0.85)
-		if i % 3:
-			col = Color("#ffb03a") if i % 2 else Color("#ff5a1a")
-		draw_circle(pp, z + (0.0 if i % 3 else tt * 6.0), Color(col, col.a * fade))
-	var sa := maxf(0.0, 0.55 - tt * 0.15)
-	for i in 6:
-		draw_circle(X + Vector2((h.call(i + 90) - 0.5) * 64.0, -20.0 - tt * 40.0 - h.call(i + 70) * 30.0), 14.0 + tt * 10.0, Color(0.24, 0.24, 0.24, 0.65 * sa))
+		var py := sin(a) * d * (0.5 if sty == "bubble" else 1.0)
+		if sty == "bubble":
+			py -= tt * 70.0 * h.call(i + 3)
+		elif sty == "aurora":
+			py -= tt * 45.0
+		elif sty == "normal" or sty == "fire":
+			py += tt * tt * 30.0
+		var pp := X + Vector2(cos(a) * d, py)
+		var ac := A if i % 2 else Bc
+		match sty:
+			"normal":
+				var col := Color(0.35, 0.35, 0.35, 0.85)
+				if i % 3:
+					col = Color("#ffb03a") if i % 2 else Color("#ff5a1a")
+				draw_circle(pp, z + (0.0 if i % 3 else tt * 6.0), Color(col, col.a * fade))
+			"fire":
+				draw_circle(pp, z + 1.0, Color(ac, fade))
+			"ice":
+				var pts := PackedVector2Array()
+				for q in [Vector2(z * 2.2, 0), Vector2(0, -z * 0.7), Vector2(-z * 1.4, 0), Vector2(0, z * 0.7)]:
+					pts.append(pp + (q as Vector2).rotated(a))
+				draw_colored_polygon(pts, Color(Color.WHITE if i % 2 else Bc, fade))
+			"bolt":
+				if i % 4 == 0 and sin(lt * 30.0 + i) > 0.0:
+					var L := PackedVector2Array([X])
+					for q in range(1, 6):
+						var r := d * q / 5.0
+						var jj: float = (h.call(i * q + 3) - 0.5) * 20.0
+						L.append(X + Vector2(cos(a) * r - sin(a) * jj, sin(a) * r + cos(a) * jj))
+					draw_polyline(L, Color(A if i % 8 else Bc, fade), 2.0)
+				else:
+					draw_rect(Rect2(pp, Vector2(2.5, 2.5)), Color(A, fade))
+			"petal":
+				draw_colored_polygon(_rot_ell(pp, z + 1.5, z * 0.55, a + tt * 6.0), Color(ac, fade))
+			"bubble":
+				draw_arc(pp, z + 1.5, 0, TAU, 12, Color(ac, fade), 1.5)
+			"aurora":
+				draw_rect(Rect2(pp.x - 1.5, pp.y - z * 3.0, 3, z * 6.0), Color(ac, fade * 0.65))
+			_:
+				var st := PackedVector2Array()
+				for q in 10:
+					var r := z * 0.45 if q % 2 else z * 1.25
+					st.append(pp + Vector2.from_angle(q * PI / 5.0 + tt * 5.0 + i) * r)
+				draw_colored_polygon(st, Color(ac, fade))
+	if sty == "aurora" and tt < 2.5:
+		var H := 260.0 * minf(1.0, tt * 1.5)
+		for b in 3:
+			draw_rect(Rect2(X.x - 30 + b * 22, X.y - H, 14, H), Color(Bc if b % 2 else A, 0.25 * (1.0 - tt / 2.5)))
+	if sty == "bubble" and tt < 2.0:
+		for r in 3:
+			draw_arc(X, fmod(tt * 140.0 + r * 40.0, 180.0), 0, TAU, 40, Color(A, 0.5 * (1.0 - tt / 2.0)), 2.0)
+	if sty == "ice" and tt < 1.5:
+		draw_circle(X, 40.0 + tt * 120.0, Color(0.91, 0.96, 1.0, 0.35 * (1.0 - tt / 1.5)))
+	if sty == "normal" or sty == "fire":
+		var sa := maxf(0.0, 0.55 - tt * 0.15)
+		for i in 6:
+			draw_circle(X + Vector2((h.call(i + 90) - 0.5) * 64.0, -20.0 - tt * 40.0 - h.call(i + 70) * 30.0), 14.0 + tt * 10.0, Color(0.24, 0.24, 0.24, 0.65 * sa))
 
 func _defeat(f: Font) -> void:
 	var lt := t_real - lost_at
@@ -4737,85 +5068,304 @@ func _defeat(f: Font) -> void:
 	var sub := "10분 이상 플레이해야 청석을 받아요" if t < 600.0 else "시간 %d:%02d · 처치 %d · 정복 %d" % [int(t / 60.0), int(t) % 60, kills, captured()]
 	draw_string(f, Vector2(0, y + 40.0), sub, HORIZONTAL_ALIGNMENT_CENTER, u.x, 15, Color(1.0, 0.86, 0.84, a))
 
-# 승리 연출 (웹 drawWin 기본 꽃가루 모양)
+# ═════════ 승리 연출 (웹 drawWin · 테마별 WJU) ═════════
+const WJU := {"t1": ["snow", ["#ffffff", "#cfe6ff", "#9cc8ff"]], "t2": ["sand", ["#ffd98a", "#e0b060", "#fff0c0"]], "t3": ["leaf", ["#7fd04a", "#b8e06a", "#ffffff"]], "t4": ["dust", ["#ff8a4a", "#e0c060", "#ffd0a0"]], "t5": ["star", ["#ffffff", "#a0c8ff", "#5aa0d8"]], "t6": ["bubble", ["#a0e070", "#d0ff9a", "#ffffff"]], "t7": ["bubble", ["#7fd8ff", "#ffffff", "#f09a5a"]], "t8": ["leaf", ["#e0602a", "#f0a030", "#ffd060"]], "t9": ["star", ["#4affd8", "#ffb04a", "#ffffff"]], "t10": ["ash", ["#b8b8b8", "#e06a4a", "#808080"]], "t11": ["neon", ["#3affe8", "#ff3ad0", "#ffffff"]], "t12": ["petal", ["#c89aff", "#e8c8ff", "#ffffff"]], "t13": ["dust", ["#ff6a4a", "#5a8ac8", "#ffd0a0"]],
+	"tk1": ["bubble", ["#3ff0ff", "#2ad0a0", "#ffffff"], "deep"], "tk2": ["petal", ["#ff8fb8", "#ffd0e0", "#ffffff"], "bloom"], "tk3": ["snow", ["#ffffff", "#bfe6ff", "#7ab8ff"], "blizzard"], "tk4": ["rain", ["#ffe14a", "#8a8aff", "#ffffff"], "storm"], "tk5": ["ember", ["#ffd25a", "#ff6a1f", "#ff3a1a"], "lava"], "tk6": ["star", ["#7affd4", "#c08cff", "#ffffff"], "aurora"], "tk7": ["star", ["#ffe27a", "#8ab0ff", "#ffffff"], "meteor"], "tk8": ["neon", ["#3affe8", "#ff3ad0", "#ffffff"], "grid"], "tk10": ["petal", ["#ff4a6a", "#ffb0c0", "#ffffff"], "bloom"], "tk9": ["sand", ["#9ad8ff", "#ffd98a", "#ffffff"], "meteor"], "tk11": ["star", ["#c08cff", "#7a5aff", "#ffffff"], "galaxy"],
+	"tm1": ["feather", ["#ffffff", "#ffd25a", "#fff3c0"], "heaven"], "tm2": ["ember", ["#ffd25a", "#ff6a1f", "#ff3a1a"], "dragon"], "tm3": ["shard", ["#7affd4", "#c08cff", "#ffffff"], "prism"]}
+var ws := {}
+var wbolt := {}
+
+func win_style() -> Dictionary:
+	var th := TH()
+	var id: String = th.get("id", "")
+	var w = WJU.get(id, null)
+	var S := {"id": id, "g": th.get("g", ""), "fall": w[0] if w != null else "confetti", "cols": w[1] if w != null else ["#ffd76a", "#7fe0ff", "#ff7aa8", "#9bff8a", "#c79bff"],
+		"fx": w[2] if (w != null and w.size() > 2) else "", "acc": th.get("a", "#ffd24a"), "set": ""}
+	for z in MSET:
+		if z.t == id and mset_done(id):
+			S.set = z.n
+	if id == "tm2":
+		S.grad = ["#fff0a0", "#ffb02a", "#ff3a10"]
+	elif id == "tm1":
+		S.grad = ["#ffffff", "#fff1b0", "#e8b83a"]
+	elif S.g == "kro":
+		S.grad = ["#ffffff", S.acc, S.cols[1]]
+	else:
+		S.grad = ["#fff8d6", "#ffd24a", "#f0a020"]
+	return S
+
+func _wrc() -> Color:
+	return C(ws.cols[rng.randi() % ws.cols.size()])
+
 func _tick_win(dt: float) -> void:
+	if ws.is_empty():
+		ws = win_style()
 	var u := ui_size()
+	var VW := u.x
+	var VH := u.y
 	var wt := t_real - won_at
-	var WC := [Color("#ffd76a"), Color("#7fe0ff"), Color("#ff7aa8"), Color("#9bff8a"), Color("#c79bff")]
-	if rng.randf() < (0.08 if wt < 4.0 else 0.035):
-		var bp0 := Vector2(u.x * rng.randf_range(0.15, 0.85), u.y * rng.randf_range(0.12, 0.57))
+	var fx: String = ws.fx
+	if fx == "storm" and rng.randf() < 0.025:
+		wbolt = {"t": t_real, "x": VW * (0.15 + 0.7 * rng.randf()), "pts": []}
+		var lx: float = wbolt.x
+		var ly := 0.0
+		var P := PackedVector2Array([Vector2(lx, ly)])
+		while ly < VH * 0.7:
+			lx += (rng.randf() - 0.5) * 60.0
+			ly += 30.0 + rng.randf() * 30.0
+			P.append(Vector2(lx, ly))
+		wbolt.pts = P
+	if fx == "dragon":
+		var dp := (wt - 0.4) / 2.6
+		if dp > 0.0 and dp < 1.2 and rng.randf() < 0.6:
+			var dpos := Vector2(-200 + dp * (VW + 400), VH * 0.16 + sin(dp * 6.0) * 20.0)
+			for i in 5:
+				wfx.append({"p": dpos + Vector2(100, -6), "v": Vector2(120 + rng.randf() * 160, 40 + rng.randf() * 120), "l": 0.9, "c": _wrc(), "r": 3.0 + rng.randf() * 3.0, "gl": true})
+	if fx == "lava" and rng.randf() < 0.05:
+		var bx := VW * (0.1 + 0.8 * rng.randf())
+		for i in 40:
+			wfx.append({"p": Vector2(bx, VH), "v": Vector2((rng.randf() - 0.5) * 160, -(260 + rng.randf() * 320)), "l": 2.2, "c": _wrc(), "r": 2.0 + rng.randf() * 3.0, "g": 260.0, "gl": true})
+	if fx == "meteor" and rng.randf() < 0.08:
+		wfx.append({"p": Vector2(rng.randf() * VW * 0.8, -10), "v": Vector2(380 + rng.randf() * 200, 240 + rng.randf() * 120), "l": 1.6, "c": _wrc(), "r": 2.4, "mt": true})
+	if fx == "bloom" and rng.randf() < 0.05:
+		var bp0 := Vector2(VW * (0.15 + 0.7 * rng.randf()), VH * (0.15 + 0.45 * rng.randf()))
+		for i in 30:
+			var a := rng.randf() * 7.0
+			var v := 40.0 + rng.randf() * 120.0
+			wfx.append({"p": bp0, "v": Vector2(cos(a), sin(a)) * v, "l": 2.0, "c": _wrc(), "pt": true, "a": a, "g": 40.0})
+	if fx != "heaven" and rng.randf() < (0.08 if wt < 4.0 else 0.035):
+		var bp0 := Vector2(VW * (0.15 + 0.7 * rng.randf()), VH * (0.12 + 0.45 * rng.randf()))
 		for i in 46:
-			var a := rng.randf() * TAU
-			var v := rng.randf_range(60.0, 250.0)
-			wfx.append({"p": bp0, "v": Vector2.from_angle(a) * v, "l": rng.randf_range(1.0, 1.6), "c": WC[rng.randi() % 5], "r": rng.randf_range(2.0, 3.6), "g": 90.0, "fr": true})
+			var a := rng.randf() * 7.0
+			var v := 60.0 + rng.randf() * 190.0
+			wfx.append({"p": bp0, "v": Vector2(cos(a), sin(a)) * v, "l": 1.0 + rng.randf() * 0.6, "c": hsl(rng.randf() * 360.0, 1.0, 0.7) if ws.id == "tm3" else _wrc(), "r": 2.0 + rng.randf() * 1.6, "g": 90.0, "fr": true})
+	var fl: String = ws.fall
+	var rate := 6 if fx == "blizzard" else (1 if fl == "star" else 2)
 	if wfx.size() < 650 and wt > 0.3:
-		for i in 2:
-			wfx.append({"p": Vector2(rng.randf() * u.x, -10), "v": Vector2(rng.randf_range(-20, 20), rng.randf_range(60, 140)), "l": 9.0, "c": WC[rng.randi() % 5], "cf": true, "a": rng.randf() * 7.0})
-	for q in wfx:
+		for i in rate:
+			if rng.randf() > 0.85 and fl != "confetti" and fx != "blizzard":
+				continue
+			var c := _wrc()
+			match fl:
+				"snow":
+					var bz := fx == "blizzard"
+					wfx.append({"p": Vector2(rng.randf() * VW * (1.4 if bz else 1.0) - (VW * 0.4 if bz else 0.0), -8), "v": Vector2(260 if bz else (rng.randf() - 0.5) * 30, (160 + rng.randf() * 80) if bz else (40 + rng.randf() * 40)), "l": 8.0, "c": c, "r": 1.5 + rng.randf() * 2.2, "sw": true})
+				"bubble":
+					wfx.append({"p": Vector2(rng.randf() * VW, VH + 8), "v": Vector2(0, -(40 + rng.randf() * 60)), "l": 9.0, "c": c, "r": 3.0 + rng.randf() * 6.0, "bb": true, "sw": true})
+				"ember":
+					wfx.append({"p": Vector2(rng.randf() * VW, VH + 5), "v": Vector2((rng.randf() - 0.5) * 30, -(50 + rng.randf() * 80)), "l": 7.0, "c": c, "r": 1.5 + rng.randf() * 2.0, "gl": true, "sw": true})
+				"star":
+					wfx.append({"p": Vector2(rng.randf() * VW, rng.randf() * VH * 0.8), "v": Vector2.ZERO, "l": 1.4, "c": c, "r": 3.0 + rng.randf() * 4.0, "st4": true, "l0": 1.4})
+				"rain":
+					wfx.append({"p": Vector2(rng.randf() * VW * 1.2, -10), "v": Vector2(-120, 700), "l": 2.0, "c": Color(0.7, 0.78, 1.0, 0.6), "rn": true})
+				"dust", "sand":
+					wfx.append({"p": Vector2(-8, rng.randf() * VH * 0.9), "v": Vector2(80 + rng.randf() * 90, (rng.randf() - 0.5) * 20), "l": 12.0, "c": c, "r": 1.0 + rng.randf() * 2.0, "sq": fl == "sand"})
+				"confetti":
+					wfx.append({"p": Vector2(rng.randf() * VW, -10), "v": Vector2((rng.randf() - 0.5) * 40, 60 + rng.randf() * 80), "l": 9.0, "c": c, "cf": true, "a": rng.randf() * 7.0})
+				_:
+					wfx.append({"p": Vector2(rng.randf() * VW, -12), "v": Vector2((rng.randf() - 0.5) * 30, 35 + rng.randf() * 45), "l": 12.0, "c": c, "lf": fl, "a": rng.randf() * 7.0, "sw": true})
+	for i in wfx.size():
+		var q: Dictionary = wfx[i]
 		q.l -= dt
 		if q.has("g"):
 			q.v = (q.v as Vector2) + Vector2(0, q.g * dt)
 		if q.get("fr", false):
 			q.v = (q.v as Vector2) * 0.97
+		if q.get("sw", false):
+			q.p = (q.p as Vector2) + Vector2(sin(t_real * 1.7 + i) * 0.4, 0)
 		q.p = (q.p as Vector2) + (q.v as Vector2) * dt
 		if q.has("a"):
-			q.a += dt * 6.0
-	wfx = wfx.filter(func(q): return q.l > 0.0 and q.p.y < u.y + 20.0)
+			q.a += dt * (2.0 if q.has("lf") else 6.0)
+	wfx = wfx.filter(func(q): return q.l > 0.0 and q.p.y < VH + 20.0 and not (q.p.y < -30.0 and q.v.y < 0.0) and q.p.x < VW + 60.0)
 
-func _victory(f: Font) -> void:
-	var u := ui_size()
-	var wt := t_real - won_at
-	var c := Vector2(u.x / 2.0, u.y * 0.36)
-	draw_rect(Rect2(Vector2.ZERO, u), Color(6 / 255.0, 8 / 255.0, 16 / 255.0, minf(0.72, wt * 0.9)))
-	if wt < 0.5:
-		draw_rect(Rect2(Vector2.ZERO, u), Color(1.0, 0.96, 0.82, (1.0 - wt / 0.5) * 0.75))
-	# 빛줄기
-	var ra := minf(1.0, wt * 1.3)
-	for i in 14:
-		var a := wt * 0.25 + i * TAU / 14.0
-		var L := u.x * 0.7
+func _ray_fan(c: Vector2, n: int, rot: float, L: float, w: float, col: Color) -> void:
+	for i in n:
+		var a := rot + i * TAU / n
 		var dv := Vector2.from_angle(a - PI / 2.0)
 		var pv := Vector2(-dv.y, dv.x)
-		var pts := PackedVector2Array([c, c + dv * L - pv * 40.0, c + dv * L + pv * 40.0])
-		var cols := PackedColorArray([Color(1, 0.84, 0.42, 0.3 * ra), Color(1, 0.84, 0.42, 0.0), Color(1, 0.84, 0.42, 0.0)])
-		draw_polygon(pts, cols)
+		draw_polygon(PackedVector2Array([c, c + dv * L - pv * w, c + dv * L + pv * w]), PackedColorArray([col, Color(col, 0.0), Color(col, 0.0)]))
+
+func _victory(f: Font) -> void:
+	if ws.is_empty():
+		ws = win_style()
+	var u := ui_size()
+	var VW := u.x
+	var VH := u.y
+	var wt := t_real - won_at
+	var c := Vector2(VW / 2.0, VH * 0.36)
+	var fx: String = ws.fx
+	draw_rect(Rect2(Vector2.ZERO, u), Color(6 / 255.0, 8 / 255.0, 16 / 255.0, minf(0.72, wt * 0.9)))
+	if wt < 0.5:
+		draw_rect(Rect2(Vector2.ZERO, u), Color(1.0, 0.55, 0.24, (1.0 - wt / 0.5) * 0.7) if ws.id == "tm2" else Color(1.0, 0.96, 0.82, (1.0 - wt / 0.5) * 0.75))
+	if fx == "aurora":
+		for k in 3:
+			var top := PackedVector2Array()
+			var bot := PackedVector2Array()
+			var px := 0.0
+			while px <= VW:
+				top.append(Vector2(px, VH * 0.12 + k * 30 + sin(px / 140.0 + wt * 1.2 + k * 2) * 40))
+				bot.append(Vector2(px, VH * 0.42 + k * 30 + sin(px / 120.0 + wt * 1.5 + k) * 50))
+				px += 20.0
+			var cc := Color(0.75, 0.55, 1.0, 0.22) if k % 2 else Color(0.48, 1.0, 0.83, 0.25)
+			for i in top.size() - 1:
+				var mid := (top[i] + bot[i]) / 2.0
+				var mid2 := (top[i + 1] + bot[i + 1]) / 2.0
+				draw_polygon(PackedVector2Array([top[i], top[i + 1], mid2, mid]), PackedColorArray([Color(cc, 0), Color(cc, 0), cc, cc]))
+				draw_polygon(PackedVector2Array([mid, mid2, bot[i + 1], bot[i]]), PackedColorArray([cc, cc, Color(cc, 0), Color(cc, 0)]))
+	if fx == "deep" or fx == "heaven":
+		for k in 6:
+			var bx := VW * (0.1 + 0.16 * k) + sin(wt * 0.6 + k) * 30.0
+			var cc := Color(1.0, 0.94, 0.75, 0.22) if fx == "heaven" else Color(0.47, 1.0, 1.0, 0.16)
+			draw_polygon(PackedVector2Array([Vector2(bx - 20, 0), Vector2(bx + 20, 0), Vector2(bx + 120, VH), Vector2(bx - 40, VH)]), PackedColorArray([cc, cc, Color(cc, 0), Color(cc, 0)]))
+	if fx == "heaven":
+		var a := minf(1.0, wt * 1.5)
+		draw_polygon(PackedVector2Array([Vector2(c.x - 90 * a, 0), Vector2(c.x + 90 * a, 0), Vector2(c.x + 90 * a, c.y + 40), Vector2(c.x - 90 * a, c.y + 40)]),
+			PackedColorArray([Color(1, 0.98, 0.86, 0), Color(1, 0.98, 0.86, 0), Color(1, 0.94, 0.67, 0.55 * a), Color(1, 0.94, 0.67, 0.55 * a)]))
+		var sp := clampf((wt - 0.3) * 1.4, 0.0, 1.0)
+		for sd in [-1.0, 1.0]:
+			for fi in 9:
+				var an := (-0.25 - fi * 0.13) * sp
+				var L := (90.0 + fi * 16.0) * sp
+				var ctr := c + Vector2(sd * (120 + L * 0.5), 0).rotated(an * sd)
+				draw_colored_polygon(_rot_ell(ctr, maxf(1.0, L * 0.55), 10 - fi * 0.5, an * sd), Color(1, 1, 1, 0.85) if fi % 2 else Color(1, 0.9, 0.59, 0.85))
+		ell_line(self, c - Vector2(0, minf(90.0, VW * 0.075)), minf(120.0, VW * 0.1), 18, Color(1, 0.9, 0.55, 0.6 * a), 5.0)
+	if fx == "prism":
+		for i in 12:
+			var a := wt * 0.35 + (i + 1) * PI / 6.0
+			var dv := Vector2.from_angle(a - PI / 2.0)
+			var pv := Vector2(-dv.y, dv.x)
+			var L := VW * 0.8
+			draw_colored_polygon(PackedVector2Array([c, c + dv * L - pv * 55, c + dv * L + pv * 55]), hsl(fmod(i * 30 + wt * 80, 360.0), 1.0, 0.65, minf(0.22, wt * 0.3)))
+	elif fx != "heaven" and fx != "deep":
+		var rc := C(ws.acc) if (ws.g == "kro" or ws.g == "star") else Color("#ffd76a")
+		_ray_fan(c, 14, wt * 0.25, VW * 0.7, 40, Color(rc, 0.3 * minf(1.0, wt * 1.3)))
+	if fx == "galaxy":
+		for i in 220:
+			var r := fmod(i * 7.3, maxf(VW, VH) * 0.55)
+			var a := i * 0.5 + wt * (0.9 - r / 1400.0)
+			var cc := Color(0.75, 0.55, 1.0, 0.75) if i % 3 else Color(1, 1, 1, 0.9)
+			var z := 1.6 if i % 3 else 2.2
+			draw_rect(Rect2(c + Vector2(cos(a) * r, sin(a) * r * 0.55), Vector2(z, z)), cc)
+	if fx == "grid":
+		var hy := VH * 0.62
+		for i in range(-12, 13):
+			draw_line(Vector2(c.x + i * 20, hy), Vector2(c.x + i * 140, VH), Color(0.23, 1.0, 0.91, 0.35), 1.0)
+		for k in 10:
+			var yy := hy + pow(fmod(k + wt * 1.5, 10.0) / 10.0, 2.0) * (VH - hy)
+			draw_line(Vector2(0, yy), Vector2(VW, yy), Color(1.0, 0.23, 0.82, 0.15 + 0.3 * (yy - hy) / (VH - hy)), 1.0)
+	if fx == "storm" and not wbolt.is_empty() and t_real - wbolt.t < 0.25:
+		var a := 1.0 - (t_real - wbolt.t) / 0.25
+		draw_rect(Rect2(Vector2.ZERO, u), Color(0.9, 0.9, 1.0, a * 0.35))
+		draw_polyline(wbolt.pts, Color(1.0, 0.94, 0.55, a), 3.0)
+	if fx == "dragon":
+		draw_polygon(PackedVector2Array([Vector2(0, VH * 0.6), Vector2(VW, VH * 0.6), Vector2(VW, VH), Vector2(0, VH)]),
+			PackedColorArray([Color(1, 0.31, 0.08, 0), Color(1, 0.31, 0.08, 0), Color(1, 0.35, 0.08, minf(0.45, wt * 0.5)), Color(1, 0.35, 0.08, minf(0.45, wt * 0.5))]))
+		var dp := (wt - 0.4) / 2.6
+		if dp > 0.0 and dp < 1.2:
+			var dpos := Vector2(-200 + dp * (VW + 400), VH * 0.16 + sin(dp * 6.0) * 20.0)
+			var fl := sin(t_real * 9.0) * 0.5
+			var dk := Color(20 / 255.0, 6 / 255.0, 4 / 255.0, 0.92)
+			draw_colored_polygon(ell(dpos, 70, 16), dk)
+			draw_colored_polygon(PackedVector2Array([dpos + Vector2(60, -6), dpos + Vector2(105, -16), dpos + Vector2(98, 4)]), dk)
+			draw_colored_polygon(PackedVector2Array([dpos + Vector2(-60, 0), dpos + Vector2(-120, 10), dpos + Vector2(-160, -8), dpos + Vector2(-62, 8)]), dk)
+			for sd in [-1.0, 1.0]:
+				draw_colored_polygon(PackedVector2Array([dpos + Vector2(-10, 0), dpos + Vector2(-20, sd * (70 + fl * 40)), dpos + Vector2(-80, sd * (80 + fl * 50)), dpos + Vector2(-40, sd * 30), dpos + Vector2(30, 0)]), dk)
+			draw_circle(dpos + Vector2(92, -10), 3, Color("#ff9a2a"))
+	# 입자
 	for q in wfx:
-		var al := minf(1.0, q.l * 1.4)
+		var al: float = maxf(0.0, sin(PI * q.l / q.l0)) if q.get("st4", false) else minf(1.0, q.l * 1.4)
+		var col: Color = Color(q.c, (q.c as Color).a * al)
+		var p: Vector2 = q.p
+		if q.get("gl", false):
+			draw_circle(p, q.r * 2.2, Color(col, col.a * 0.3))
 		if q.get("cf", false):
-			_ui_tf(q.p, q.a, 1.0)
-			draw_rect(Rect2(-4, -2, 8, 4), Color(q.c, al))
+			_ui_tf(p, q.a, 1.0)
+			draw_rect(Rect2(-4, -2, 8, 4), col)
 			_ui_reset()
+		elif q.has("lf") or q.get("pt", false):
+			var lf: String = q.get("lf", "")
+			if lf == "feather":
+				draw_colored_polygon(_rot_ell(p, 10, 3.2, q.a), col)
+				draw_line(p + Vector2(-11, 0).rotated(q.a), p + Vector2(10, 0).rotated(q.a), Color(0.63, 0.47, 0.16, 0.6 * al), 1.0)
+			elif lf == "shard":
+				var pts := PackedVector2Array()
+				for v in [Vector2(0, -8), Vector2(5, 4), Vector2(-4, 6)]:
+					pts.append(p + (v as Vector2).rotated(q.a))
+				draw_colored_polygon(pts, hsl(fmod(q.a * 40.0, 360.0), 1.0, 0.75, 0.85 * al))
+			elif lf == "neon":
+				draw_circle(p, 7, Color(col, col.a * 0.3))
+				draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), col)
+			elif lf == "ash":
+				draw_rect(Rect2(p - Vector2(2.5, 1.5), Vector2(5, 3)), col)
+			else:
+				draw_colored_polygon(_rot_ell(p, 7.0 if lf == "leaf" else 5.5, 3.5 if lf == "leaf" else 3.2, q.a), col)
+		elif q.get("bb", false):
+			draw_arc(p, q.r, 0, TAU, 16, col, 1.4)
+			draw_circle(p - Vector2(q.r, q.r) * 0.35, q.r * 0.25, Color(1, 1, 1, 0.5 * al))
+		elif q.get("st4", false):
+			var pts := PackedVector2Array()
+			for k in 8:
+				var rr: float = q.r * 0.28 if k % 2 else q.r
+				pts.append(p + Vector2.from_angle(k * PI / 4.0) * rr)
+			draw_colored_polygon(pts, col)
+		elif q.get("rn", false):
+			draw_line(p, p + Vector2(-6, -24), col, 1.2)
+		elif q.get("mt", false):
+			draw_polyline_colors(PackedVector2Array([p, p - (q.v as Vector2) * 0.25]), PackedColorArray([col, Color(col, 0)]), 2.5)
+		elif q.get("sq", false):
+			draw_rect(Rect2(p, Vector2(q.r + 1, q.r + 1)), col)
 		else:
-			draw_circle(q.p, q.r, Color(q.c, al))
+			draw_circle(p, q.r, col)
+	# 승리! 글씨
 	_ui_reset()
+	var sk := (1.0 - wt / 0.8) * 10.0 if (ws.id == "tm2" and wt < 0.8) else 0.0
 	var sc := 0.4 + 1.0 * (wt / 0.6) + 0.15 * sin(wt / 0.6 * PI) if wt < 0.6 else 1.0 + 0.03 * sin(wt * 3.0)
-	var fs := int(minf(110.0, u.x * 0.09))
-	_ui_tf(c, 0.0, sc)
+	var fs := int(minf(110.0, VW * 0.09))
+	_ui_tf(c + Vector2((rng.randf() - 0.5) * sk, (rng.randf() - 0.5) * sk), 0.0, sc)
 	var tw := f.get_string_size("승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	var base_p := Vector2(-tw / 2.0, fs * 0.36)
-	draw_string_outline(f, base_p, "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#5a3300"))
-	draw_string(f, base_p, "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#ffd24a"))
+	var bp := Vector2(-tw / 2.0, fs * 0.36)
+	var oc := Color("#2a1a4a") if ws.id == "tm3" else (Color("#0e1420") if ws.g == "kro" else Color("#5a3300"))
+	draw_circle(Vector2.ZERO, fs * 1.1, Color(C(ws.acc), 0.12))
+	draw_string_outline(f, bp, "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, oc)
+	var g0 := C(ws.grad[0])
+	var g1 := C(ws.grad[1])
+	var g2 := C(ws.grad[2])
+	if ws.id == "tm3":
+		draw_string(f, bp, "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, hsl(fmod(wt * 120.0, 360.0), 1.0, 0.72))
+	else:
+		draw_string(f, bp, "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, g1)
+		draw_string(f, bp + Vector2(0, -2), "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(g0, 0.35))
+		draw_string(f, bp + Vector2(0, 2), "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(g2, 0.25))
+	if ws.set != "":
+		var cw := fs * 0.5
+		var cy := -fs * 0.78
+		var crown := PackedVector2Array([Vector2(-cw, cy + cw * 0.45), Vector2(-cw, cy - cw * 0.05), Vector2(-cw * 0.5, cy + cw * 0.2), Vector2(0, cy - cw * 0.3), Vector2(cw * 0.5, cy + cw * 0.2), Vector2(cw, cy - cw * 0.05), Vector2(cw, cy + cw * 0.45)])
+		draw_colored_polygon(crown, C(ws.acc))
+		crown.append(crown[0])
+		draw_polyline(crown, Color("#3a2400"), 3.0)
 	_ui_reset()
 	if wt > 0.7:
 		var a := minf(1.0, (wt - 0.7) * 2.0)
-		draw_string(f, Vector2(0, c.y + minf(80.0, u.x * 0.065)), "외계 기지 50개를 모두 정복했어요!", HORIZONTAL_ALIGNMENT_CENTER, u.x, int(minf(24.0, u.x * 0.02)), Color(0.91, 0.93, 0.97, a))
+		var sub := "외계 기지 50개를 모두 정복했어요!" + ("  ·  " + ws.set + " 완성!" if ws.set != "" else "")
+		draw_string(f, Vector2(0, c.y + minf(80.0, VW * 0.065)), sub, HORIZONTAL_ALIGNMENT_CENTER, VW, int(minf(24.0, VW * 0.02)), Color(0.91, 0.93, 0.97, a))
 	if wt > 1.4:
 		var a := minf(1.0, (wt - 1.4) * 1.6)
-		var w := minf(520.0, u.x - 40.0)
-		var py := c.y + minf(115.0, u.x * 0.09)
+		var w := minf(520.0, VW - 40.0)
+		var py := c.y + minf(115.0, VW * 0.09)
 		var r := Rect2(c.x - w / 2.0, py, w, 150.0)
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(14 / 255.0, 20 / 255.0, 30 / 255.0, 0.92 * a)
-		sb.border_color = Color(1, 0.82, 0.29, a)
+		sb.border_color = Color(C(ws.acc), a)
 		sb.set_border_width_all(2)
 		sb.set_corner_radius_all(14)
 		sb.draw(get_canvas_item(), r)
-		var items := [["플레이 시간", "%d분 %02d초" % [int(t / 60.0), int(t) % 60]], ["정복", "50 / 50"], ["잡은 적", str(int(SS.kills))], ["만든 로봇", str(int(SS.made))], ["번 광석", str(int(SS.earn))], ["받을 청석", "+0"]]
+		var items := [["플레이 시간", "%d분 %02d초" % [int(t / 60.0), int(t) % 60]], ["정복", "50 / 50"], ["잡은 적", str(int(SS.kills))], ["만든 로봇", str(int(SS.made))], ["번 광석", str(int(SS.earn))], ["받을 청석", "+" + str(cs_gain())]]
 		for i in 6:
 			var ix := r.position.x + w / 6.0 + (i % 3) * w / 3.0 - 80.0
 			var iy := py + 42.0 + (i / 3) * 62.0
 			draw_string(f, Vector2(ix, iy), items[i][0], HORIZONTAL_ALIGNMENT_CENTER, 160, 13, Color(0.54, 0.61, 0.68, a))
 			draw_string(f, Vector2(ix, iy + 26.0), items[i][1], HORIZONTAL_ALIGNMENT_CENTER, 160, 21, Color(0.5, 0.85, 1.0, a) if i == 5 else Color(1.0, 0.84, 0.42, a))
+
 
 # ═════════ 조작: 깃발 · 조작법 창 · 확대 표시 ═════════
 const KEYS := [["마우스", [["좌클릭", "명령 (이동 · 공격 · 채굴) / 로봇 선택"], ["좌클릭 드래그", "지도 이동"], ["우클릭 누른 채 드래그", "로봇 여러 대 묶어서 선택"], ["Ctrl + 휠", "화면 확대 · 축소 (60~180%)"], ["휠", "지도 위아래 이동 (Shift+휠: 좌우)"], ["미니맵 클릭·드래그", "그 위치로 화면 이동"], ["마우스 올리기", "로봇 · 적 · 기지 · 광산 정보 보기"]]],
@@ -5224,6 +5774,8 @@ func _shop(f: Font, hov) -> void:
 
 # ═════════ 입력 ═════════
 func _unhandled_input(e: InputEvent) -> void:
+	if scene == "intro":
+		return
 	if acct != null and acct.is_open():
 		return
 	if scene == "lobby":
@@ -5558,7 +6110,10 @@ func _process(dt: float) -> void:
 			_clamp_cam()
 	if wipe_arm != "" and t_real - wipe_t > 3.0:
 		wipe_arm = ""
-	if scene == "lobby":
+	if scene == "lobby" and t_real - promo_t > 6.0:
+		promo_t = t_real
+		promo_i += 1
+	if scene == "lobby" or scene == "intro":
 		_box_tick()
 		queue_redraw()
 		return
@@ -5672,6 +6227,7 @@ func update_game(dt: float) -> void:
 				won_at = t_real
 				sfx("victory")
 				wfx = []
+				ws = win_style()
 	# 죽은 로봇 정리
 	var ra: bool = ens.any(func(e): return e.raid)
 	for u in bots:
@@ -5721,10 +6277,17 @@ func _cos_cache() -> void:
 func _draw() -> void:
 	var f := ThemeDB.fallback_font
 	_cos_cache()
+	if scene == "intro":
+		inv = get_canvas_transform().affine_inverse()
+		draw_set_transform_matrix(inv)
+		_intro(f)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	if scene == "lobby":
 		inv = get_canvas_transform().affine_inverse()
 		draw_set_transform_matrix(inv)
 		_lobby(f)
+		_intro_fade()
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		return
 	var vr: Rect2 = view_rect().grow(CELL)
@@ -5886,6 +6449,10 @@ func _unit(u: Dictionary, f: Font) -> void:
 		pat = skn.pt
 	elif ev > 0:
 		col = [Color("#a98ae0"), Color("#9462e0"), Color("#7d3fdc")][ev - 1]
+	if u.t == "h":
+		draw_arc(p, 12.0 + sin(t * 4.0) * 2.0, 0, TAU, 20, Color(0.55, 0.89, 0.55, 0.35), 1.0)
+	if u.hp < u.mh and (p as Vector2).distance_to(B) <= WELL:
+		draw_arc(p, z + 5.0, -PI / 2.0, -PI / 2.0 + TAU * fmod(t * 0.8, 1.0), 16, Color(0.43, 0.94, 0.63, 0.5), 1.5)
 	if u.oilT > 0.0:
 		draw_arc(p, z + 9, t * 4.0, t * 4.0 + 4.5, 20, C(skn.a) if not skn.is_empty() else Color(1, 0.67, 0.16, 0.85), 2.0)
 	draw_set_transform(p, u.fa, Vector2(1.35, 1.35))
@@ -5914,7 +6481,7 @@ func _fx(f: Font) -> void:
 			"txt":
 				draw_string(f, p + Vector2(-40, -(float(e.get("d0", 1.2)) - e.t) * 30.0), e.s, HORIZONTAL_ALIGNMENT_CENTER, 80, int(e.get("fs", 14)), Color(e.get("c", Color(0.5, 1.0, 0.7)), minf(1.0, e.t * 2.0)))
 			"heal":
-				draw_line(p, e.q, Color(0.55, 0.89, 0.55, 0.7), 2.0)
+				draw_line(p, e.q, Color(C(skn.a) if not skn.is_empty() else Color(0.55, 0.89, 0.55), 0.7), 2.0)
 			_:
 				var k: float = 1.0 - e.t / 0.75
 				var al := maxf(0.0, 1.0 - k)
@@ -6006,10 +6573,21 @@ func _wait(sec: float) -> void:
 	await get_tree().create_timer(sec).timeout
 
 func _selftest() -> void:
+	intro_start()
+	await _wait(1.6)
+	await _shot("00x_intro_a")
+	await _wait(0.4)
+	await _shot("00x_intro_b")
+	await _wait(2.6)
+	await _shot("00x_intro_c")
+	await _wait(1.4)
+	scene = "lobby"
 	await _wait(0.6)
 	await _shot("00_lobby")
 	lsec = "set"
 	await _shot("00b_set")
+	lsec = "prob"
+	await _shot("00b2_prob")
 	SV.cs = 30000
 	SV.ss = 200
 	lsec = "shop"
