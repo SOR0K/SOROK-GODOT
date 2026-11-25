@@ -5254,7 +5254,7 @@ func _victory(f: Font) -> void:
 			var yy := hy + pow(fmod(k + wt * 1.5, 10.0) / 10.0, 2.0) * (VH - hy)
 			draw_line(Vector2(0, yy), Vector2(VW, yy), Color(1.0, 0.23, 0.82, 0.15 + 0.3 * (yy - hy) / (VH - hy)), 1.0)
 	if fx == "storm" and not wbolt.is_empty() and t_real - wbolt.t < 0.25:
-		var a := 1.0 - (t_real - wbolt.t) / 0.25
+		var a: float = 1.0 - (t_real - wbolt.t) / 0.25
 		draw_rect(Rect2(Vector2.ZERO, u), Color(0.9, 0.9, 1.0, a * 0.35))
 		draw_polyline(wbolt.pts, Color(1.0, 0.94, 0.55, a), 3.0)
 	if fx == "dragon":
@@ -5346,7 +5346,7 @@ func _victory(f: Font) -> void:
 	_ui_reset()
 	if wt > 0.7:
 		var a := minf(1.0, (wt - 0.7) * 2.0)
-		var sub := "외계 기지 50개를 모두 정복했어요!" + ("  ·  " + ws.set + " 완성!" if ws.set != "" else "")
+		var sub: String = "외계 기지 50개를 모두 정복했어요!" + ("  ·  " + ws.set + " 완성!" if ws.set != "" else "")
 		draw_string(f, Vector2(0, c.y + minf(80.0, VW * 0.065)), sub, HORIZONTAL_ALIGNMENT_CENTER, VW, int(minf(24.0, VW * 0.02)), Color(0.91, 0.93, 0.97, a))
 	if wt > 1.4:
 		var a := minf(1.0, (wt - 1.4) * 1.6)
