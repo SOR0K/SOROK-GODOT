@@ -71,6 +71,33 @@ func _ready() -> void:
 	cam.position = B + Vector2(380, -180)
 	_clamp_cam()
 	msg("SOROK 고도판 1단계 · 드래그로 화면 이동 · 휠/두 손가락으로 확대")
+	if OS.get_cmdline_user_args().has("--selftest"):
+		_selftest()
+
+# ───────── 자동 점검 (GitHub에서만 돌아가요) ─────────
+func _shot(name: String) -> void:
+	await RenderingServer.frame_post_draw
+	var dir := ProjectSettings.globalize_path("res://shots")
+	DirAccess.make_dir_recursive_absolute(dir)
+	get_viewport().get_texture().get_image().save_png(dir + "/" + name + ".png")
+	print("SHOT ", name)
+
+func _wait(sec: float) -> void:
+	await get_tree().create_timer(sec).timeout
+
+func _selftest() -> void:
+	await _wait(1.0)
+	await _shot("01_start")
+	for u in bots:
+		u.sel = true
+	command_move(selected(), B + Vector2(420, -260))
+	await _wait(3.0)
+	await _shot("02_moved")
+	set_zoom(0.6, vsize() / 2.0)
+	await _wait(0.5)
+	await _shot("03_zoomout")
+	print("SELFTEST_DONE bots=", bots.size(), " mines=", mines.size())
+	get_tree().quit()
 
 # ───────── 맵 만들기 (웹과 같은 규칙) ─────────
 func _make_mines() -> void:
