@@ -123,6 +123,8 @@ func _ready() -> void:
 	sb_card_hi = _sb(Color(0.13, 0.18, 0.22, 0.98), Color("#5fe0a0"))
 	touch_mode = DisplayServer.is_touchscreen_available() or OS.get_cmdline_user_args().has("--touchui")
 	us = 1.0
+	if touch_mode:
+		get_window().content_scale_size = Vector2i(1600, 900)
 	rng.randomize()
 	RenderingServer.set_default_clear_color(FOG)
 	cam = Camera2D.new()
@@ -1086,7 +1088,7 @@ func hud_rect() -> Rect2:
 		x = 12.0
 	return Rect2(x, u.y - 128.0, w, 118.0)
 
-const CMDS := [["all", "E", "전체", "[E] 모든 로봇 선택"], ["home", "Q", "기지", "[Q / Home] 기지로 화면 이동"], ["info", "I", "정보", "[I] 이번 게임 기록"], ["shop", "Y", "상점", "[Y] 상점 열기 · 닫기"], ["save", "", "저장", "게임 저장 (로비 단계에서 연결돼요)"], ["quit", "", "종료", "게임 끝내기 (두 번 누르면 끝나요)"]]
+const CMDS := [["all", "E", "전체", "[E] 모든 로봇 선택"], ["home", "Q", "기지", "[Q / Home] 기지로 화면 이동"], ["info", "I", "정보", "[I] 이번 게임 기록"], ["shop", "Y", "상점", "[Y] 상점 열기 · 닫기"]]
 
 func _build_ui() -> void:
 	ui.clear()
@@ -1107,7 +1109,7 @@ func _build_ui() -> void:
 	var oy := h.position.y
 	for i in CMDS.size():
 		var b: Array = CMDS[i]
-		_add(b[0], Rect2(ox + 244.0 + i * 46.0, oy + 8.0, 44.0, 42.0), true, b[3], b[1])
+		_add(b[0], Rect2(ox + 244.0 + i * 70.0, oy + 8.0, 64.0, 42.0), true, b[3], b[1])
 	for i in 6:
 		var r := Rect2(ox + 530.0 + (i % 3) * 52.0, oy + 8.0 + int(i / 3) * 38.0, 48.0, 34.0)
 		if i < 5:
@@ -1650,7 +1652,7 @@ func _hud(f: Font) -> void:
 			draw_line(r.position + Vector2(28, 7), r.position + Vector2(16, 19), Color("#ff8a6b"), 2.5)
 		else:
 			draw_string(f, r.position + Vector2(0, 19), top, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 14, GOLD)
-		draw_string(f, r.position + Vector2(0, 36), CMDS[cmd][2], HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 11, Color("#c9d4dc"))
+		draw_string(f, r.position + Vector2(0, 36), CMDS[cmd][2], HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#c9d4dc"))
 		if hov == it:
 			tip = it.tip
 	# 체력바 · 두 번째 바
