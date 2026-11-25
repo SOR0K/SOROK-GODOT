@@ -23,7 +23,8 @@ const UT := {
 const ORDER := ["s", "m", "c", "r", "h"]
 const CAP := {"s": 3, "m": 15, "c": 40, "r": 40, "h": 40}
 const EVC := [11, 22, 33]
-const DF := {"h": 1.0, "a": 1.0, "n": 1.0, "p": 1.15, "e": 3}
+# 웹 새 게임과 같은 "어려움": 적 체력 135% · 공격력 130% · 수비대 30% 더 · 진화한 적 3구역부터
+const DF := {"h": 1.35, "a": 1.3, "n": 1.3, "p": 0.95, "e": 2}
 const TN := [Color("#4a4234"), Color("#4e4537"), Color("#463f32"), Color("#524939")]
 const FOG := Color("#070b0e")
 const GOLD := Color("#ffd76a")
@@ -96,6 +97,11 @@ var shop_open := false
 var shop_tab := "prod"
 var shop_desc := ""
 var paused := false
+var parts: Array = []
+var wfx: Array = []
+var vig_tex: Texture2D = null
+var lost_at := 0.0
+var won_at := 0.0
 var flags: Array = []
 var keys_open := false
 var muted := false
@@ -533,11 +539,13 @@ func hit(a: Dictionary, b: Dictionary, dmg: float) -> void:
 	else:
 		b.hp -= dmg
 		fx.append({"k": "imp", "p": b.p, "t": 0.18, "c": Color("#fff6d6") if a.team == 0 else Color("#ff7a66")})
+		boom(b.p, Color("#fff6d6") if a.team == 0 else Color("#ff7a66"))
 
 func hit_base(u: Dictionary) -> void:
 	base.hp -= u.atk
 	u.cd = 1.0 / u.aspd
 	fx.append({"k": "imp", "p": B + Vector2(rng.randf_range(-20, 20), rng.randf_range(-20, 20)), "t": 0.18, "c": Color("#ff7a66")})
+	fx.append({"k": "txt", "p": B + Vector2(rng.randf_range(-24, 24), -40), "t": 0.9, "d0": 0.9, "s": "-" + str(roundi(u.atk)), "c": Color("#ff6a55"), "fs": 15})
 	if msg_t <= 0.0:
 		msg("기지가 공격받고 있어요!")
 
@@ -1263,7 +1271,7 @@ func click(w: Vector2, add: bool) -> void:
 				q.tgt = null
 				q.goal = null
 		if n > 0:
-			fx.append({"k": "atk", "p": e.p, "t": 0.75})
+			fx.append({"k": "atk", "p": e.p, "t": 0.75, "tg": e, "big": e.has("op"), "pts": s.filter(func(q): return q.t == "c" or q.t == "r").map(func(q): return q.p)})
 			if e.has("op"):
 				squad(s.filter(func(q): return q.t == "c" or q.t == "r" or q.t == "h"), e)
 			return
@@ -1282,7 +1290,7 @@ func click(w: Vector2, add: bool) -> void:
 			q.goal = null
 			n += 1
 		if n > 0:
-			fx.append({"k": "mine", "p": m.p, "t": 0.75})
+			fx.append({"k": "mine", "p": m.p, "t": 0.75, "pts": s.filter(func(q): return q.t == "m").map(func(q): return q.p)})
 		return
 	command_move(s, w)
 
@@ -1313,7 +1321,7 @@ func command_move(s: Array, w: Vector2) -> void:
 		u.pk = -1
 		ok += 1
 	if ok > 0:
-		fx.append({"k": "mv", "p": w, "t": 0.75})
+		fx.append({"k": "mv", "p": w, "t": 0.75, "pts": s.map(func(q): return q.p)})
 	if fail > 0:
 		msg("밝혀진 길이 없어서 갈 수 없어요 · 정찰 로봇으로 길을 먼저 밝혀 주세요")
 
@@ -1389,7 +1397,9 @@ func _build_ui() -> void:
 	if keys_open:
 		return
 	if won or lost:
-		_add("restart", Rect2(u.x / 2.0 - 110.0, u.y / 2.0 + 40.0, 220.0, 56.0))
+		if t_real - (won_at if won else lost_at) > 2.6:
+			var by := minf(u.y - 70.0, u.y * 0.36 + minf(115.0, u.x * 0.09) + 168.0) if won else u.y / 2.0 + 40.0
+			_add("restart", Rect2(u.x / 2.0 - 110.0, by, 220.0, 54.0))
 		return
 	if paused:
 		_add("resume", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 - 30.0, 240.0, 54.0))
@@ -2050,6 +2060,8 @@ func _hud(f: Font) -> void:
 		draw_string(f, Vector2(mx + 14.0, 30.0), msg_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1.0, 0.72, 0.42, a))
 	if info_open:
 		_info(f)
+	if not won and not lost:
+		_raid_ui(f)
 	if shop_open:
 		_shop(f, hov)
 	if paused:
@@ -2059,10 +2071,10 @@ func _hud(f: Font) -> void:
 			sb_btn.draw(get_canvas_item(), it.r)
 			draw_string(f, (it.r as Rect2).position + Vector2(0, 34), {"resume": "계속하기", "restart": "다시 시작", "keys": "조작법"}.get(it.id, ""), HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
 	if won or lost:
-		draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
-		var big := "승리! 모든 기지를 정복했어요" if won else "패배 · 기지가 파괴됐어요"
-		draw_string(f, Vector2(0, u.y / 2.0 - 20.0), big, HORIZONTAL_ALIGNMENT_CENTER, u.x, 40, GOLD if won else Color("#ff8a6b"))
-		draw_string(f, Vector2(0, u.y / 2.0 + 16.0), "시간 " + "%d:%02d" % [int(t / 60.0), int(t) % 60] + "  ·  처치 " + str(kills) + "  ·  정복 " + str(captured()), HORIZONTAL_ALIGNMENT_CENTER, u.x, 16, Color.WHITE)
+		if won:
+			_victory(f)
+		else:
+			_defeat(f)
 		for it in ui:
 			sb_btn.draw(get_canvas_item(), it.r)
 			draw_string(f, (it.r as Rect2).position + Vector2(0, 36), "다시 시작", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
@@ -2074,6 +2086,242 @@ func _hud(f: Font) -> void:
 		_tooltip(f, tip)
 	elif tip == "" and hov == null and not shop_open and not info_open and not paused and not won and not lost and dn == null and not box_active:
 		_world_tip(f)
+
+# ═════════ 효과: 파티클 · 레이드 띠 · 화살표 · 비네트 · 승리/패배 ═════════
+func boom(p: Vector2, c: Color) -> void:
+	for i in 6:
+		var a := rng.randf() * TAU
+		var v := rng.randf_range(40.0, 130.0)
+		parts.append({"p": p, "v": Vector2.from_angle(a) * v, "t": rng.randf_range(0.3, 0.6), "c": c})
+
+func _tick_fx(dt: float) -> void:
+	for q in parts:
+		q.p = (q.p as Vector2) + (q.v as Vector2) * dt
+		q.v = (q.v as Vector2) * 0.93
+		q.t -= dt
+	parts = parts.filter(func(q): return q.t > 0.0)
+	if won:
+		_tick_win(dt)
+
+func _parts() -> void:
+	for q in parts:
+		draw_rect(Rect2((q.p as Vector2) - Vector2(1.5, 1.5), Vector2(3, 3)), Color(q.c, minf(1.0, q.t * 2.0)))
+
+# 이동·공격·채굴 명령: 로봇에서 목표로 점선
+func _cmd_lines(e: Dictionary, X: Vector2, k: float, cc: Color) -> void:
+	if not e.has("pts") or k >= 0.55:
+		return
+	var al := 0.28 * (1.0 - k / 0.55)
+	for q in e.pts:
+		var a: Vector2 = q
+		var L := a.distance_to(X)
+		if L < 4.0:
+			continue
+		var dv := (X - a) / L
+		var off := fmod(k * 40.0, 9.0)
+		var s := -off
+		while s < L:
+			var s0 := maxf(0.0, s)
+			var s1 := minf(L, s + 4.0)
+			if s1 > s0:
+				draw_line(a + dv * s0, a + dv * s1, Color(cc, al), 1.2)
+			s += 9.0
+
+func _atk_mark(e: Dictionary, X: Vector2, k: float, cc: Color) -> void:
+	var al := maxf(0.0, 1.0 - k)
+	var big: bool = e.get("big", false)
+	var R0 := (50.0 if big else 24.0) + 16.0 * (1.0 - minf(1.0, k * 2.2))
+	var rt := k * 2.2
+	for i in 4:
+		var a := rt + i * PI / 2.0
+		draw_arc(X, R0, a - 0.42, a + 0.42, 10, Color(cc, al), 3.0)
+	var c2 := 8.0 + 6.0 * (1.0 - minf(1.0, k * 3.0))
+	draw_line(X - Vector2(c2, 0), X + Vector2(c2, 0), Color(cc, al), 2.5)
+	draw_line(X - Vector2(0, c2), X + Vector2(0, c2), Color(cc, al), 2.5)
+
+func _vignette() -> void:
+	if vig_tex == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(0, 0, 0, 0))
+		g.set_color(1, Color(0, 0, 0, 0.35))
+		g.set_offset(0, 0.62)
+		var gt := GradientTexture2D.new()
+		gt.gradient = g
+		gt.fill = GradientTexture2D.FILL_RADIAL
+		gt.fill_from = Vector2(0.5, 0.5)
+		gt.fill_to = Vector2(1.05, 0.5)
+		gt.width = 256
+		gt.height = 256
+		vig_tex = gt
+	draw_texture_rect(vig_tex, Rect2(Vector2.ZERO, vsize()), false)
+
+func raid_center():
+	var n := 0
+	var c := Vector2.ZERO
+	for e in ens:
+		if e.raid and e.hp > 0:
+			c += e.p
+			n += 1
+	return c / n if n > 0 else null
+
+# 화면 좌표(UI 단위)에서 그리기
+func _raid_ui(f: Font) -> void:
+	var u := ui_size()
+	var rl := 0
+	for e in ens:
+		if e.raid and e.hp > 0:
+			rl += 1
+	var tl := next_raid - t
+	if rl > 0 or (tl <= 30.0 and tl > 0.0):
+		var tx := ("레이드 진행 중 · 남은 적 " + str(rl)) if rl > 0 else ("레이드까지 " + str(ceili(tl)) + "초")
+		var w := f.get_string_size(tx, HORIZONTAL_ALIGNMENT_LEFT, -1, 19).x + 40.0
+		var by := 52.0 if touch_ui() else hud_rect().position.y - 56.0
+		var r := Rect2(u.x / 2.0 - w / 2.0, by, w, 38.0)
+		draw_rect(r, Color(70 / 255.0, 8 / 255.0, 8 / 255.0, 0.92))
+		draw_rect(r, Color("#ff5a4a"), false, 2.0)
+		draw_string(f, Vector2(r.position.x, by + 26.0), tx, HORIZONTAL_ALIGNMENT_CENTER, w, 19, Color("#ffe0dc"))
+	# 화면 밖 레이드 방향 화살표
+	var rc = raid_center()
+	if rc != null:
+		var sp: Vector2 = (get_canvas_transform() * (rc as Vector2)) / us
+		if sp.x < 0.0 or sp.y < 0.0 or sp.x > u.x or sp.y > u.y:
+			var c := u / 2.0
+			var d: Vector2 = sp - c
+			var sc := minf((u.x / 2.0 - 40.0) / maxf(absf(d.x), 1.0), (u.y / 2.0 - 40.0) / maxf(absf(d.y), 1.0))
+			var ap := c + d * sc
+			var an := d.angle()
+			var al := 0.6 + 0.4 * absf(sin(t_real * 4.0))
+			var tri := PackedVector2Array([Vector2(16, 0), Vector2(-8, -11), Vector2(-8, 11)])
+			draw_colored_polygon(Transform2D(an, ap) * tri, Color(1.0, 0.23, 0.16, al))
+			draw_string(f, ap + Vector2(-40, 24), "레이드", HORIZONTAL_ALIGNMENT_CENTER, 80, 12, Color("#ffdcd6"))
+
+# 기지 파괴 (웹 baseBoom 기본 모양)
+func _base_boom(lt: float) -> void:
+	var X := B
+	var h := func(i: int) -> float: return fmod(i * 9301.0 + 49297.0, 233280.0) / 233280.0
+	if lt < 0.45:
+		var sh := (1.0 - lt / 0.45) * 7.0
+		art_base(self, X + Vector2(rng.randf() - 0.5, rng.randf() - 0.5) * sh, t)
+		draw_circle(X, 58.0, Color(1, 1, 1, lt / 0.45 * 0.85))
+		return
+	var tt := lt - 0.45
+	draw_colored_polygon(ell(X + Vector2(0, 10), 62, 22), Color(0, 0, 0, 0.35))
+	for i in 10:
+		draw_rect(Rect2(X.x - 42.0 + h.call(i) * 84.0, X.y - 16.0 + h.call(i + 20) * 36.0, 6.0 + h.call(i + 40) * 11.0, 4.0 + h.call(i + 60) * 7.0), Color("#38434d") if i % 2 else Color("#5a6a78"))
+	if tt < 0.8:
+		draw_arc(X, 20.0 + tt * 280.0, 0, TAU, 64, Color(1.0, 0.95, 0.75, 1.0 - tt / 0.8), 7.0 * (1.0 - tt / 0.8) + 1.0)
+	if tt < 1.2:
+		draw_circle(X, 32.0 + tt * 55.0, Color(1.0, 0.42, 0.12, (1.0 - tt / 1.2) * 0.85))
+		draw_circle(X, 18.0 + tt * 26.0, Color(1.0, 0.82, 0.35, 1.0 - tt / 1.2))
+	var fade := maxf(0.0, 1.0 - tt / 2.3)
+	for i in 48:
+		var a: float = h.call(i) * TAU
+		var v: float = 60.0 + h.call(i + 7) * 230.0
+		var d := v * tt * (1.0 - minf(tt, 2.0) / 4.0)
+		var z: float = 2.0 + h.call(i + 11) * 4.0
+		var pp := X + Vector2(cos(a) * d, sin(a) * d + tt * tt * 30.0)
+		var col := Color(0.35, 0.35, 0.35, 0.85)
+		if i % 3:
+			col = Color("#ffb03a") if i % 2 else Color("#ff5a1a")
+		draw_circle(pp, z + (0.0 if i % 3 else tt * 6.0), Color(col, col.a * fade))
+	var sa := maxf(0.0, 0.55 - tt * 0.15)
+	for i in 6:
+		draw_circle(X + Vector2((h.call(i + 90) - 0.5) * 64.0, -20.0 - tt * 40.0 - h.call(i + 70) * 30.0), 14.0 + tt * 10.0, Color(0.24, 0.24, 0.24, 0.65 * sa))
+
+func _defeat(f: Font) -> void:
+	var lt := t_real - lost_at
+	if lt <= 2.6:
+		return
+	var u := ui_size()
+	var a := minf(1.0, (lt - 2.6) * 2.0)
+	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.55 * a))
+	var rise := (1.0 - minf(1.0, (lt - 2.6) / 0.8)) * 30.0
+	var fs := int(clampf(u.x * 0.14, 80.0, 160.0))
+	var y := u.y / 2.0 - 30.0 + rise
+	draw_string(f, Vector2(0, y + 6), "패 배", HORIZONTAL_ALIGNMENT_CENTER, u.x, fs, Color(0.29, 0.04, 0.02, a))
+	draw_string(f, Vector2(0, y), "패 배", HORIZONTAL_ALIGNMENT_CENTER, u.x, fs, Color(1.0, 0.29, 0.23, a))
+	var sub := "10분 이상 플레이해야 청석을 받아요" if t < 600.0 else "시간 %d:%02d · 처치 %d · 정복 %d" % [int(t / 60.0), int(t) % 60, kills, captured()]
+	draw_string(f, Vector2(0, y + 40.0), sub, HORIZONTAL_ALIGNMENT_CENTER, u.x, 15, Color(1.0, 0.86, 0.84, a))
+
+# 승리 연출 (웹 drawWin 기본 꽃가루 모양)
+func _tick_win(dt: float) -> void:
+	var u := ui_size()
+	var wt := t_real - won_at
+	var C := [Color("#ffd76a"), Color("#7fe0ff"), Color("#ff7aa8"), Color("#9bff8a"), Color("#c79bff")]
+	if rng.randf() < (0.08 if wt < 4.0 else 0.035):
+		var bp := Vector2(u.x * rng.randf_range(0.15, 0.85), u.y * rng.randf_range(0.12, 0.57))
+		for i in 46:
+			var a := rng.randf() * TAU
+			var v := rng.randf_range(60.0, 250.0)
+			wfx.append({"p": bp, "v": Vector2.from_angle(a) * v, "l": rng.randf_range(1.0, 1.6), "c": C[rng.randi() % 5], "r": rng.randf_range(2.0, 3.6), "g": 90.0, "fr": true})
+	if wfx.size() < 650 and wt > 0.3:
+		for i in 2:
+			wfx.append({"p": Vector2(rng.randf() * u.x, -10), "v": Vector2(rng.randf_range(-20, 20), rng.randf_range(60, 140)), "l": 9.0, "c": C[rng.randi() % 5], "cf": true, "a": rng.randf() * 7.0})
+	for q in wfx:
+		q.l -= dt
+		if q.has("g"):
+			q.v = (q.v as Vector2) + Vector2(0, q.g * dt)
+		if q.get("fr", false):
+			q.v = (q.v as Vector2) * 0.97
+		q.p = (q.p as Vector2) + (q.v as Vector2) * dt
+		if q.has("a"):
+			q.a += dt * 6.0
+	wfx = wfx.filter(func(q): return q.l > 0.0 and q.p.y < u.y + 20.0)
+
+func _victory(f: Font) -> void:
+	var u := ui_size()
+	var wt := t_real - won_at
+	var c := Vector2(u.x / 2.0, u.y * 0.36)
+	draw_rect(Rect2(Vector2.ZERO, u), Color(6 / 255.0, 8 / 255.0, 16 / 255.0, minf(0.72, wt * 0.9)))
+	if wt < 0.5:
+		draw_rect(Rect2(Vector2.ZERO, u), Color(1.0, 0.96, 0.82, (1.0 - wt / 0.5) * 0.75))
+	# 빛줄기
+	var ra := minf(1.0, wt * 1.3)
+	for i in 14:
+		var a := wt * 0.25 + i * TAU / 14.0
+		var L := u.x * 0.7
+		var dv := Vector2.from_angle(a - PI / 2.0)
+		var pv := Vector2(-dv.y, dv.x)
+		var pts := PackedVector2Array([c, c + dv * L - pv * 40.0, c + dv * L + pv * 40.0])
+		var cols := PackedColorArray([Color(1, 0.84, 0.42, 0.3 * ra), Color(1, 0.84, 0.42, 0.0), Color(1, 0.84, 0.42, 0.0)])
+		draw_polygon(pts, cols)
+	for q in wfx:
+		var al := minf(1.0, q.l * 1.4)
+		if q.get("cf", false):
+			_ui_tf(q.p, q.a, 1.0)
+			draw_rect(Rect2(-4, -2, 8, 4), Color(q.c, al))
+			_ui_reset()
+		else:
+			draw_circle(q.p, q.r, Color(q.c, al))
+	_ui_reset()
+	var sc := 0.4 + 1.0 * (wt / 0.6) + 0.15 * sin(wt / 0.6 * PI) if wt < 0.6 else 1.0 + 0.03 * sin(wt * 3.0)
+	var fs := int(minf(110.0, u.x * 0.09))
+	_ui_tf(c, 0.0, sc)
+	var tw := f.get_string_size("승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var base_p := Vector2(-tw / 2.0, fs * 0.36)
+	draw_string_outline(f, base_p, "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#5a3300"))
+	draw_string(f, base_p, "승리!", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#ffd24a"))
+	_ui_reset()
+	if wt > 0.7:
+		var a := minf(1.0, (wt - 0.7) * 2.0)
+		draw_string(f, Vector2(0, c.y + minf(80.0, u.x * 0.065)), "외계 기지 50개를 모두 정복했어요!", HORIZONTAL_ALIGNMENT_CENTER, u.x, int(minf(24.0, u.x * 0.02)), Color(0.91, 0.93, 0.97, a))
+	if wt > 1.4:
+		var a := minf(1.0, (wt - 1.4) * 1.6)
+		var w := minf(520.0, u.x - 40.0)
+		var py := c.y + minf(115.0, u.x * 0.09)
+		var r := Rect2(c.x - w / 2.0, py, w, 150.0)
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(14 / 255.0, 20 / 255.0, 30 / 255.0, 0.92 * a)
+		sb.border_color = Color(1, 0.82, 0.29, a)
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(14)
+		sb.draw(get_canvas_item(), r)
+		var items := [["플레이 시간", "%d분 %02d초" % [int(t / 60.0), int(t) % 60]], ["정복", "50 / 50"], ["잡은 적", str(int(SS.kills))], ["만든 로봇", str(int(SS.made))], ["번 광석", str(int(SS.earn))], ["받을 청석", "+0"]]
+		for i in 6:
+			var ix := r.position.x + w / 6.0 + (i % 3) * w / 3.0 - 80.0
+			var iy := py + 42.0 + (i / 3) * 62.0
+			draw_string(f, Vector2(ix, iy), items[i][0], HORIZONTAL_ALIGNMENT_CENTER, 160, 13, Color(0.54, 0.61, 0.68, a))
+			draw_string(f, Vector2(ix, iy + 26.0), items[i][1], HORIZONTAL_ALIGNMENT_CENTER, 160, 21, Color(0.5, 0.85, 1.0, a) if i == 5 else Color(1.0, 0.84, 0.42, a))
 
 # ═════════ 조작: 깃발 · 조작법 창 · 확대 표시 ═════════
 const KEYS := [["마우스", [["좌클릭", "명령 (이동 · 공격 · 채굴) / 로봇 선택"], ["좌클릭 드래그", "지도 이동"], ["우클릭 누른 채 드래그", "로봇 여러 대 묶어서 선택"], ["Ctrl + 휠", "화면 확대 · 축소 (60~180%)"], ["휠", "지도 위아래 이동 (Shift+휠: 좌우)"], ["미니맵 클릭·드래그", "그 위치로 화면 이동"], ["마우스 올리기", "로봇 · 적 · 기지 · 광산 정보 보기"]]],
@@ -2731,6 +2979,7 @@ func _notification(what: int) -> void:
 
 func _process(dt: float) -> void:
 	t_real += dt
+	_tick_fx(dt)
 	msg_t = maxf(0.0, msg_t - dt)
 	tap_tip_t = maxf(0.0, tap_tip_t - dt)
 	if ctl_arm != -1 and t > ctl_arm_t:
@@ -2850,6 +3099,7 @@ func update_game(dt: float) -> void:
 		if dl <= sp + 6.0:
 			tg.hp -= p.d
 			fx.append({"k": "imp", "p": tg.p, "t": 0.18, "c": Color("#7ff0ff") if p.mine else Color("#ff8a66")})
+			boom(tg.p, Color("#7ff0ff") if p.mine else Color("#ff8a66"))
 			p.done = true
 		else:
 			p.p = (p.p as Vector2) + dv / dl * sp
@@ -2870,6 +3120,8 @@ func update_game(dt: float) -> void:
 			msg("기지 정복! 광석 +" + str(int(g)) + " · 진화석 +" + str(sg) + " · 수입 x" + str(snappedf(eco(), 0.01)))
 			if captured() >= outs.size():
 				won = true
+				won_at = t_real
+				wfx = []
 	# 죽은 로봇 정리
 	var ra: bool = ens.any(func(e): return e.raid)
 	for u in bots:
@@ -2895,8 +3147,10 @@ func update_game(dt: float) -> void:
 	if raid_alive and not ra:
 		msg("레이드 방어 성공!")
 	raid_alive = ra
-	if base.hp <= 0.0:
+	if base.hp <= 0.0 and not lost:
 		lost = true
+		lost_at = t_real
+		cam_to(B)
 		msg("기지가 파괴됐어요")
 
 # ═════════ 그리기 (월드) ═════════
@@ -2910,8 +3164,12 @@ func _draw() -> void:
 	_ground(i0, j0, i1, j1)
 	draw_arc(B, BASE_VIEW, 0.0, TAU, 128, Color(0.37, 0.88, 0.77, 0.2), 2.0)
 	draw_arc(B, WELL, 0.0, TAU, 128, Color(0.43, 0.94, 0.63, 0.18 + 0.08 * sin(t * 2.0)), 2.0)
-	art_base(self, B, t)
-	_bar(B.x, B.y - 68.0, 90.0, base.hp / base.mh, Color("#5fe0c4") if base.hp / base.mh > 0.3 else Color("#e5604d"), 6.0)
+	if lost:
+		_base_boom(t_real - lost_at)
+	else:
+		art_base(self, B, t)
+		_bar(B.x, B.y - 68.0, 90.0, base.hp / base.mh, Color("#5fe0c4") if base.hp / base.mh > 0.3 else Color("#e5604d"), 6.0)
+		draw_string(f, Vector2(B.x - 40.0, B.y - 73.0), str(ceili(maxf(0.0, base.hp))), HORIZONTAL_ALIGNMENT_CENTER, 80, 11, Color("#e6edf3"))
 	for m in mines:
 		if vr.has_point(m.p) and seen(m.p):
 			art_mine(self, m, t)
@@ -2937,6 +3195,7 @@ func _draw() -> void:
 		var r := box_rect()
 		draw_rect(r, Color(0.55, 0.89, 0.55, 0.12))
 		draw_rect(r, Color("#8be28b"), false, 1.0 / zm)
+	_parts()
 	_fx(f)
 	_fog(i0, j0, i1, j1)
 	_flags(f)
@@ -2947,6 +3206,7 @@ func _draw() -> void:
 	# 화면 고정 그리기
 	inv = get_canvas_transform().affine_inverse()
 	draw_set_transform_matrix(inv)
+	_vignette()
 	_minimap()
 	_hud(f)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -3066,7 +3326,7 @@ func _fx(f: Font) -> void:
 				var k: float = 1.0 - e.t / 0.6
 				draw_arc(p, e.r * clampf(k, 0.05, 1.0), 0.0, TAU, 40, Color(1.0, 0.89, 0.48, clampf(e.t / 0.6, 0.0, 1.0)), 3.0)
 			"txt":
-				draw_string(f, p + Vector2(-40, -(1.2 - e.t) * 30.0), e.s, HORIZONTAL_ALIGNMENT_CENTER, 80, 14, Color(0.5, 1.0, 0.7, minf(1.0, e.t * 2.0)))
+				draw_string(f, p + Vector2(-40, -(float(e.get("d0", 1.2)) - e.t) * 30.0), e.s, HORIZONTAL_ALIGNMENT_CENTER, 80, int(e.get("fs", 14)), Color(e.get("c", Color(0.5, 1.0, 0.7)), minf(1.0, e.t * 2.0)))
 			"heal":
 				draw_line(p, e.q, Color(0.55, 0.89, 0.55, 0.7), 2.0)
 			_:
@@ -3077,6 +3337,13 @@ func _fx(f: Font) -> void:
 					cc = Color(1.0, 0.35, 0.27)
 				elif e.k == "mine":
 					cc = Color(1.0, 0.78, 0.31)
+				var tgd = e.get("tg", null)
+				if tgd != null and tgd.hp > 0:
+					p = tgd.p
+				_cmd_lines(e, p, k, cc)
+				if e.k == "atk":
+					_atk_mark(e, p, k, cc)
+					continue
 				var ins := minf(1.0, k * 2.6)
 				var r1 := 46.0 - 32.0 * ins
 				for i in 4:
@@ -3255,6 +3522,22 @@ func _selftest() -> void:
 	await _wait(60.0)
 	await _shot("06_raid")
 	print("STAT2 t=", int(t), " basehp=", int(base.hp), " bots=", bots.size(), " ens=", ens.size(), " kills=", kills, " lost=", lost_n)
+	cam_to(B)
+	await _shot("06b_raid_ui")
+	Engine.time_scale = 1.0
+	base.hp = 0.0
+	await _wait(0.9)
+	await _shot("07_boom")
+	await _wait(2.4)
+	await _shot("08_defeat")
+	lost = false
+	base.hp = base.mh
+	for o in outs:
+		o.hp = 0.0
+	await _wait(1.2)
+	await _shot("09_win_a")
+	await _wait(2.4)
+	await _shot("10_win_b")
 	print("SELFTEST_DONE")
 	get_tree().quit()
 
