@@ -163,6 +163,7 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().has("--selftest"):
 		_selftest()
 	else:
+		_check_update()
 		var had: bool = await acct.boot()
 		if not had:
 			acct.show_login("")
@@ -2547,6 +2548,8 @@ func _build_lobby() -> void:
 		for i in 4:
 			_add(names[i], Rect2(tx + (i % 2) * (tw + 12.0), 205.0 + int(i / 2) * 162.0, tw, 150.0))
 		_add("lnotes", Rect2(x0, 529.0, cw, 42.0))
+		if upd_url != "":
+			_add("lupd", Rect2(x0 + cw + 12.0, 529.0, W - cw - 12.0, 42.0))
 	else:
 		var pr := _lsec_rect()
 		_add("lback", Rect2(pr.end.x - 130.0, pr.end.y - 54.0, 116.0, 40.0))
@@ -2658,6 +2661,8 @@ func _lobby_main(f: Font, hov) -> void:
 		PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0, 0, 0, 0.9), Color(0, 0, 0, 0.9)]))
 	draw_rect(cr, Color("#e0b85a"), false, 2.0)
 	draw_string(f, cr.position + Vector2(20, 200), "출격 준비 완료", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#ffe6a6"))
+	if app_ver != "":
+		draw_string(f, Vector2(0, ui_size().y - 10.0), "버전 " + app_ver, HORIZONTAL_ALIGNMENT_RIGHT, ui_size().x - 12.0, 11, Color("#5a6672"))
 	draw_string(f, cr.position + Vector2(20, 226), "난이도 어려움 · 로봇 " + skn.get("n", "기본") + " · 기지 " + bsk.get("n", "기본") + " · 테마 " + thm.get("n", "기본"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#c9d4dc"))
 	var tot := SK.size() + BS.size() + TS.size()
 	var own: int = SV.own.size() + SV.bown.size() + SV.town.size()
@@ -2676,6 +2681,14 @@ func _lobby_main(f: Font, hov) -> void:
 				_btn(f, r, "이어하기", hov == it, 18, Color("#ffe6a6"))
 			"lnotes":
 				_btn(f, r, "패치 노트", hov == it, 14)
+			"lupd":
+				var gold := StyleBoxFlat.new()
+				gold.bg_color = Color("#2a6a4a") if hov == it else Color("#1f5a3c")
+				gold.border_color = Color("#8be28b")
+				gold.set_border_width_all(1)
+				gold.set_corner_radius_all(6)
+				gold.draw(get_canvas_item(), r)
+				draw_string(f, Vector2(r.position.x, r.position.y + 27.0), "새 버전이 나왔어요 · 눌러서 받기", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 14, Color.WHITE)
 			_:
 				if tiles.has(it.id):
 					var tl: Array = tiles[it.id]
@@ -2765,6 +2778,9 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			lsec = "set"
 			lob_scroll = 0.0
 		"lnotes": lsec = "notes"
+		"lupd":
+			OS.shell_open(upd_url)
+			lmsg = "새 버전을 받는 중이에요 · 받은 파일을 실행해서 설치해 주세요"
 		"lshop", "lstore", "lpass":
 			lsec = {"lshop": "shop", "lstore": "store", "lpass": "pass"}[it.id]
 			lob_scroll = 0.0
@@ -5468,6 +5484,26 @@ func _notification(what: int) -> void:
 		mouse_in = false
 	elif what == NOTIFICATION_WM_MOUSE_ENTER:
 		mouse_in = true
+
+# ── 새 버전 알림 (GitHub 다운로드 페이지 확인) ──
+var app_ver := ""
+var upd_url := ""
+func _check_update() -> void:
+	if FileAccess.file_exists("res://version.txt"):
+		app_ver = FileAccess.get_file_as_string("res://version.txt").strip_edges()
+	if app_ver == "" or OS.has_feature("editor"):
+		return
+	var r: Dictionary = await acct.http(HTTPClient.METHOD_GET, "https://api.github.com/repos/SOR0K/SOROK-GODOT/releases/tags/app-latest", PackedStringArray(["Accept: application/vnd.github+json", "User-Agent: SOROK"]))
+	if not r.ok:
+		return
+	var nm: String = str(r.j.get("name", ""))
+	if nm != "" and not (app_ver in nm):
+		var want := "SOROK.apk" if OS.get_name() == "Android" else "SOROK.exe"
+		for a in r.j.get("assets", []):
+			if str(a.get("name", "")) == want:
+				upd_url = str(a.get("browser_download_url", ""))
+		if upd_url == "":
+			upd_url = "https://github.com/SOR0K/SOROK-GODOT/releases/tag/app-latest"
 
 func _quit_saved() -> void:
 	if acct != null and acct.ses != null:
