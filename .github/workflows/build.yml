@@ -1,0 +1,63 @@
+name: 앱 만들기 (PC exe · 안드로이드 apk)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: app-build
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 고도 4.7.2 받기
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip -O g.zip
+          unzip -q g.zip && mv Godot_v4.7.2-stable_linux.x86_64 godot && chmod +x godot
+      - name: 내보내기 템플릿 (캐시)
+        id: tpl
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates/4.7.2.stable
+          key: godot-templates-4.7.2
+      - name: 내보내기 템플릿 받기
+        if: steps.tpl.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz -O t.tpz
+          mkdir -p ~/.local/share/godot/export_templates/4.7.2.stable
+          unzip -q t.tpz -d tpl && mv tpl/templates/* ~/.local/share/godot/export_templates/4.7.2.stable/
+          rm -rf t.tpz tpl
+      - name: 안드로이드 설정 (SDK · 자바 · 서명 키)
+        run: |
+          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          mkdir -p ~/.config/godot
+          for v in 4 4.7; do
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\n' "$ANDROID_HOME" "$JAVA_HOME_17_X64" > ~/.config/godot/editor_settings-$v.tres
+          done
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$PWD/debug.keystore" >> $GITHUB_ENV
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey" >> $GITHUB_ENV
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android" >> $GITHUB_ENV
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$PWD/debug.keystore" >> $GITHUB_ENV
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=androiddebugkey" >> $GITHUB_ENV
+          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=android" >> $GITHUB_ENV
+      - name: 가져오기
+        run: timeout 300 ./godot --headless --path . --import 2>&1 | tail -5 || true
+      - name: PC exe 만들기
+        run: |
+          mkdir -p build
+          timeout 600 ./godot --headless --path . --export-release "Windows Desktop" build/SOROK.exe 2>&1 | tail -30
+          ls -la build
+      - name: 안드로이드 apk 만들기
+        run: |
+          timeout 600 ./godot --headless --path . --export-release "Android" build/SOROK.apk 2>&1 | tail -40
+          ls -la build
+      - name: 다운로드 페이지에 올리기
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls build/SOROK.exe build/SOROK.apk
+          gh release delete app-latest -y --cleanup-tag || true
+          gh release create app-latest build/SOROK.exe build/SOROK.apk --title "SOROK 최신 버전 (${GITHUB_SHA::7})" --notes "main 가지에 올라온 최신 코드로 자동으로 만든 파일이에요. PC는 SOROK.exe, 안드로이드는 SOROK.apk를 받아서 실행하세요." --latest
