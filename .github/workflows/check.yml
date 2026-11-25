@@ -1,0 +1,28 @@
+name: 고도 자동 점검
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 고도 4.7.2 받기
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip -O g.zip
+          unzip -q g.zip && mv Godot_v4.7.2-stable_linux.x86_64 godot && chmod +x godot
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb mesa-utils libgl1 > /dev/null
+      - name: 가져오기
+        run: timeout 120 ./godot --headless --path . --import 2>&1 | tail -20 || true
+      - name: 자동 테스트 + 스크린샷
+        run: |
+          mkdir -p shots
+          timeout 180 xvfb-run -a -s "-screen 0 1280x720x24" ./godot --path . --rendering-driver opengl3 --resolution 1280x720 -- --selftest 2>&1 | tee log.txt || true
+          echo "----- 에러 -----"
+          grep -E "ERROR|SCRIPT ERROR|Parse Error|Invalid" log.txt || echo "에러 없음"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: result
+          path: |
+            log.txt
+            shots/
