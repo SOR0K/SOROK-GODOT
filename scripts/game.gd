@@ -2536,19 +2536,15 @@ func _build_lobby() -> void:
 		var pr := _lsec_rect()
 		_add("lback", Rect2(pr.end.x - 130.0, pr.end.y - 54.0, 116.0, 40.0))
 		if lsec == "set":
-			var y := pr.position.y + 70.0 - lob_scroll
-			_add("ltut", Rect2(pr.position.x + 20.0, y, 300.0, 40.0))
-			y += 96.0
-			for k in ["uis", "vol_s", "vol_b"]:
-				_add("sl", Rect2(pr.position.x + 120.0, y, pr.size.x - 220.0, 30.0), true, "", k)
-				y += 40.0
-			_add("lmute", Rect2(pr.position.x + 20.0, y, 140.0, 38.0))
-			_add("lbgm", Rect2(pr.position.x + 20.0, y + 46.0, 320.0, 38.0))
-			y += 130.0
-			_add("lkeys", Rect2(pr.position.x + 20.0, y, 220.0, 40.0))
-			y += 84.0
-			_add("lwipe", Rect2(pr.position.x + 20.0, y, 200.0, 40.0))
-			_add("lwipeall", Rect2(pr.position.x + 232.0, y, 200.0, 40.0))
+			var y := pr.position.y + 62.0 - lob_scroll
+			_add("ltut", Rect2(pr.position.x + 20.0, y, 300.0, 38.0))
+			for i in 3:
+				_add("sl", Rect2(pr.position.x + 120.0, y + 78.0 + i * 38.0, pr.size.x - 220.0, 30.0), true, "", ["uis", "vol_s", "vol_b"][i])
+			_add("lmute", Rect2(pr.position.x + 20.0, y + 192.0, 140.0, 36.0))
+			_add("lbgm", Rect2(pr.position.x + 20.0, y + 234.0, 320.0, 36.0))
+			_add("lkeys", Rect2(pr.position.x + 20.0, y + 300.0, 220.0, 38.0))
+			_add("lwipe", Rect2(pr.position.x + 20.0, y + 366.0, 200.0, 38.0))
+			_add("lwipeall", Rect2(pr.position.x + 232.0, y + 366.0, 200.0, 38.0))
 
 func _lsec_rect() -> Rect2:
 	var u := ui_size()
@@ -2570,7 +2566,29 @@ func _lobby(f: Font) -> void:
 	ui.clear()
 	_build_lobby()
 	var hov = null if touch_ui() else ui_hit(mouse_ui * us)
-	# 로고
+	if lsec in ["shop", "store", "pass"]:
+		_lobby_cos(f, hov)
+	elif lsec == "main":
+		_lobby_main(f, hov)
+	elif lsec == "set":
+		_lobby_set(f, hov)
+	elif lsec == "notes":
+		_lobby_notes(f, hov)
+	if not (lsec in ["shop", "store", "pass"]):
+		_logo(f)
+	if lsec in ["shop", "store", "pass"]:
+		var pr := _wide_rect()
+		draw_rect(Rect2(0, 0, u.x, pr.position.y), Color("#0b1015"))
+		draw_rect(Rect2(0, pr.end.y + 1.0, u.x, u.y - pr.end.y), Color("#0b1015"))
+		draw_rect(pr, Color(0.79, 0.64, 0.33, 0.7), false, 1.0)
+		_logo(f)
+	if not box_res.is_empty():
+		_box_overlay(f, hov)
+	if keys_open:
+		_keys_win(f)
+
+func _logo(f: Font) -> void:
+	var u := ui_size()
 	draw_string(f, Vector2(0, 92), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#5a3a08"))
 	draw_string(f, Vector2(0, 88), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#f2c86a"))
 	draw_string(f, Vector2(0, 118), "외 계  기 지  정 복  전 략", HORIZONTAL_ALIGNMENT_CENTER, u.x, 12, Color("#8a9bad"))
@@ -2591,18 +2609,6 @@ func _lobby(f: Font) -> void:
 		draw_string(f, r.position + Vector2(0, 25), chips[i][1], HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12.0, 18, chips[i][2])
 	if lmsg != "":
 		draw_string(f, Vector2(0, 192), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 13, Color("#ffd76a"))
-	if lsec in ["shop", "store", "pass"]:
-		_lobby_cos(f, hov)
-	elif lsec == "main":
-		_lobby_main(f, hov)
-	elif lsec == "set":
-		_lobby_set(f, hov)
-	elif lsec == "notes":
-		_lobby_notes(f, hov)
-	if not box_res.is_empty():
-		_box_overlay(f, hov)
-	if keys_open:
-		_keys_win(f)
 
 func _lobby_main(f: Font, hov) -> void:
 	var u := ui_size()
@@ -2670,10 +2676,10 @@ func _lobby_panel(f: Font, title: String) -> Rect2:
 
 func _lobby_set(f: Font, hov) -> void:
 	var pr := _lobby_panel(f, "설정")
-	var y := pr.position.y + 70.0 - lob_scroll
+	var y := pr.position.y + 62.0 - lob_scroll
 	var x := pr.position.x + 20.0
 	var names := {"uis": ["UI 크기", 50, 130], "vol_s": ["효과음", 0, 100], "vol_b": ["배경음", 0, 100]}
-	draw_string(f, Vector2(x, y - 8.0), "튜토리얼", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x + 330.0, y + 24.0), "← 튜토리얼", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#9fb3c2"))
 	for it in ui:
 		var r: Rect2 = it.r
 		match it.id:
@@ -2696,10 +2702,10 @@ func _lobby_set(f: Font, hov) -> void:
 				draw_rect(Rect2(r.position.x, r.position.y + 13.0, r.size.x * k, 4.0), Color("#ffd76a"))
 				draw_circle(Vector2(r.position.x + r.size.x * k, r.position.y + 15.0), 9.0, Color("#ffd76a"))
 				draw_string(f, Vector2(r.end.x + 14.0, r.position.y + 21.0), str(int(v)) + "%", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd76a"))
-	draw_string(f, Vector2(x, y + 88.0), "화면 · 소리", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
-	draw_string(f, Vector2(x + 150.0, y + 240.0), "게임 중에도 M 키로 음소거를 켜고 끌 수 있어요", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
-	draw_string(f, Vector2(x, y + 336.0), "조작", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
-	draw_string(f, Vector2(x, y + 420.0), "데이터", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x, y + 68.0), "화면 · 소리", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x + 150.0, y + 215.0), "게임 중에도 M 키로 음소거를 켜고 끌 수 있어요", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
+	draw_string(f, Vector2(x, y + 292.0), "조작", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x, y + 358.0), "데이터", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
 
 const NOTES := [["고도판 첫 버전", ["웹 SOROK을 고도 엔진으로 옮겼어요 (PC · 모바일 같은 코드)", "웹과 같은 전투 AI · 공격 대형 돌격 · 지원 로봇 · 적 카이팅", "올렸을 때 말풍선 · 휠 이동 · 가장자리 이동 · 깃발 · 조작법 창", "로봇끼리 안 겹치게 밀어내기 (고도판에서 새로 추가)", "효과 · 효과음 · 배경음 · 승리/패배 연출", "로비 · 설정 · 저장 · 이어하기 · 튜토리얼"]]]
 
