@@ -146,7 +146,9 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 	_snd_init()
+	sv_load()
 	new_game()
+	scene = "lobby"
 	if OS.get_cmdline_user_args().has("--selftest"):
 		_selftest()
 
@@ -1420,13 +1422,16 @@ func _build_ui() -> void:
 		return
 	if won or lost:
 		if t_real - (won_at if won else lost_at) > 2.6:
-			var by := minf(u.y - 70.0, u.y * 0.36 + minf(115.0, u.x * 0.09) + 168.0) if won else u.y / 2.0 + 40.0
-			_add("restart", Rect2(u.x / 2.0 - 110.0, by, 220.0, 54.0))
+			if won:
+				_add("wlobby", Rect2(Vector2.ZERO, u))
+			else:
+				_add("retry", Rect2(u.x / 2.0 - 230.0, u.y / 2.0 + 64.0, 220.0, 54.0))
+				_add("llobby", Rect2(u.x / 2.0 + 10.0, u.y / 2.0 + 64.0, 220.0, 54.0))
 		return
 	if paused:
-		_add("resume", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 - 30.0, 240.0, 54.0))
-		_add("restart", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 + 34.0, 240.0, 54.0))
-		_add("keys", Rect2(u.x / 2.0 - 120.0, u.y / 2.0 + 98.0, 240.0, 54.0))
+		var py := u.y / 2.0 - 70.0
+		for i in 4:
+			_add(["resume", "tolobby", "endg", "keys"][i], Rect2(u.x / 2.0 - 130.0, py + i * 62.0, 260.0, 52.0))
 		return
 	if touch_ui():
 		_add("pause", Rect2(12, 12, 44, 44))
@@ -1467,6 +1472,7 @@ func _build_ui() -> void:
 				var r := Rect2(sr.position.x + 176.0 + (i % cols) * (cw + 10.0), sr.position.y + 56.0 + int(i / cols) * 72.0, cw, 62.0)
 				_add("card", r, c.on, c.desc, c)
 
+	_tut_buttons()
 func info_rect() -> Rect2:
 	var u := ui_size()
 	var w := minf(760.0, u.x * 0.94)
@@ -1618,6 +1624,24 @@ func ui_press(it: Dictionary, rclick: bool = false) -> void:
 			new_game()
 		"resume":
 			paused = false
+		"tolobby":
+			to_lobby_saved()
+		"endg":
+			if quit_arm > t_real:
+				quit_arm = 0.0
+				end_game()
+			else:
+				quit_arm = t_real + 3.0
+		"wlobby", "llobby":
+			end_game()
+		"retry":
+			end_game(true)
+		"tutskip":
+			tut = -1
+			SV.tut_done = true
+			sv_save()
+		"tutnext":
+			tut_next()
 		"keys":
 			keys_open = true
 		"pause":
@@ -1893,7 +1917,7 @@ func _hud(f: Font) -> void:
 	var tip := ""
 	# 오른쪽 위 정보 띠
 	var rl := maxf(0.0, next_raid - t)
-	var items: Array = [["flag", str(captured()) + "/50", Color("#e6edf3")], ["stone", str(stone), Color("#c08cff")], ["base", str(int(base.hp)), Color("#e6edf3")], ["raid", "레이드!" if raid_alive else "%d:%02d" % [int(rl / 60.0), int(rl) % 60], Color("#ff8a6b") if (raid_alive or rl < 30.0) else Color("#e6edf3")], ["time", "%d:%02d" % [int(t / 60.0), int(t) % 60], Color("#e6edf3")]]
+	var items: Array = [["flag", str(captured()) + "/50", Color("#e6edf3")], ["stone", str(stone), Color("#c08cff")], ["base", str(int(maxf(0.0, base.hp))), Color("#e6edf3")], ["raid", "레이드!" if raid_alive else "%d:%02d" % [int(rl / 60.0), int(rl) % 60], Color("#ff8a6b") if (raid_alive or rl < 30.0) else Color("#e6edf3")], ["time", "%d:%02d" % [int(t / 60.0), int(t) % 60], Color("#e6edf3")]]
 	var tw := 0.0
 	for it in items:
 		tw += f.get_string_size(it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 34.0
@@ -2095,19 +2119,28 @@ func _hud(f: Font) -> void:
 		_shop(f, hov)
 	if paused:
 		draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
-		draw_string(f, Vector2(0, u.y / 2.0 - 60.0), "일시정지", HORIZONTAL_ALIGNMENT_CENTER, u.x, 34, GOLD)
+		draw_string(f, Vector2(0, u.y / 2.0 - 100.0), "일시정지", HORIZONTAL_ALIGNMENT_CENTER, u.x, 34, GOLD)
 		for it in ui:
-			sb_btn.draw(get_canvas_item(), it.r)
-			draw_string(f, (it.r as Rect2).position + Vector2(0, 34), {"resume": "계속하기", "restart": "다시 시작", "keys": "조작법"}.get(it.id, ""), HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
+			var lb: String = {"resume": "계속하기", "tolobby": "저장하고 로비로", "endg": "게임 종료", "keys": "조작법"}.get(it.id, "")
+			if it.id == "endg" and quit_arm > t_real:
+				lb = "정말 끝낼까요? 한 번 더"
+			_btn(f, it.r, lb, hov == it, 17, Color("#ff9a8a") if it.id == "endg" else Color.WHITE)
+		if quit_arm > t_real:
+			draw_string(f, Vector2(0, u.y / 2.0 + 190.0), "게임을 끝내면 저장이 지워지고, 10분 이상 했으면 청석을 받아요", HORIZONTAL_ALIGNMENT_CENTER, u.x, 13, Color("#c9d4dc"))
 	if won or lost:
 		if won:
 			_victory(f)
 		else:
 			_defeat(f)
 		for it in ui:
-			sb_btn.draw(get_canvas_item(), it.r)
-			draw_string(f, (it.r as Rect2).position + Vector2(0, 36), "다시 시작", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 18, Color.WHITE)
+			if it.id == "wlobby":
+				var wt := t_real - won_at
+				var c := Vector2(u.x / 2.0, u.y * 0.36)
+				draw_string(f, Vector2(0, minf(u.y - 30.0, c.y + minf(115.0, u.x * 0.09) + 180.0)), "화면을 누르면 로비로 돌아가요", HORIZONTAL_ALIGNMENT_CENTER, u.x, 15, Color(0.91, 0.93, 0.97, 0.55 + 0.45 * sin(wt * 3.0)))
+			else:
+				_btn(f, it.r, "다시하기" if it.id == "retry" else "로비", hov == it, 16)
 	_zoom_badge(f)
+	_tut_ui(f)
 	if keys_open:
 		_keys_win(f)
 		return
@@ -2115,6 +2148,634 @@ func _hud(f: Font) -> void:
 		_tooltip(f, tip)
 	elif tip == "" and hov == null and not shop_open and not info_open and not paused and not won and not lost and dn == null and not box_active:
 		_world_tip(f)
+
+# ═════════ 흐름: 로비 · 설정 · 저장 · 이어하기 · 튜토리얼 ═════════
+const SAVE_P := "user://save.dat"
+const SV_P := "user://sv.dat"
+var scene := "lobby"
+var lsec := "main"
+var lmsg := ""
+var SV := {"cs": 0, "ss": 0, "vol_s": 70, "vol_b": 35, "mute": false, "uis": 100, "tut_done": false, "bpxp": 0}
+var save_acc := 0.0
+var slider_drag = null
+var wipe_arm := ""
+var wipe_t := 0.0
+var raid_wins := 0
+var tut := -1
+var tut_c := Vector2.ZERO
+var lob_scroll := 0.0
+
+func sv_load() -> void:
+	if FileAccess.file_exists(SV_P):
+		var f := FileAccess.open(SV_P, FileAccess.READ)
+		var d = f.get_var()
+		if d is Dictionary:
+			SV.merge(d, true)
+	_apply_sv()
+
+func sv_save() -> void:
+	var f := FileAccess.open(SV_P, FileAccess.WRITE)
+	if f != null:
+		f.store_var(SV)
+
+func _apply_sv() -> void:
+	muted = SV.mute
+	vol_s = int(SV.vol_s)
+	vol_b = int(SV.vol_b)
+	us = float(SV.uis) / 100.0
+	_vol_apply()
+
+func has_save() -> bool:
+	return FileAccess.file_exists(SAVE_P)
+
+func _strip(d: Dictionary, keys: Array) -> Dictionary:
+	var o := d.duplicate()
+	for k in keys:
+		o.erase(k)
+	return o
+
+func save_game() -> void:
+	if scene != "game" or won or lost:
+		return
+	var S := {"v": 1, "t": t, "ore": ore, "stone": stone, "next_raid": next_raid, "raid_warned": raid_warned, "kills": kills, "lost_n": lost_n,
+		"oil": oil, "vb_cd": vb_cd, "dr_cd": dr_cd, "SS": SS, "base_hp": base.hp, "flags": flags, "cam": cam.position, "zm": zm,
+		"ex": ex, "mines": mines, "dead": dead, "raid_wins": raid_wins, "uid": uid, "tut": tut, "tut_c": tut_c,
+		"outs": outs.map(func(o): return _strip(o, ["tt", "ft"]))}
+	S.bots = bots.map(func(u):
+		var o := _strip(u, ["tgt", "sq", "dgo", "fo", "kx", "rh", "pp"])
+		o.mine = mines.find(u.mine) if u.mine != null else -1
+		o.sel = false
+		return o)
+	S.ens = ens.map(func(e):
+		var o := _strip(e, ["ag", "et"])
+		o.o = outs.find(e.o) if e.o != null else -1
+		return o)
+	var f := FileAccess.open(SAVE_P, FileAccess.WRITE)
+	if f != null:
+		f.store_var(S)
+
+func load_game() -> bool:
+	if not has_save():
+		return false
+	var f := FileAccess.open(SAVE_P, FileAccess.READ)
+	var S = f.get_var()
+	if not (S is Dictionary) or not S.has("ex"):
+		return false
+	new_game()
+	t = S.t
+	ore = S.ore
+	stone = S.stone
+	next_raid = S.next_raid
+	raid_warned = S.raid_warned
+	kills = S.kills
+	lost_n = S.lost_n
+	oil = S.oil
+	vb_cd = S.vb_cd
+	dr_cd = S.dr_cd
+	SS = S.SS
+	base.hp = S.base_hp
+	flags = S.flags
+	raid_wins = S.get("raid_wins", 0)
+	tut = S.get("tut", -1)
+	tut_c = S.get("tut_c", Vector2.ZERO)
+	ex = S.ex
+	mines = S.mines
+	outs = S.outs
+	for o in outs:
+		o.tt = null
+		o.ft = null
+	dead = S.dead
+	bots = S.bots
+	for u in bots:
+		var mi: int = u.mine
+		u.mine = mines[mi] if mi >= 0 and mi < mines.size() else null
+		for k in ["tgt", "sq", "dgo", "fo", "kx", "rh"]:
+			u[k] = null
+		u.pp = []
+		u.pk = -1
+	ens = S.ens
+	for e in ens:
+		var oi: int = e.o
+		e.o = outs[oi] if oi >= 0 and oi < outs.size() else null
+		e.ag = null
+		e.et = null
+	uid = S.uid
+	mm_img.fill(Color(0, 0, 0, 0))
+	for j in GN:
+		for i in GN:
+			if ex[j * GN + i]:
+				mm_img.set_pixel(i, j, Color("#2d4a3a"))
+	mm_dirty = true
+	raid_alive = ens.any(func(e): return e.raid)
+	zm = S.zm
+	cam.zoom = Vector2(zm, zm)
+	cam.position = S.cam
+	_clamp_cam()
+	return true
+
+func del_save() -> void:
+	if has_save():
+		DirAccess.remove_absolute(SAVE_P)
+
+func start_game(cont: bool, with_tut: bool = false) -> void:
+	scene = "game"
+	paused = false
+	shop_open = false
+	info_open = false
+	keys_open = false
+	if not (cont and load_game()):
+		new_game()
+		del_save()
+		raid_wins = 0
+		tut = -1
+		if with_tut or not SV.tut_done:
+			tut = 0
+			tut_c = cam.position
+	save_acc = 0.0
+	lmsg = ""
+
+func cs_gain() -> int:
+	var g := int(float(SS.earn) * 0.04)
+	for o in outs:
+		if o.cap:
+			g += 10 * (int(o.tr) + 1)
+	return g
+
+func end_game(retry: bool = false) -> void:
+	var t0 := t
+	var ok := t0 >= 600.0 or won
+	var g := cs_gain() if ok else 0
+	SV.cs = int(SV.cs) + g
+	var bx := int(t0 / 60.0) * 10 + int(SS.kills) * 2 + captured() * 30 + raid_wins * 50
+	SV.bpxp = mini(15000, int(SV.bpxp) + bx)
+	sv_save()
+	del_save()
+	won = false
+	lost = false
+	paused = false
+	if retry:
+		start_game(false)
+		return
+	scene = "lobby"
+	lsec = "main"
+	lmsg = "[배틀패스 +" + str(bx) + " XP] " + ("게임 종료! 청석 " + str(g) + "개를 받았어요 (번 광석의 4% + 정복 보너스)" if ok else "10분 이상 플레이해야 청석을 받아요. 이번 판은 " + str(int(t0 / 60.0)) + "분이라 청석이 없어요")
+
+func to_lobby_saved() -> void:
+	save_game()
+	scene = "lobby"
+	lsec = "main"
+	paused = false
+	lmsg = "저장했어요. 이어하기로 계속할 수 있어요"
+
+# ── 튜토리얼 (웹 TUT 그대로 · 모바일은 터치 문구) ──
+func tut_steps() -> Array:
+	var T := touch_ui()
+	return [
+		["Sorok에 오신 걸 환영해요!", "목표는 지도 곳곳에 있는 외계 기지 50개를 정복하는 거예요. 광석을 캐서 로봇을 만들고, 키우고, 진격하세요.", false],
+		["지도 둘러보기", "한 손가락으로 지도를 끌어 보세요. 아래 [기지] 버튼을 누르면 언제든 기지로 돌아와요." if T else "WASD나 방향키, 화면 가장자리에 마우스 대기, 좌클릭 드래그로 지도를 움직여 보세요. Q를 누르면 언제든 기지로 돌아와요.", true],
+		["상점 열기", "아래 [상점] 버튼을 눌러 보세요. 로봇 생산, 아이템, 업그레이드가 모두 여기 있어요." if T else "Y를 눌러 상점을 열어 보세요. 로봇 생산, 아이템, 업그레이드가 모두 여기 있어요.", true],
+		["채굴 로봇 만들기", "로봇 생산 탭에서 채굴 로봇(광석 35)을 눌러 구매하세요." if T else "로봇 생산 탭에서 채굴 로봇(광석 35)을 우클릭해서 구매하세요. 상점에서는 우클릭으로 사요.", true],
+		["광석 캐기", "상점을 닫고, 채굴 로봇을 누른 뒤 기지 근처의 청록색 광산을 누르세요. 알아서 캐서 기지로 날라요." if T else "Esc로 상점을 닫고, 채굴 로봇을 클릭한 뒤 기지 근처의 청록색 광산을 클릭하세요. 알아서 캐서 기지로 날라요.", true],
+		["어둠 밝히기", "정찰 로봇(광석 15)을 만들어 선택한 뒤 어두운 곳을 " + ("누르세요" if T else "클릭하세요") + ". 지나간 곳의 시야가 밝혀져요. 연료가 다 떨어지면 고장나요.", true],
+		["전투 로봇 만들기", "광석이 모이면 근접 로봇(40)이나 원거리 로봇(55)을 만드세요. 채굴 로봇이 광석을 모으는 동안 잠깐 기다려도 돼요.", true],
+		["부대 지휘", "화면을 꾹 누른 채 끌면 로봇을 묶을 수 있어요. [전체] 버튼은 전체 선택이에요. 묶은 상태로 땅을 누르면 그곳으로 이동해요." if T else "우클릭을 누른 채 드래그하면 로봇을 묶을 수 있어요. E는 전체 선택이에요. 묶은 상태로 좌클릭하면 그곳으로 이동해요.", true],
+		["외계 기지 정복", "보라색 외계 기지를 " + ("누르면" if T else "클릭하면") + " 공격해요. 기지에서 멀수록 강하니 가까운 곳부터 정복하세요. 기지를 정복하면 광석 보너스와 수입이 생겨요.", false],
+		["레이드에 대비하세요", "15분부터 5~10분마다 레이드가 기지로 몰려와요. 미니맵의 빨간 표시를 보고 기지를 지키세요. 기지가 파괴되면 패배예요.", false],
+		["준비 완료!", ("[정보]는 게임 기록, 왼쪽 위 버튼은 일시정지, 아래 1~5 칸은 로봇 종류별 전체 선택, 6 칸은 기름 들기예요." if T else "I는 게임 정보, Esc는 일시정지, T는 깃발 꽂기, 1~5는 로봇 종류별 전체 선택, Ctrl+1~5나 숫자 두 번은 그 로봇들 위치로 화면 이동, 6이나 스페이스는 기름 들기예요.") + " 10분 이상 하고 끝내면 청석을 받아 로비에서 스킨을 살 수 있어요. 행운을 빌어요!", false]]
+
+func _tut_ok(i: int) -> bool:
+	match i:
+		1: return cam.position.distance_to(tut_c) > 180.0
+		2: return shop_open
+		3: return bots.any(func(u): return u.t == "m")
+		4: return bots.any(func(u): return u.t == "m" and u.mine != null)
+		5: return bots.any(func(u): return u.t == "s" and u.f < u.fm)
+		6: return bots.any(func(u): return u.t == "c" or u.t == "r")
+		7: return bots.any(func(u): return (u.t == "c" or u.t == "r") and (u.goal != null or u.tgt != null))
+	return false
+
+func tut_next() -> void:
+	tut += 1
+	if tut >= tut_steps().size():
+		tut = -1
+		SV.tut_done = true
+		sv_save()
+		msg("튜토리얼 완료! 즐거운 정복 되세요")
+
+func _tut_tick() -> void:
+	if tut >= 0 and _tut_ok(tut):
+		tut_next()
+
+func _tut_mark():
+	match tut:
+		4:
+			var u = _first(func(q): return q.t == "m")
+			if u == null or shop_open:
+				return null
+			return _near_mine() if u.sel else u.p
+		5:
+			var u = _first(func(q): return q.t == "s")
+			if u == null or shop_open:
+				return null
+			return B + Vector2(520, -520) if u.sel else u.p
+		8:
+			var best = null
+			var bd := 1e9
+			for o in outs:
+				if not o.cap and B.distance_to(o.p) < bd:
+					bd = B.distance_to(o.p)
+					best = o.p
+			return best
+	return null
+
+func _first(fn: Callable):
+	for q in bots:
+		if fn.call(q):
+			return q
+	return null
+
+func _near_mine():
+	var best = null
+	var bd := 1e9
+	for m in mines:
+		if not m.ev and m.amt > 0 and seen(m.p) and B.distance_to(m.p) < bd:
+			bd = B.distance_to(m.p)
+			best = m.p
+	return best
+
+func _tut_hl() -> Array:
+	var ids: Array = []
+	match tut:
+		2: ids = [["shop", null]]
+		3: ids = [["shop", null]] if not shop_open else [["card", "m"]]
+		4: ids = [["shopx", null]] if shop_open else []
+		5:
+			if bots.any(func(u): return u.t == "s"):
+				ids = [["shopx", null]] if shop_open else []
+			else:
+				ids = [["card", "s"]] if shop_open else [["shop", null]]
+		6: ids = [["card", "c"], ["card", "r"]] if shop_open else [["shop", null]]
+		7: ids = [["all", null]]
+	var out: Array = []
+	for it in ui:
+		for q in ids:
+			if it.id == q[0] and (q[1] == null or (it.arg is Dictionary and it.arg.get("k", "") == q[1])):
+				out.append(it.r)
+	return out
+
+func _tut_world() -> void:
+	if tut < 0:
+		return
+	var P = _tut_mark()
+	if P == null:
+		return
+	var by := sin(t_real * 1000.0 / 180.0) * 6.0
+	var p: Vector2 = P
+	var pts := PackedVector2Array([p + Vector2(0, -30 + by), p + Vector2(-13, -50 + by), p + Vector2(-5, -50 + by), p + Vector2(-5, -68 + by), p + Vector2(5, -68 + by), p + Vector2(5, -50 + by), p + Vector2(13, -50 + by)])
+	draw_colored_polygon(pts, Color("#ffe28a"))
+	pts.append(pts[0])
+	draw_polyline(pts, Color("#1c1406"), 2.0)
+	draw_arc(p, 24.0 + by * 0.6, 0, TAU, 40, Color(1.0, 0.89, 0.54, 0.8), 2.0)
+
+func _tut_rect() -> Rect2:
+	var u := ui_size()
+	var w := minf(420.0, u.x - 24.0)
+	if shop_open:
+		return Rect2(u.x - w - 12.0, u.y - 230.0 - 140.0, w, 200.0)
+	return Rect2(12.0, 68.0 if touch_ui() else 12.0, w, 200.0)
+
+func _tut_ui(f: Font) -> void:
+	if tut < 0 or paused or won or lost or keys_open:
+		return
+	for r in _tut_hl():
+		var a := 0.55 + 0.45 * sin(t_real * 6.0)
+		draw_rect((r as Rect2).grow(3.0), Color(1.0, 0.85, 0.35, a), false, 3.0)
+	var S: Array = tut_steps()
+	var q: Array = S[tut]
+	var r := _tut_rect()
+	var lines := _wrap(f, q[1], 14, r.size.x - 28.0)
+	r.size.y = 96.0 + lines.size() * 20.0 + 44.0
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.07, 0.1, 0.96)
+	sb.border_color = Color("#ffd76a")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	sb.draw(get_canvas_item(), r)
+	var x := r.position.x + 14.0
+	var y := r.position.y
+	draw_string(f, Vector2(x, y + 24.0), "튜토리얼 " + str(tut + 1) + " / " + str(S.size()), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#9fb3c2"))
+	draw_rect(Rect2(x, y + 32.0, r.size.x - 28.0, 4.0), Color(1, 1, 1, 0.1))
+	draw_rect(Rect2(x, y + 32.0, (r.size.x - 28.0) * (tut + 1) / float(S.size()), 4.0), Color("#ffd76a"))
+	draw_string(f, Vector2(x, y + 62.0), q[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color.WHITE)
+	for i in lines.size():
+		draw_string(f, Vector2(x, y + 88.0 + i * 20.0), lines[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#c9d4dc"))
+	if q[2]:
+		draw_string(f, Vector2(r.position.x, r.end.y - 18.0), "해 보면 자동으로 넘어가요", HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 14.0, 12, Color("#ffd76a"))
+	for it in ui:
+		if it.id == "tutskip":
+			_btn(f, it.r, "튜토리얼 건너뛰기", false, 12, Color("#c9d4dc"))
+		elif it.id == "tutnext":
+			var gold := StyleBoxFlat.new()
+			gold.bg_color = Color("#d9b04e")
+			gold.set_corner_radius_all(5)
+			gold.draw(get_canvas_item(), it.r)
+			draw_string(f, (it.r as Rect2).position + Vector2(0, 21), "시작하기" if tut == tut_steps().size() - 1 else "다음", HORIZONTAL_ALIGNMENT_CENTER, (it.r as Rect2).size.x, 14, Color("#2a1a02"))
+
+func _tut_buttons() -> void:
+	if tut < 0 or paused or won or lost or keys_open:
+		return
+	var r := _tut_rect()
+	var lines := _wrap(ThemeDB.fallback_font, tut_steps()[tut][1], 14, r.size.x - 28.0)
+	var bot := r.position.y + 96.0 + lines.size() * 20.0 + 44.0
+	_add("tutskip", Rect2(r.position.x + 14.0, bot - 38.0, 150.0, 30.0))
+	if not tut_steps()[tut][2]:
+		_add("tutnext", Rect2(r.end.x - 114.0, bot - 38.0, 100.0, 30.0))
+
+# ── 로비 그리기 ──
+func _lobby_w() -> float:
+	return minf(1000.0, ui_size().x - 40.0)
+
+func _build_lobby() -> void:
+	var u := ui_size()
+	var W := _lobby_w()
+	var x0 := (u.x - W) / 2.0
+	if lsec == "main":
+		var cw := W * 0.55
+		var cr := Rect2(x0, 205.0, cw, 312.0)
+		if has_save():
+			_add("lcont", Rect2(cr.position.x + 20.0, cr.end.y - 72.0, (cw - 50.0) / 2.0, 54.0))
+			_add("lnew", Rect2(cr.position.x + 30.0 + (cw - 50.0) / 2.0, cr.end.y - 72.0, (cw - 50.0) / 2.0, 54.0))
+		else:
+			_add("lnew", Rect2(cr.position.x + 20.0, cr.end.y - 72.0, cw - 40.0, 54.0))
+		var tx := x0 + cw + 12.0
+		var tw := (W - cw - 24.0) / 2.0
+		var names := ["lshop", "lstore", "lpass", "lset"]
+		for i in 4:
+			_add(names[i], Rect2(tx + (i % 2) * (tw + 12.0), 205.0 + int(i / 2) * 162.0, tw, 150.0))
+		_add("lnotes", Rect2(x0, 529.0, cw, 42.0))
+	else:
+		var pr := _lsec_rect()
+		_add("lback", Rect2(pr.end.x - 130.0, pr.end.y - 54.0, 116.0, 40.0))
+		if lsec == "set":
+			var y := pr.position.y + 70.0 - lob_scroll
+			_add("ltut", Rect2(pr.position.x + 20.0, y, 300.0, 40.0))
+			y += 96.0
+			for k in ["uis", "vol_s", "vol_b"]:
+				_add("sl", Rect2(pr.position.x + 120.0, y, pr.size.x - 220.0, 30.0), true, "", k)
+				y += 40.0
+			_add("lmute", Rect2(pr.position.x + 20.0, y, 140.0, 38.0))
+			y += 84.0
+			_add("lkeys", Rect2(pr.position.x + 20.0, y, 220.0, 40.0))
+			y += 84.0
+			_add("lwipe", Rect2(pr.position.x + 20.0, y, 200.0, 40.0))
+			_add("lwipeall", Rect2(pr.position.x + 232.0, y, 200.0, 40.0))
+
+func _lsec_rect() -> Rect2:
+	var u := ui_size()
+	var W := minf(760.0, u.x - 40.0)
+	return Rect2((u.x - W) / 2.0, 190.0, W, u.y - 210.0)
+
+func _btn(f: Font, r: Rect2, s: String, hi: bool = false, fs: int = 16, col: Color = Color.WHITE) -> void:
+	(sb_btn_hi if hi else sb_btn).draw(get_canvas_item(), r)
+	draw_string(f, Vector2(r.position.x, r.position.y + r.size.y / 2.0 + fs * 0.36), s, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, fs, col)
+
+func _lobby(f: Font) -> void:
+	_ui_reset()
+	var u := ui_size()
+	draw_rect(Rect2(Vector2.ZERO, u), Color("#0b1015"))
+	for i in int(u.x / 64.0) + 1:
+		draw_line(Vector2(i * 64.0, 0), Vector2(i * 64.0, u.y), Color(1, 1, 1, 0.02), 1.0)
+	for j in int(u.y / 64.0) + 1:
+		draw_line(Vector2(0, j * 64.0), Vector2(u.x, j * 64.0), Color(1, 1, 1, 0.02), 1.0)
+	ui.clear()
+	_build_lobby()
+	var hov = null if touch_ui() else ui_hit(mouse_ui * us)
+	# 로고
+	draw_string(f, Vector2(0, 92), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#5a3a08"))
+	draw_string(f, Vector2(0, 88), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#f2c86a"))
+	draw_string(f, Vector2(0, 118), "외 계  기 지  정 복  전 략", HORIZONTAL_ALIGNMENT_CENTER, u.x, 12, Color("#8a9bad"))
+	var chips := [["청석", str(SV.cs), Color("#7fd8ff"), Color("#33414d")], ["별석", str(SV.ss), Color("#c79bff"), Color("#5a4a8a")]]
+	for i in 2:
+		var r := Rect2(u.x / 2.0 - 84.0 + i * 88.0, 134.0, 82.0, 36.0)
+		draw_rect(r, Color("#10161c"))
+		draw_rect(r, chips[i][3], false, 1.0)
+		draw_string(f, r.position + Vector2(10, 23), chips[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8a9bad"))
+		draw_string(f, r.position + Vector2(0, 25), chips[i][1], HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12.0, 18, chips[i][2])
+	if lmsg != "":
+		draw_string(f, Vector2(0, 192), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 13, Color("#ffd76a"))
+	if lsec == "main":
+		_lobby_main(f, hov)
+	elif lsec == "set":
+		_lobby_set(f, hov)
+	elif lsec == "notes":
+		_lobby_notes(f, hov)
+	if keys_open:
+		_keys_win(f)
+
+func _lobby_main(f: Font, hov) -> void:
+	var u := ui_size()
+	var W := _lobby_w()
+	var x0 := (u.x - W) / 2.0
+	var cw := W * 0.55
+	var cr := Rect2(x0, 205.0, cw, 312.0)
+	# 미리보기 땅
+	for j in 8:
+		for i in int(cw / 40.0) + 1:
+			var c := Color("#3a3226") if (i + j) % 2 == 0 else Color("#342d22")
+			var rr := Rect2(cr.position.x + i * 40.0, cr.position.y + j * 40.0, 40.0, 40.0).intersection(cr)
+			draw_rect(rr, c)
+	art_base(self, Vector2.ZERO, t_real, inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(0.0, Vector2(1.6, 1.6), 0.0, cr.position + Vector2(cw * 0.3, 150)))
+	var bl := [["r", Vector2(0.62, 0.42), 0.0], ["h", Vector2(0.8, 0.43), 0.0], ["s", Vector2(0.88, 0.25), -0.5], ["c", Vector2(0.73, 0.68), 0.3]]
+	for b in bl:
+		_ui_tf(cr.position + Vector2(cw * b[1].x, cr.size.y * b[1].y), b[2], 3.0)
+		art_bot(self, b[0], UT[b[0]].col, UT[b[0]].acc, t_real)
+	_ui_reset()
+	draw_polygon(PackedVector2Array([Vector2(cr.position.x, cr.position.y + 150), Vector2(cr.end.x, cr.position.y + 150), cr.end, Vector2(cr.position.x, cr.end.y)]),
+		PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0, 0, 0, 0.9), Color(0, 0, 0, 0.9)]))
+	draw_rect(cr, Color("#e0b85a"), false, 2.0)
+	draw_string(f, cr.position + Vector2(20, 200), "출격 준비 완료", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#ffe6a6"))
+	draw_string(f, cr.position + Vector2(20, 226), "난이도 어려움 · 로봇 기본 · 기지 기본 · 테마 기본", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#c9d4dc"))
+	var tiles := {"lshop": ["상점", "소로 상자 · ★ 걸작 · 세트", Color("#c9a255")], "lstore": ["창고", "보유 스킨 0 / 69", Color("#2f8a78")],
+		"lpass": ["배틀패스", "시즌 1 · " + str(int(SV.bpxp)) + " XP", Color("#7a5aa8")], "lset": ["설정", "조작 · 소리 · 데이터", Color("#3a5a8a")]}
+	for it in ui:
+		var r: Rect2 = it.r
+		match it.id:
+			"lnew":
+				var gold := StyleBoxFlat.new()
+				gold.bg_color = Color("#e8c060") if hov == it else Color("#d9b04e")
+				gold.set_corner_radius_all(6)
+				gold.draw(get_canvas_item(), r)
+				draw_string(f, Vector2(r.position.x, r.position.y + 35.0), "새 게임", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 18, Color("#2a1a02"))
+			"lcont":
+				_btn(f, r, "이어하기", hov == it, 18, Color("#ffe6a6"))
+			"lnotes":
+				_btn(f, r, "패치 노트", hov == it, 14)
+			_:
+				if tiles.has(it.id):
+					var tl: Array = tiles[it.id]
+					var sb := StyleBoxFlat.new()
+					sb.bg_color = Color("#1a242e") if hov == it else Color("#141c24")
+					sb.border_color = Color(1, 1, 1, 0.12)
+					sb.set_border_width_all(1)
+					sb.set_corner_radius_all(10)
+					sb.draw(get_canvas_item(), r)
+					draw_circle(Vector2(r.end.x - 26.0, r.position.y + 26.0), 34.0, Color(tl[2], 0.45))
+					draw_string(f, Vector2(r.position.x + 14.0, r.end.y - 42.0), tl[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color.WHITE)
+					draw_string(f, Vector2(r.position.x + 14.0, r.end.y - 20.0), tl[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#9fb3c2"))
+
+func _lobby_panel(f: Font, title: String) -> Rect2:
+	var pr := _lsec_rect()
+	sb_panel.draw(get_canvas_item(), pr)
+	draw_string(f, pr.position + Vector2(20, 36), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, GOLD)
+	return pr
+
+func _lobby_set(f: Font, hov) -> void:
+	var pr := _lobby_panel(f, "설정")
+	var y := pr.position.y + 70.0 - lob_scroll
+	var x := pr.position.x + 20.0
+	var names := {"uis": ["UI 크기", 50, 130], "vol_s": ["효과음", 0, 100], "vol_b": ["배경음", 0, 100]}
+	draw_string(f, Vector2(x, y - 8.0), "튜토리얼", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	for it in ui:
+		var r: Rect2 = it.r
+		match it.id:
+			"ltut": _btn(f, r, "튜토리얼 다시하기 (새 게임으로 시작)", hov == it, 14)
+			"lmute": _btn(f, r, "음소거 켜짐" if SV.mute else "음소거", hov == it or SV.mute, 14)
+			"lkeys": _btn(f, r, "조작법 전체 보기", hov == it, 14)
+			"lwipe": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", hov == it, 14, Color("#ffb0a0"))
+			"lwipeall": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipeall" else "게임 전체 초기화", hov == it, 14, Color("#ff9a8a"))
+			"lback": _btn(f, r, "뒤로", hov == it, 15)
+			"sl":
+				var nm: Array = names[it.arg]
+				var v := float(SV[it.arg])
+				var k := (v - nm[1]) / float(nm[2] - nm[1])
+				draw_string(f, Vector2(x, r.position.y + 21.0), nm[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
+				draw_rect(Rect2(r.position.x, r.position.y + 13.0, r.size.x, 4.0), Color(1, 1, 1, 0.15))
+				draw_rect(Rect2(r.position.x, r.position.y + 13.0, r.size.x * k, 4.0), Color("#ffd76a"))
+				draw_circle(Vector2(r.position.x + r.size.x * k, r.position.y + 15.0), 9.0, Color("#ffd76a"))
+				draw_string(f, Vector2(r.end.x + 14.0, r.position.y + 21.0), str(int(v)) + "%", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd76a"))
+	draw_string(f, Vector2(x, y + 88.0), "화면 · 소리", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x + 150.0, y + 240.0), "게임 중에도 M 키로 음소거를 켜고 끌 수 있어요", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
+	draw_string(f, Vector2(x, y + 290.0), "조작", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+	draw_string(f, Vector2(x, y + 374.0), "데이터", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
+
+const NOTES := [["고도판 첫 버전", ["웹 SOROK을 고도 엔진으로 옮겼어요 (PC · 모바일 같은 코드)", "웹과 같은 전투 AI · 공격 대형 돌격 · 지원 로봇 · 적 카이팅", "올렸을 때 말풍선 · 휠 이동 · 가장자리 이동 · 깃발 · 조작법 창", "로봇끼리 안 겹치게 밀어내기 (고도판에서 새로 추가)", "효과 · 효과음 · 배경음 · 승리/패배 연출", "로비 · 설정 · 저장 · 이어하기 · 튜토리얼"]]]
+
+func _lobby_notes(f: Font, hov) -> void:
+	var pr := _lobby_panel(f, "패치 노트")
+	var y := pr.position.y + 70.0
+	for v in NOTES:
+		draw_string(f, Vector2(pr.position.x + 20.0, y), v[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#ffe6a6"))
+		y += 28.0
+		for l in v[1]:
+			draw_string(f, Vector2(pr.position.x + 30.0, y), "· " + l, HORIZONTAL_ALIGNMENT_LEFT, pr.size.x - 50.0, 13, Color("#c9d4dc"))
+			y += 22.0
+		y += 10.0
+	for it in ui:
+		if it.id == "lback":
+			_btn(f, it.r, "뒤로", hov == it, 15)
+
+func _slider_set(key: String, sp: Vector2) -> void:
+	for it in ui:
+		if it.id == "sl" and it.arg == key:
+			var r: Rect2 = it.r
+			var nm := {"uis": [50, 130, 5], "vol_s": [0, 100, 1], "vol_b": [0, 100, 1]}[key]
+			var k := clampf((sp.x / us - r.position.x) / r.size.x, 0.0, 1.0)
+			SV[key] = int(snappedf(nm[0] + k * (nm[1] - nm[0]), nm[2]))
+			if key != "uis":
+				_apply_sv()
+			return
+
+func lobby_press(it: Dictionary, sp: Vector2) -> void:
+	sfx("click")
+	match it.id:
+		"lnew": start_game(false)
+		"lcont": start_game(true)
+		"lset":
+			lsec = "set"
+			lob_scroll = 0.0
+		"lnotes": lsec = "notes"
+		"lshop", "lstore", "lpass": lmsg = "상점 · 창고 · 배틀패스는 다음 업데이트에서 열려요"
+		"lback":
+			lsec = "main"
+			_apply_sv()
+			sv_save()
+		"ltut": start_game(false, true)
+		"lmute":
+			SV.mute = not SV.mute
+			_apply_sv()
+			sv_save()
+		"lkeys": keys_open = true
+		"sl":
+			slider_drag = it.arg
+			_slider_set(it.arg, sp)
+		"lwipe", "lwipeall":
+			if wipe_arm != it.id:
+				wipe_arm = it.id
+				wipe_t = t_real
+				return
+			wipe_arm = ""
+			SV.cs = 0
+			SV.ss = 0
+			SV.bpxp = 0
+			if it.id == "lwipeall":
+				SV.tut_done = false
+				del_save()
+			sv_save()
+			lmsg = "초기화했어요"
+
+func _lobby_input(e: InputEvent) -> void:
+	if e is InputEventKey and e.pressed and not e.echo:
+		if keys_open and (e.keycode == KEY_ESCAPE or e.keycode == KEY_TAB):
+			keys_open = false
+		elif e.keycode == KEY_TAB:
+			keys_open = true
+		elif e.keycode == KEY_ESCAPE and lsec != "main":
+			lsec = "main"
+			_apply_sv()
+			sv_save()
+		return
+	var pos = null
+	var pressed := false
+	var released := false
+	if e is InputEventMouseButton and e.device != InputEvent.DEVICE_ID_EMULATION:
+		if e.button_index == MOUSE_BUTTON_WHEEL_UP or e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			if e.pressed and lsec == "set":
+				lob_scroll = clampf(lob_scroll + (-40.0 if e.button_index == MOUSE_BUTTON_WHEEL_UP else 40.0), 0.0, 200.0)
+			return
+		if e.button_index != MOUSE_BUTTON_LEFT:
+			return
+		pos = e.position
+		pressed = e.pressed
+		released = not e.pressed
+	elif e is InputEventScreenTouch:
+		pos = e.position
+		pressed = e.pressed
+		released = not e.pressed
+	elif e is InputEventMouseMotion and e.device != InputEvent.DEVICE_ID_EMULATION:
+		mouse_ui = e.position / us
+		if slider_drag != null:
+			_slider_set(slider_drag, e.position)
+		return
+	elif e is InputEventScreenDrag:
+		if slider_drag != null:
+			_slider_set(slider_drag, e.position)
+		return
+	if pos == null:
+		return
+	if released:
+		if slider_drag != null:
+			if slider_drag == "uis":
+				_apply_sv()
+			slider_drag = null
+			sv_save()
+		return
+	if pressed:
+		if keys_open:
+			keys_open = false
+			return
+		var it = ui_hit(pos)
+		if it != null:
+			lobby_press(it, pos)
 
 # ═════════ 소리 (웹 효과음·배경음을 WAV로 만든 것) ═════════
 const SFX_GAP := {"shoot": 0.06, "hit": 0.06, "ehit": 0.08, "die": 0.05, "ore": 0.12, "turret": 0.06, "myturret": 0.1, "basehit": 0.15, "up": 0.05, "click": 0.03, "cmd_atk": 0.05, "cmd_mv": 0.05}
@@ -2177,7 +2838,9 @@ func _bgm_tick() -> void:
 	if bgm_p == null:
 		return
 	var want := ""
-	if not muted and vol_b > 0 and not paused and not lost:
+	if not muted and vol_b > 0 and scene == "lobby":
+		want = "bgm_lobby"
+	elif not muted and vol_b > 0 and not paused and not lost:
 		want = "bgm_raid" if raid_alive else "bgm_game"
 	if want == bgm_k:
 		return
@@ -2831,6 +3494,9 @@ func _shop(f: Font, hov) -> void:
 
 # ═════════ 입력 ═════════
 func _unhandled_input(e: InputEvent) -> void:
+	if scene == "lobby":
+		_lobby_input(e)
+		return
 	if e is InputEventScreenTouch or e is InputEventScreenDrag:
 		_touch(e)
 		return
@@ -3075,6 +3741,9 @@ func _touch(e: InputEvent) -> void:
 
 # ═════════ 매 프레임 ═════════
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		if scene == "game":
+			save_game()
 	if what == NOTIFICATION_WM_MOUSE_EXIT or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		mouse_in = false
 	elif what == NOTIFICATION_WM_MOUSE_ENTER:
@@ -3109,7 +3778,7 @@ func _process(dt: float) -> void:
 	# 화면 가장자리에 마우스를 대면 지도 이동 (PC)
 	var mp := mouse_ui * us
 	var vs := vsize()
-	if not touch_mode and mouse_in and mp.x >= 0.0 and dn == null and not box_active and not mm_drag and not mm_rect().has_point(mp) \
+	if scene == "game" and not touch_mode and mouse_in and mp.x >= 0.0 and dn == null and not box_active and not mm_drag and not mm_rect().has_point(mp) \
 			and not shop_open and not info_open and not paused and not keys_open and ui_hit(mp) == null:
 		var es := 1500.0 * dt / zm
 		var ev := Vector2.ZERO
@@ -3124,8 +3793,18 @@ func _process(dt: float) -> void:
 		if ev != Vector2.ZERO:
 			cam.position += ev
 			_clamp_cam()
+	if wipe_arm != "" and t_real - wipe_t > 3.0:
+		wipe_arm = ""
+	if scene == "lobby":
+		queue_redraw()
+		return
 	if not won and not lost and not paused:
 		update_game(dt)
+		_tut_tick()
+		save_acc += dt
+		if save_acc > 15.0:
+			save_acc = 0.0
+			save_game()
 	for f in fx:
 		f.t -= dt
 	fx = fx.filter(func(f): return f.t > 0.0)
@@ -3269,6 +3948,12 @@ func update_game(dt: float) -> void:
 # ═════════ 그리기 (월드) ═════════
 func _draw() -> void:
 	var f := ThemeDB.fallback_font
+	if scene == "lobby":
+		inv = get_canvas_transform().affine_inverse()
+		draw_set_transform_matrix(inv)
+		_lobby(f)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	var vr: Rect2 = view_rect().grow(CELL)
 	var i0 := maxi(0, int(vr.position.x / CELL))
 	var j0 := maxi(0, int(vr.position.y / CELL))
@@ -3312,6 +3997,7 @@ func _draw() -> void:
 	_fx(f)
 	_fog(i0, j0, i1, j1)
 	_flags(f)
+	_tut_world()
 	for d in drones:
 		draw_arc(d.p, 260.0, 0.0, TAU, 64, Color(1.0, 0.88, 0.47, 0.5), 2.0)
 		draw_circle(d.p, 9.0, Color("#0b1118"))
@@ -3534,7 +4220,21 @@ func _wait(sec: float) -> void:
 
 func _selftest() -> void:
 	await _wait(0.6)
+	await _shot("00_lobby")
+	lsec = "set"
+	await _shot("00b_set")
+	lsec = "main"
+	start_game(false)
+	await _wait(0.3)
 	await _shot("01_start")
+	tut = 3
+	shop_open = true
+	await _shot("01b_tut_shop")
+	shop_open = false
+	tut = -1
+	paused = true
+	await _shot("01c_pause")
+	paused = false
 	ore = 5000.0
 	stone = 100
 	for k in ["s", "m", "m", "c", "c", "c", "c", "r", "r", "r", "h"]:
@@ -3637,6 +4337,12 @@ func _selftest() -> void:
 	print("STAT2 t=", int(t), " basehp=", int(base.hp), " bots=", bots.size(), " ens=", ens.size(), " kills=", kills, " lost=", lost_n)
 	cam_to(B)
 	await _shot("06b_raid_ui")
+	var nb := bots.size()
+	var ne := ens.size()
+	var o1: float = outs[0].hp
+	save_game()
+	load_game()
+	print("SAVELOAD bots ", nb, "->", bots.size(), " ens ", ne, "->", ens.size(), " out0 ", int(o1), "->", int(outs[0].hp), " has=", has_save())
 	Engine.time_scale = 1.0
 	base.hp = -100.0
 	await _wait(0.9)
