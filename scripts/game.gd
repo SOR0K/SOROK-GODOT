@@ -3550,19 +3550,53 @@ var box_t0 := 0.0
 var box_star := false
 var box_shown := 0
 
+func _num(v, d: int = 0) -> int:
+	if v is int:
+		return v
+	if v is float:
+		return int(v)
+	if v is String and v.is_valid_float():
+		return int(float(v))
+	return d
+
 func _sv_defaults() -> void:
+	# 웹에서 온 기록은 칸이 비었거나 모양이 다를 수 있어서 하나하나 고쳐요
 	for k in ["own", "bown", "town", "hist"]:
 		if not (SV.get(k) is Array):
 			SV[k] = []
+	SV.hist = SV.hist.filter(func(h): return h is Dictionary and h.has("x"))
 	for k in ["eq", "beq", "teq"]:
-		if not SV.has(k) or SV[k] == null:
+		if not (SV.get(k) is String):
 			SV[k] = ""
+	if SV.eq != "" and _find_in(SK, SV.eq).is_empty():
+		SV.eq = ""
+	if SV.beq != "" and _find_in(BS, SV.beq).is_empty():
+		SV.beq = ""
+	if SV.teq != "" and _find_in(TS, SV.teq).is_empty():
+		SV.teq = ""
 	if not (SV.get("frag") is Dictionary):
 		SV.frag = {}
+	for k in SV.frag.keys():
+		SV.frag[k] = _num(SV.frag[k])
 	for k in ["fbox", "sfrag", "spity", "ss", "cs"]:
-		SV[k] = int(SV.get(k, 0))
-	if not (SV.get("bp") is Dictionary) or int(SV.bp.get("season", 0)) != SEASON.id:
-		SV.bp = {"season": SEASON.id, "xp": int(SV.get("bpxp", 0)), "prem": false, "cf": [], "cp": []}
+		SV[k] = _num(SV.get(k, 0))
+	SV.vol_s = clampi(_num(SV.get("vol_s", 70), 70), 0, 100)
+	SV.vol_b = clampi(_num(SV.get("vol_b", 35), 35), 0, 100)
+	SV.uis = clampi(_num(SV.get("uis", 100), 100), 50, 130)
+	SV.mute = SV.get("mute", false) == true
+	SV.tut_done = SV.get("tut_done", false) == true
+	var B0 = SV.get("bp")
+	if B0 is Dictionary and not B0.has("season"):
+		B0.season = 1
+	if not (B0 is Dictionary) or _num(B0.get("season", 0)) != SEASON.id:
+		SV.bp = {"season": SEASON.id, "xp": _num(SV.get("bpxp", 0)), "prem": false, "cf": [], "cp": []}
+	var P: Dictionary = SV.bp
+	P.season = SEASON.id
+	P.xp = _num(P.get("xp", 0))
+	P.prem = P.get("prem", false) == true
+	for k in ["cf", "cp"]:
+		var a = P.get(k)
+		P[k] = (a as Array).map(func(x): return _num(x)) if a is Array else []
 	SV.erase("bpxp")
 
 func bp() -> Dictionary:
@@ -6621,6 +6655,13 @@ func _selftest() -> void:
 	SV.cs = 1
 	acct.apply_cloud(pk)
 	print("ACCT pack->apply cs ", cs0, "->", SV.cs, " eq=", SV.eq, " own=", SV.own.size(), " bp=", SV.bp.xp)
+	# 웹 서버에서 온 것 같은 기록(빈 칸·옛 모양)을 받아도 로비가 그려지는지
+	SV.mute = true
+	acct.apply_cloud(JSON.stringify({"sorok_v1": JSON.stringify({"cs": 1234, "own": ["j1", "k3", "zz9"], "eq": "k3", "bown": ["b1"], "beq": null, "town": [], "teq": "nope", "frag": {"j2": 3}, "fbox": null, "bp": {"xp": 2300, "cf": [1, 3]}, "hist": [{"t": 1, "k": "box", "g": "ju", "x": "주 테스트"}, 5], "tutDone": true, "vol": {"s": null, "b": 40}, "uis": 1}), "sorok_save": "{}"}))
+	print("WEBDATA cs=", SV.cs, " eq=", SV.eq, " teq=", SV.teq, " bp=", SV.bp, " vol=", SV.vol_s, "/", SV.vol_b, " uis=", SV.uis)
+	lsec = "main"
+	await _shot("00ia_after_web")
+	SV.mute = true
 	acct.show_login("")
 	await _shot("00j_login")
 	var jr: Dictionary = await acct.idt("signInWithPassword", {"email": "nobody-ci-test@sorok.invalid", "password": "wrongpass1", "returnSecureToken": true})

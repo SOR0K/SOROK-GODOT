@@ -139,14 +139,15 @@ func apply_cloud(d: String) -> void:
 			SV.erase(k)
 	for k in ["eq", "beq", "teq"]:
 		SV[k] = raw_sv[k] if raw_sv.get(k) != null else ""
-	SV.tut_done = bool(raw_sv.get("tutDone", false))
+	SV.tut_done = raw_sv.get("tutDone", false) == true
 	if raw_sv.has("mute"):
-		SV.mute = bool(raw_sv.mute)
+		SV.mute = raw_sv.mute == true
 	if raw_sv.get("vol") is Dictionary:
-		SV.vol_s = int(raw_sv.vol.get("s", 70))
-		SV.vol_b = int(raw_sv.vol.get("b", 35))
-	if raw_sv.has("uis"):
-		SV.uis = clampi(roundi(float(raw_sv.uis) * 100.0), 50, 130)
+		SV.vol_s = g._num(raw_sv.vol.get("s", 70), 70)
+		SV.vol_b = g._num(raw_sv.vol.get("b", 35), 35)
+	var ui_ = raw_sv.get("uis")
+	if ui_ is float or ui_ is int:
+		SV.uis = clampi(roundi(float(ui_) * 100.0), 50, 130)
 	g._sv_defaults()
 	g._apply_sv()
 	g.sv_save(true)
@@ -260,7 +261,8 @@ func boot() -> bool:
 		g.lmsg = "오프라인이에요 · 연결되면 자동으로 저장돼요"
 		return true
 	if not vok:
-		show_verify()
+		if ses != null:
+			show_verify()
 		return true
 	await enter()
 	return true
