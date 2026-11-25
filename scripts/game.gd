@@ -2990,10 +2990,7 @@ func SKIN() -> Dictionary:
 func BSK() -> Dictionary:
 	return _find_in(BS, SV.beq)
 func TH() -> Dictionary:
-	var k := _find_in(TS, SV.teq)
-	if not k.is_empty() and not k.has("mn"):
-		k.mn = TMN.get(k.id, null)
-	return k
+	return _find_in(TS, SV.teq)
 func KRO() -> Dictionary:
 	var s := SKIN()
 	return s if (not s.is_empty() and (s.g == "kro" or s.g == "star")) else {}
@@ -3946,7 +3943,7 @@ func _rows_shop() -> Array:
 		"r", "b", "t":
 			var c: String = shop_tab2
 			var cat := "s" if c == "r" else c
-			var hdr := {"r": "주 등급 · 외형 변경 · 청석 300  /  크로 등급 · 외형 + 투사체 + 타격 효과", "b": "기지 모습 + 패배 시 폭발 연출 · 청석 500", "t": "필드 배경 · 상대 기지 · 상대 로봇 · 광산"}[c]
+			var hdr: String = {"r": "주 등급 · 외형 변경 · 청석 300  /  크로 등급 · 외형 + 투사체 + 타격 효과", "b": "기지 모습 + 패배 시 폭발 연출 · 청석 500", "t": "필드 배경 · 상대 기지 · 상대 로봇 · 광산"}[c]
 			R.append({"h": hdr})
 			var cards: Array = [{"pv": [cat, ""], "tag": "기본", "n": {"r": "기본 도색", "b": "기본 기지", "t": "기본 테마"}[c], "d": "처음 모습",
 				"btns": [["장착 중" if SV[{"s": "eq", "b": "beq", "t": "teq"}[cat]] == "" else "장착", {"a": "uneq", "c": cat}, SV[{"s": "eq", "b": "beq", "t": "teq"}[cat]] != ""]]}]
@@ -4332,7 +4329,6 @@ func _lobby_cos(f: Font, hov) -> void:
 			(sb_tab_on if on else sb_btn).draw(get_canvas_item(), it.r)
 			draw_string(f, Vector2(it.r.position.x, it.r.position.y + 23.0), it.arg.lb, HORIZONTAL_ALIGNMENT_CENTER, it.r.size.x, 13, Color.WHITE)
 	if lob_max > 0.0:
-		var cr := _content_rect()
 		var k := lob_scroll / lob_max
 		var hh := maxf(30.0, cr.size.y * cr.size.y / (cr.size.y + lob_max))
 		draw_rect(Rect2(cr.end.x + 4.0, cr.position.y + (cr.size.y - hh) * k, 4.0, hh), Color(1, 1, 1, 0.25))
@@ -4653,16 +4649,16 @@ func _defeat(f: Font) -> void:
 func _tick_win(dt: float) -> void:
 	var u := ui_size()
 	var wt := t_real - won_at
-	var C := [Color("#ffd76a"), Color("#7fe0ff"), Color("#ff7aa8"), Color("#9bff8a"), Color("#c79bff")]
+	var WC := [Color("#ffd76a"), Color("#7fe0ff"), Color("#ff7aa8"), Color("#9bff8a"), Color("#c79bff")]
 	if rng.randf() < (0.08 if wt < 4.0 else 0.035):
-		var bp := Vector2(u.x * rng.randf_range(0.15, 0.85), u.y * rng.randf_range(0.12, 0.57))
+		var bp0 := Vector2(u.x * rng.randf_range(0.15, 0.85), u.y * rng.randf_range(0.12, 0.57))
 		for i in 46:
 			var a := rng.randf() * TAU
 			var v := rng.randf_range(60.0, 250.0)
-			wfx.append({"p": bp, "v": Vector2.from_angle(a) * v, "l": rng.randf_range(1.0, 1.6), "c": C[rng.randi() % 5], "r": rng.randf_range(2.0, 3.6), "g": 90.0, "fr": true})
+			wfx.append({"p": bp0, "v": Vector2.from_angle(a) * v, "l": rng.randf_range(1.0, 1.6), "c": WC[rng.randi() % 5], "r": rng.randf_range(2.0, 3.6), "g": 90.0, "fr": true})
 	if wfx.size() < 650 and wt > 0.3:
 		for i in 2:
-			wfx.append({"p": Vector2(rng.randf() * u.x, -10), "v": Vector2(rng.randf_range(-20, 20), rng.randf_range(60, 140)), "l": 9.0, "c": C[rng.randi() % 5], "cf": true, "a": rng.randf() * 7.0})
+			wfx.append({"p": Vector2(rng.randf() * u.x, -10), "v": Vector2(rng.randf_range(-20, 20), rng.randf_range(60, 140)), "l": 9.0, "c": WC[rng.randi() % 5], "cf": true, "a": rng.randf() * 7.0})
 	for q in wfx:
 		q.l -= dt
 		if q.has("g"):
@@ -5849,9 +5845,9 @@ func _minimap() -> void:
 			draw_rect(Rect2(o + (e.p as Vector2) * k - Vector2(1.5, 1.5), Vector2(3, 3)), Color("#e5604d"))
 		elif e.raid:
 			draw_rect(Rect2(o + (e.p as Vector2) * k - Vector2(2, 2), Vector2(4, 4)), Color("#ff3a2a"))
-	var bp := o + B * k
-	draw_rect(Rect2(bp - Vector2(4, 4), Vector2(8, 8)), Color("#4a86c8"))
-	draw_rect(Rect2(bp - Vector2(4, 4), Vector2(8, 8)), Color("#d6ecff"), false, 1.0)
+	var bpm := o + B * k
+	draw_rect(Rect2(bpm - Vector2(4, 4), Vector2(8, 8)), Color("#4a86c8"))
+	draw_rect(Rect2(bpm - Vector2(4, 4), Vector2(8, 8)), Color("#d6ecff"), false, 1.0)
 	for u in bots:
 		var p: Vector2 = o + (u.p as Vector2) * k
 		var rr := 2.2 if (u.t == "m" or u.t == "s") else 2.8
@@ -6141,7 +6137,7 @@ func art_mine(ci: CanvasItem, m: Dictionary, t: float) -> void:
 	var ev: bool = m.ev
 	var on: bool = m.amt > 0
 	ell_fill(ci, p + Vector2(0, 12), 18, 7, Color(0, 0, 0, 0.28))
-	var MN = thm.get("mn", null)
+	var MN = TMN.get(thm.get("id", ""), null)
 	if on:
 		var gc := Color(0.67, 0.43, 1.0, 0.16) if ev else (C(MN[2]) if MN != null else Color(0.37, 0.88, 0.77, 0.14))
 		ci.draw_circle(p, 28, Color(gc, gc.a + 0.04 * sin(t * 2.0 + p.x)))
