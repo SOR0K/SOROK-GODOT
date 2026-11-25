@@ -392,6 +392,9 @@ func _shell(title: String) -> VBoxContainer:
 	fields = {}
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var th := Theme.new()
+	th.default_font_size = 26 if g.touch_mode else 16
+	root.theme = th
 	add_child(root)
 	ui_root = root
 	var bg := ColorRect.new()
@@ -403,7 +406,7 @@ func _shell(title: String) -> VBoxContainer:
 	root.add_child(cc)
 	var pan := PanelContainer.new()
 	pan.add_theme_stylebox_override("panel", _style(Color("#10161c"), Color("#c9a255")))
-	pan.custom_minimum_size = Vector2(420, 0)
+	pan.custom_minimum_size = Vector2(640 if g.touch_mode else 420, 0)
 	cc.add_child(pan)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
@@ -411,7 +414,7 @@ func _shell(title: String) -> VBoxContainer:
 	var logo := Label.new()
 	logo.text = "S O R O K"
 	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	logo.add_theme_font_size_override("font_size", 42)
+	logo.add_theme_font_size_override("font_size", 60 if g.touch_mode else 42)
 	logo.add_theme_color_override("font_color", Color("#f2c86a"))
 	v.add_child(logo)
 	var sub := Label.new()
@@ -426,7 +429,7 @@ func _input_box(v: VBoxContainer, key: String, ph: String, secret: bool = false,
 	e.placeholder_text = ph
 	e.secret = secret
 	e.text = val
-	e.custom_minimum_size = Vector2(0, 40)
+	e.custom_minimum_size = Vector2(0, 58 if g.touch_mode else 40)
 	e.add_theme_stylebox_override("normal", _style(Color("#0b1015"), Color("#33414d")))
 	e.add_theme_stylebox_override("focus", _style(Color("#0b1015"), Color("#ffd76a")))
 	v.add_child(e)
@@ -437,7 +440,7 @@ func _input_box(v: VBoxContainer, key: String, ph: String, secret: bool = false,
 func _btn(v: Container, txt: String, cb: Callable, gold: bool = false) -> Button:
 	var b := Button.new()
 	b.text = txt
-	b.custom_minimum_size = Vector2(0, 42)
+	b.custom_minimum_size = Vector2(0, 60 if g.touch_mode else 42)
 	b.add_theme_stylebox_override("normal", _style(Color("#d9b04e") if gold else Color("#1c2834"), Color("#ffd76a") if gold else Color("#c9a255")))
 	b.add_theme_stylebox_override("hover", _style(Color("#e8c060") if gold else Color("#243444"), Color("#ffd76a")))
 	b.add_theme_stylebox_override("pressed", _style(Color("#b8902e") if gold else Color("#141c24"), Color("#ffd76a")))
@@ -477,7 +480,7 @@ func _srv_label(v: VBoxContainer) -> void:
 	var l := Label.new()
 	l.text = ("모바일" if srv == "m" else "PC") + " 서버 · 웹 SOROK과 같은 계정이에요"
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", 12)
+	l.add_theme_font_size_override("font_size", 18 if g.touch_mode else 12)
 	l.add_theme_color_override("font_color", Color("#7d8b96"))
 	v.add_child(l)
 
