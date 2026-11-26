@@ -1287,6 +1287,15 @@ func mine_at(w: Vector2):
 	return null
 
 func click(w: Vector2, add: bool) -> void:
+	if not touch_ui():
+		# PC는 웹과 똑같이: 로봇 바로 위(20 이내)를 누르면 그 로봇 하나만 선택 · 나머지는 명령
+		var pu = nearest(w, bots, 20.0)
+		if pu != null:
+			clear_sel()
+			pu.sel = true
+			return
+		_command(w)
+		return
 	var u = unit_at(w)
 	if u != null:
 		if last_tap.k == u.t and t - last_tap.t < 0.35:
@@ -1309,6 +1318,9 @@ func click(w: Vector2, add: bool) -> void:
 		for q in bots:
 			q.sel = true
 		return
+	_command(w)
+
+func _command(w: Vector2) -> void:
 	var s := selected()
 	if s.is_empty():
 		return
@@ -7086,7 +7098,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				box_b = box_a
 			elif box_active:
 				box_b = s2w(mb.position)
-				finish_box(mb.shift_pressed)
+				finish_box(false)
 				box_active = false
 	elif e is InputEventPanGesture:
 		cam.position += (e as InputEventPanGesture).delta * 30.0
