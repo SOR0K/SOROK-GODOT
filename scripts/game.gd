@@ -4140,7 +4140,7 @@ func _gbox(r: Rect2, stops, ang: float = 180.0, rad = 0.0, bc: Color = Color(0, 
 func _g2(a: String, b: String) -> Array:
 	return [[0.0, Color(a)], [1.0, Color(b)]]
 
-func _glow(r: Rect2, col: Color, sz: float, rad: float = 0.0) -> void:
+func _bglow(r: Rect2, col: Color, sz: float, rad: float = 0.0) -> void:
 	for i in 5:
 		var k := (i + 1) / 5.0
 		draw_colored_polygon(_rr_pts(r.grow(sz * k), rad + sz * k), Color(col, col.a * 0.32 * (1.0 - k * 0.8)))
@@ -4249,7 +4249,7 @@ func _icon(k: String, c: Vector2, s: float) -> void:
 func _sbx(c: Vector2, sc: float, glow: bool = true) -> void:
 	var r := Rect2(c - Vector2(35, 31) * sc, Vector2(70, 62) * sc)
 	if glow:
-		_glow(r, Color(0.91, 0.76, 0.42, 0.4), 18.0 * sc, 8.0 * sc)
+		_bglow(r, Color(0.91, 0.76, 0.42, 0.4), 18.0 * sc, 8.0 * sc)
 	_gbox(r, _g2("#e8c36a", "#8a6420"), 180.0, 8.0 * sc, Color("#2a1c08"), 3.0 * sc)
 	var ip := r.position + Vector2(3, 3) * sc
 	_gbox(Rect2(ip + Vector2(-7, 12) * sc, Vector2(78, 14) * sc), Color("#5c4316"), 180.0, 3.0 * sc, Color("#2a1c08"), 2.0 * sc)
@@ -4259,7 +4259,7 @@ func _stbx(c: Vector2, sc: float) -> void:
 	var M := inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(PI / 4.0, Vector2(sc, sc), 0.0, c)
 	draw_set_transform_matrix(M)
 	var r := Rect2(-31, -31, 62, 62)
-	_glow(r, Color(0.75, 0.55, 1.0, 0.6), 22.0, 10.0)
+	_bglow(r, Color(0.75, 0.55, 1.0, 0.6), 22.0, 10.0)
 	_gbox(r, [[0.0, Color("#fff1a8")], [0.6, Color("#c08cff")], [1.0, Color("#5a3a8a")]], 135.0, 10.0, Color("#1a0e2a"), 3.0)
 	_ui_reset()
 
@@ -4267,7 +4267,7 @@ func _gem(c: Vector2, s: float) -> void:
 	var M := inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(PI / 4.0, Vector2.ONE, 0.0, c)
 	draw_set_transform_matrix(M)
 	var r := Rect2(-s / 2.0, -s / 2.0, s, s)
-	_glow(r, Color(0.35, 0.7, 1.0, 0.55), 12.0, 3.0)
+	_bglow(r, Color(0.35, 0.7, 1.0, 0.55), 12.0, 3.0)
 	_gbox(r, _g2("#d8f6ff", "#3a9ce0"), 135.0, 3.0, Color("#0b1118"), 2.0)
 	_ui_reset()
 
@@ -5214,7 +5214,7 @@ func _draw_bgm_list(hov) -> void:
 		if first:
 			var n := _bgm_opts().size()
 			var box := Rect2(r.position.x - 2.0, r.position.y - 2.0, r.size.x + 4.0, n * 28.0 + 4.0)
-			_glow(box, Color(0, 0, 0, 0.6), 10.0)
+			_bglow(box, Color(0, 0, 0, 0.6), 10.0)
 			_gbox(box, Color("#10151a"), 180.0, 2.0, Color("#33414d"))
 			first = false
 		var on: bool = str(SV.get("bgm", "auto")) == str(it.arg)
@@ -5241,7 +5241,7 @@ func _draw_e(e: Dictionary, hov) -> void:
 			draw_line(e.a, e.b, e.c, 1.0)
 		"box":
 			if e.has("glow"):
-				_glow(e.r, e.glow, 14.0, e.get("rad", 0.0))
+				_bglow(e.r, e.glow, 14.0, e.get("rad", 0.0))
 			_gbox(e.r, e.st, e.get("ang", 180.0), e.get("rad", 0.0), e.get("bc", Color(0, 0, 0, 0)), 1.0)
 		"btn":
 			_wbtn(e, hov)
@@ -5273,7 +5273,7 @@ func _draw_e(e: Dictionary, hov) -> void:
 			var fw: float = r.size.x * clampf(e.v, 0.0, 1.0)
 			if fw > 2.0:
 				var fr := Rect2(r.position.x + 1.0, r.position.y + 1.0, fw - 2.0, r.size.y - 2.0)
-				_glow(fr, Color(1.0, 0.89, 0.54, 0.5), 8.0, 10.0)
+				_bglow(fr, Color(1.0, 0.89, 0.54, 0.5), 8.0, 10.0)
 				_gbox(fr, _g2("#b8902f", "#ffe28a"), 90.0, 10.0)
 			_dt({"p": Vector2(r.position.x, r.position.y + 16.0), "s": e.s, "fs": 13, "b": true, "c": Color("#dfe6ea"), "al": 1, "w": r.size.x, "sh": [1.0, Color(0, 0, 0, 0.8)]})
 		"bpn":
@@ -5308,7 +5308,7 @@ func _draw_bpr(e: Dictionary, hov) -> void:
 		bc = Color("#c08cff")
 	if e.get("can", false):
 		bc = Color("#c08cff") if isx else Color("#e8c36a")
-		_glow(r, Color(0.75, 0.55, 1.0, 0.7) if isx else Color(0.91, 0.76, 0.42, 0.45), 12.0 if not isx else 16.0, 9.0)
+		_bglow(r, Color(0.75, 0.55, 1.0, 0.7) if isx else Color(0.91, 0.76, 0.42, 0.45), 12.0 if not isx else 16.0, 9.0)
 	_gbox(r, _g2("#1e1430", "#0e0a18") if p else Color("#0e141a"), 180.0, 9.0, bc)
 	if e.has("lab"):
 		var tc := Color("#d2a8ff") if p else Color("#9fb0bf")
@@ -5367,9 +5367,9 @@ func _draw_card(e: Dictionary) -> void:
 			draw_string(f, Vector2(r.position.x, e.gy + 54.0 + 26.0 + 13.0), "+" + str(c.bn) + " 보너스 포함", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 11, Color("#ffd27a"))
 		return
 	if cls == "star":
-		_glow(r, Color(0.75, 0.55, 1.0, 0.25), 16.0)
+		_bglow(r, Color(0.75, 0.55, 1.0, 0.25), 16.0)
 	if e.af:
-		_glow(r, Color(0.23, 0.88, 0.48, 0.28), 12.0)
+		_bglow(r, Color(0.23, 0.88, 0.48, 0.28), 12.0)
 	var bc := Color("#2b3640")
 	var st = Color("#10151a")
 	if cls == "kro":
@@ -5498,7 +5498,7 @@ func _box_overlay(f: Font, hov) -> void:
 	var G := _box_geo()
 	var pr: Rect2 = G.pr
 	var bst := _g2("#18212a", "#0e1318")
-	_glow(pr, Color(0, 0, 0, 0.5), 20.0, 12.0)
+	_bglow(pr, Color(0, 0, 0, 0.5), 20.0, 12.0)
 	_gbox(pr, bst, 180.0, 12.0)
 	var x0 := pr.position.x + 18.0
 	var gy: float = G.gy
@@ -5545,9 +5545,9 @@ func _box_overlay(f: Font, hov) -> void:
 		var br := Rect2(-40, -35, 80, 70)
 		var gold := box_res.any(func(q2): return q2.get("g", "") == "kro")
 		if gold and not box_star:
-			_glow(br, Color(1.0, 0.82, 0.35, al), 30.0, 9.0)
+			_bglow(br, Color(1.0, 0.82, 0.35, al), 30.0, 9.0)
 		if box_star:
-			_glow(br, Color(0.75, 0.55, 1.0, 0.6 * al), 22.0, 12.0)
+			_bglow(br, Color(0.75, 0.55, 1.0, 0.6 * al), 22.0, 12.0)
 			_gbox(br, [[0.0, Color(Color("#fff1a8"), al)], [0.6, Color(Color("#c08cff"), al)], [1.0, Color(Color("#5a3a8a"), al)]], 135.0, 12.0, Color(Color("#2a1c08"), al), 3.0)
 		else:
 			_gbox(br, [[0.0, Color(Color("#e8c36a"), al)], [1.0, Color(Color("#8a6420"), al)]], 180.0, 9.0, Color(Color("#2a1c08"), al), 3.0)
@@ -5586,21 +5586,21 @@ func _box_card(f: Font, q: Dictionary, r: Rect2) -> void:
 		bc = Color("#fff1a8")
 		st = [[0.0, Color("#3a2a08")], [0.5, Color("#2a1440")], [1.0, Color("#0b2a3a")]]
 		var gk := 0.5 + 0.5 * sin(t_real * 2.6)
-		_glow(r, Color(1.0, 0.89, 0.48, 0.5).lerp(Color(0.75, 0.55, 1.0, 0.8), gk), 18.0 + 22.0 * gk, 12.0)
+		_bglow(r, Color(1.0, 0.89, 0.48, 0.5).lerp(Color(0.75, 0.55, 1.0, 0.8), gk), 18.0 + 22.0 * gk, 12.0)
 	elif box_star:
 		bc = Color("#c08cff") if int(q.get("a", 0)) >= 4 else Color("#6a4a9a")
 		st = _g2("#1e1430", "#0b1015")
 		if int(q.get("a", 0)) >= 4:
-			_glow(r, Color(0.75, 0.55, 1.0, 0.6), 18.0, 12.0)
+			_bglow(r, Color(0.75, 0.55, 1.0, 0.6), 18.0, 12.0)
 	elif q.get("g", "") == "kro":
 		bc = Color("#e8c36a")
 		st = _g2("#2a2210", "#0b1015")
-		_glow(r, Color(0.91, 0.76, 0.42, 0.35), 12.0, 12.0)
+		_bglow(r, Color(0.91, 0.76, 0.42, 0.35), 12.0, 12.0)
 	elif q.get("g", "") == "b":
 		bc = Color("#5a86c8")
 	if q.res == "done":
 		bc = Color("#7affd4")
-		_glow(r, Color(0.48, 1.0, 0.83, 0.45), 16.0, 12.0)
+		_bglow(r, Color(0.48, 1.0, 0.83, 0.45), 16.0, 12.0)
 	_gbox(r, st, 135.0 if big else 180.0, 12.0, bc, 2.0)
 	var x := r.position.x + 14.0
 	var w := r.size.x - 28.0
@@ -5608,7 +5608,7 @@ func _box_card(f: Font, q: Dictionary, r: Rect2) -> void:
 	if box_star and q.res == "sf":
 		var a: int = int(q.a)
 		var sc := Color("#f0e0ff") if a >= 4 else Color("#ffd25a")
-		_glow(Rect2(r.get_center().x - 10.0, y + 10.0, 20.0, 20.0), Color(Color("#c08cff") if a >= 4 else Color("#ffd25a"), 0.6), 12.0, 10.0)
+		_bglow(Rect2(r.get_center().x - 10.0, y + 10.0, 20.0, 20.0), Color(Color("#c08cff") if a >= 4 else Color("#ffd25a"), 0.6), 12.0, 10.0)
 		draw_string(f, Vector2(r.position.x, y + 42.0), "★", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 40, sc)
 		y += 48.0 + 5.0
 		draw_string(fb(), Vector2(r.position.x, y + 18.0), "별 파편", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 18, Color("#dfe6ea"))
@@ -5685,7 +5685,7 @@ func _cash_overlay(f: Font, hov) -> void:
 	var u := ui_size()
 	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
 	var r := Rect2(u.x / 2.0 - 180.0, u.y / 2.0 - 125.0, 360.0, 250.0)
-	_glow(r, Color(0, 0, 0, 0.6), 30.0, 12.0)
+	_bglow(r, Color(0, 0, 0, 0.6), 30.0, 12.0)
 	_gbox(r, _g2("#18212a", "#0e1318"), 180.0, 12.0, Color("#c9a255"), 2.0)
 	var P: Dictionary = CASH[clampi(cash_sel, 0, CASH.size() - 1)]
 	_gem(Vector2(u.x / 2.0, r.position.y + 48.0), 30.0)
