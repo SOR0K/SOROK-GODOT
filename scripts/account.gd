@@ -50,6 +50,7 @@ func now_ms() -> int:
 func http(method: int, url: String, headers: PackedStringArray, body: String = "") -> Dictionary:
 	var rq := HTTPRequest.new()
 	rq.timeout = 20.0
+	rq.use_threads = true
 	add_child(rq)
 	var e := rq.request(url, headers, method, body)
 	if e != OK:
@@ -197,7 +198,7 @@ func fields_of(d: String) -> Dictionary:
 	return {"fields": F}
 
 func push(force: bool = false) -> void:
-	if no_push:
+	if no_push or state == "boot":
 		return
 	if ses == null or str(ses.get("nick", "")) == "" or busy:
 		return
@@ -256,6 +257,11 @@ func boot() -> bool:
 	load_ses()
 	if ses == null:
 		return false
+	# 전에 들어왔던 계정이면 기다리지 않고 로비부터 보여 주고, 기록은 뒤에서 불러와요
+	if str(ses.get("nick", "")) != "" and ses.get("ev", false):
+		state = "boot"
+		_boot_bg()
+		return true
 	show_msg("서버에 연결하는 중…")
 	var vok = await verified()
 	if vok == null:
@@ -316,6 +322,11 @@ func enter(nick_hint: String = "") -> void:
 	hide_ui()
 	g.lmsg = str(ses.nick) + "#" + str(ses.tag) + " 님 환영해요"
 	ensure_acct()
+
+func _boot_bg() -> void:
+	await enter()
+	if state == "boot":
+		state = "off"
 
 func ensure_acct() -> void:
 	if ses == null or str(ses.get("nick", "")) == "":

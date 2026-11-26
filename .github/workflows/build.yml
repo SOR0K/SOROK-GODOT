@@ -31,6 +31,9 @@ jobs:
           unzip -q t.tpz -d tpl && mv tpl/templates/* ~/.local/share/godot/export_templates/4.7.2.stable/
           rm -rf t.tpz tpl
       - name: 안드로이드 설정 (SDK · 자바 · 서명 키)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
         run: |
           keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
           mkdir -p ~/.config/godot
@@ -40,11 +43,24 @@ jobs:
           echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$PWD/debug.keystore" >> $GITHUB_ENV
           echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey" >> $GITHUB_ENV
           echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android" >> $GITHUB_ENV
-          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$PWD/debug.keystore" >> $GITHUB_ENV
-          echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=androiddebugkey" >> $GITHUB_ENV
-          echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=android" >> $GITHUB_ENV
+          if [ -n "$KS_B64" ]; then
+            # 늘 같은 서명 키 → 새 apk가 기존 앱 위에 덮어 깔려요
+            echo "$KS_B64" | base64 -d > release.keystore
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$PWD/release.keystore" >> $GITHUB_ENV
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=sorok" >> $GITHUB_ENV
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=$KS_PASS" >> $GITHUB_ENV
+          else
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=$PWD/debug.keystore" >> $GITHUB_ENV
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_USER=androiddebugkey" >> $GITHUB_ENV
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=android" >> $GITHUB_ENV
+          fi
       - name: 버전 적기
-        run: echo -n "${GITHUB_SHA::7}" > version.txt
+        run: |
+          echo -n "${GITHUB_SHA::7}" > version.txt
+          # 빌드마다 버전 번호를 올려야 덮어 설치가 돼요
+          sed -i "s/^version\/code=.*/version\/code=$((100 + GITHUB_RUN_NUMBER))/" export_presets.cfg
+          sed -i "s/^version\/name=.*/version\/name=\"1.0.$GITHUB_RUN_NUMBER\"/" export_presets.cfg
+          grep -n "^version/" export_presets.cfg
       - name: 가져오기
         run: timeout 300 ./godot --headless --path . --import 2>&1 | tail -5 || true
       - name: PC exe 만들기

@@ -2701,6 +2701,8 @@ func _lobby(f: Font) -> void:
 		_keys_win(f)
 	if conn_msg != "":
 		_conn_draw(f)
+	elif booting():
+		_boot_toast(f)
 
 func _logo(f: Font, small: bool = false) -> void:
 	var u := ui_size()
@@ -2885,7 +2887,12 @@ func _slider_set(key: String, sp: Vector2) -> void:
 				_apply_sv()
 			return
 
+const BOOT_OK := ["lshop", "lstore", "lpass", "lset", "lnotes", "lback", "pdot", "lprof", "acp_bg", "acp_close", "bgmsel", "bgmx", "lkeys", "sl"]
 func lobby_press(it: Dictionary, sp: Vector2) -> void:
+	if booting() and not (it.id in BOOT_OK) and not (it.id == "cb" and it.arg is Dictionary and str(it.arg.get("a", "")) in ["tab", "settab", "hf", "sf", "jump", "tprev"]):
+		lmsg = "계정 기록을 불러오는 중이에요 · 잠깐만 기다려 주세요"
+		sfx("click")
+		return
 	sfx("click")
 	match it.id:
 		"lnew": start_game(false)
@@ -6109,6 +6116,18 @@ func _acp_draw(f: Font, hov) -> void:
 		else:
 			_wbtn({"r": it.r, "l": lab, "sty": sty, "en": true, "it": it, "fs": 14 if it.id != "acp_save" else 13}, hov)
 
+func _boot_toast(f: Font) -> void:
+	var u := ui_size()
+	var s := "계정 기록 불러오는 중…"
+	var w := _tw(s, 13, true) + 50.0
+	var r := Rect2((u.x - w) / 2.0, u.y - 54.0 - (14.0 if touch_ui() else 0.0), w, 34.0)
+	_bglow(r, Color(0, 0, 0, 0.5), 12.0, 17.0)
+	_gbox(r, Color("#121a22"), 180.0, 17.0, Color("#c9a255"))
+	var c := r.position + Vector2(20.0, 17.0)
+	draw_arc(c, 8.0, 0.0, TAU, 24, Color("#2b3640"), 3.0, true)
+	draw_arc(c, 8.0, t_real * 5.0, t_real * 5.0 + 1.9, 12, Color("#ffd76a"), 3.0, true)
+	draw_string(fb(), r.position + Vector2(36.0, 22.0), s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e6edf3"))
+
 func _conn_draw(f: Font) -> void:
 	var u := ui_size()
 	draw_rect(Rect2(Vector2.ZERO, u), Color(0.016, 0.031, 0.047, 0.55))
@@ -7938,7 +7957,74 @@ func _touch(e: InputEvent) -> void:
 				_clamp_cam()
 
 # ═════════ 매 프레임 ═════════
+var back_arm := 0.0
+func booting() -> bool:
+	return acct != null and acct.state == "boot"
+
+# 안드로이드 뒤로 가기 버튼: 열린 창부터 하나씩 닫고, 로비 첫 화면에선 두 번 눌러 종료
+func go_back() -> void:
+	if acct != null and acct.is_open():
+		if acct.mode == "panel":
+			acct.hide_ui()
+		return
+	if conn_msg != "":
+		return
+	if keys_open:
+		keys_open = false
+		return
+	if scene == "intro":
+		return
+	if scene == "game":
+		if won or lost:
+			return
+		if info_open:
+			info_open = false
+		elif shop_open:
+			shop_open = false
+		elif aim != "":
+			aim = ""
+			msg("취소했어요")
+		elif paused and pause_set:
+			pause_set = false
+			_apply_sv()
+			sv_save()
+		elif paused:
+			paused = false
+		elif not selected().is_empty():
+			clear_sel()
+		else:
+			paused = true
+			sfx("pause")
+		return
+	# 로비
+	if acp_open:
+		acp_open = false
+	elif bgm_open:
+		bgm_open = false
+	elif cash_sel >= 0:
+		cash_sel = -1
+	elif not box_res.is_empty():
+		if box_busy():
+			box_t0 = t_real - 100.0
+			box_shown = box_res.size()
+		else:
+			box_res = []
+			box_scroll = 0.0
+	elif lsec != "main":
+		lsec = "main"
+		lob_scroll = 0.0
+		_apply_sv()
+		sv_save()
+	elif t_real < back_arm:
+		_quit_saved()
+	else:
+		back_arm = t_real + 2.0
+		lmsg = "한 번 더 누르면 게임이 꺼져요"
+
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		go_back()
+		return
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		if scene == "game":
 			save_game()
