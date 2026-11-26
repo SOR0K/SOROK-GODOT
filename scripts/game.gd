@@ -76,6 +76,8 @@ var rng := RandomNumberGenerator.new()
 var mm_img: Image
 var mm_tex: ImageTexture
 var mm_dirty := false
+var fog_img: Image
+var fog_tex: ImageTexture
 var inv := Transform2D.IDENTITY
 var sb_btn: StyleBoxFlat
 var sb_dis: StyleBoxFlat
@@ -157,6 +159,7 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 	_snd_init()
+	_gnd_setup()
 	_font_warm()
 	sv_load()
 	new_game()
@@ -204,6 +207,9 @@ func new_game() -> void:
 	mm_img = Image.create_empty(GN, GN, false, Image.FORMAT_RGBA8)
 	mm_img.fill(Color(0, 0, 0, 0))
 	mm_tex = ImageTexture.create_from_image(mm_img)
+	fog_img = Image.create_empty(GN, GN, false, Image.FORMAT_RGBA8)
+	fog_img.fill(FOG)
+	fog_tex = ImageTexture.create_from_image(fog_img)
 	mines.clear()
 	outs.clear()
 	bots.clear()
@@ -431,6 +437,11 @@ func reveal(p: Vector2, r: float) -> void:
 				ex[q] = 1
 				mm_img.set_pixel(i, j, Color("#2d4a3a"))
 				mm_dirty = true
+				_fog_upd(i, j)
+				_fog_upd(i - 1, j)
+				_fog_upd(i + 1, j)
+				_fog_upd(i, j - 1)
+				_fog_upd(i, j + 1)
 
 func line_seen(a: Vector2, b: Vector2) -> bool:
 	var n := ceili(a.distance_to(b) / 16.0)
@@ -2397,6 +2408,9 @@ func load_game() -> bool:
 		for i in GN:
 			if ex[j * GN + i]:
 				mm_img.set_pixel(i, j, Color("#2d4a3a"))
+	for j in GN:
+		for i in GN:
+			_fog_upd(i, j)
 	mm_dirty = true
 	raid_alive = ens.any(func(e): return e.raid)
 	zm = S.zm
@@ -8412,6 +8426,7 @@ func _process(dt: float) -> void:
 	if scene == "lobby" and t_real - promo_t > 6.0:
 		promo_t = t_real
 		promo_i += 1
+	_gnd_tick()
 	if scene == "lobby" or scene == "intro" or scene == "client":
 		_box_tick()
 		queue_redraw()
@@ -8439,6 +8454,7 @@ func _process(dt: float) -> void:
 	fx = fx.filter(func(f): return f.t > 0.0)
 	if mm_dirty:
 		mm_tex.update(mm_img)
+		fog_tex.update(fog_img)
 		mm_dirty = false
 	queue_redraw()
 
@@ -8712,22 +8728,76 @@ func _bar(x: float, y: float, w: float, r: float, c: Color, h: float = 3.0) -> v
 	draw_rect(Rect2(x - w / 2.0, y, w, h), Color(0, 0, 0, 0.85))
 	draw_rect(Rect2(x - w / 2.0, y, w * clampf(r, 0.0, 1.0), h), c)
 
-func _ground(i0: int, j0: int, i1: int, j1: int) -> void:
-	for j in range(j0, j1 + 1):
-		for i in range(i0, i1 + 1):
-			var h: int = ((i * 73856093) ^ (j * 19349663)) & 0xFFFFFFFF
-			draw_rect(Rect2(i * CELL, j * CELL, CELL + 1, CELL + 1), tn_cols[h % 4])
-			var a := i * CELL + (h >> 2) % 30 + 4
-			var b := j * CELL + (h >> 6) % 30 + 4
-			if h % 11 == 0:
-				ell_fill(self, Vector2(a + 2, b + 3), 9, 5, Color(0, 0, 0, 0.18))
-				ell_fill(self, Vector2(a, b), 8, 5, Color("#625846"))
-				draw_rect(Rect2(a - 4, b - 3, 5, 2), Color("#7a6f5a"))
-			elif h % 13 == 1:
-				draw_polyline(PackedVector2Array([Vector2(a, b), Vector2(a + 10, b + 4), Vector2(a + 16, b + 1)]), Color(0, 0, 0, 0.22), 1.0)
-			elif h % 7 == 2:
-				draw_rect(Rect2(a, b, 2, 5), Color(0.47, 0.55, 0.31, 0.35))
-				draw_rect(Rect2(a + 4, b + 1, 2, 4), Color(0.47, 0.55, 0.31, 0.35))
+# 땅: 매 장면 칸마다 그리지 않고, 40×40칸 무늬를 한 번만 그림으로 구워 두고 반복해서 깔아요
+const GT := 40
+var gnd_vp: SubViewport = null
+var gnd_node: Node2D = null
+var gnd_layer: Node2D = null
+var gnd_key := ""
+
+func _gnd_setup() -> void:
+	gnd_vp = SubViewport.new()
+	gnd_vp.world_2d = World2D.new()
+	gnd_vp.size = Vector2i(GT * CELL, GT * CELL)
+	gnd_vp.transparent_bg = false
+	gnd_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(gnd_vp)
+	gnd_node = Node2D.new()
+	gnd_vp.add_child(gnd_node)
+	gnd_node.draw.connect(_gnd_paint)
+	gnd_layer = Node2D.new()
+	gnd_layer.z_index = -1
+	gnd_layer.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	gnd_layer.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	add_child(gnd_layer)
+	gnd_layer.draw.connect(_gnd_draw)
+
+func _gnd_tick() -> void:
+	if gnd_layer == null:
+		return
+	if scene == "game":
+		var key := str(tn_cols)
+		if key != gnd_key and not tn_cols.is_empty():
+			gnd_key = key
+			gnd_node.queue_redraw()
+			gnd_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	gnd_layer.queue_redraw()
+
+func _gnd_paint() -> void:
+	if tn_cols.is_empty():
+		return
+	for j in range(-1, GT):
+		for i in range(-1, GT):
+			_ground_cell(gnd_node, i, j, posmod(i, GT), posmod(j, GT))
+
+func _gnd_draw() -> void:
+	if scene != "game" or gnd_key == "":
+		return
+	var vr: Rect2 = view_rect().grow(CELL)
+	var i0 := maxi(0, int(vr.position.x / CELL))
+	var j0 := maxi(0, int(vr.position.y / CELL))
+	var i1 := mini(GN - 1, int(vr.end.x / CELL))
+	var j1 := mini(GN - 1, int(vr.end.y / CELL))
+	var r := Rect2(i0 * CELL, j0 * CELL, (i1 - i0 + 1) * CELL, (j1 - j0 + 1) * CELL)
+	gnd_layer.draw_texture_rect_region(gnd_vp.get_texture(), r, r)
+
+func _ground_cell(ci: CanvasItem, i: int, j: int, hi: int, hj: int) -> void:
+	var h: int = ((hi * 73856093) ^ (hj * 19349663)) & 0xFFFFFFFF
+	ci.draw_rect(Rect2(i * CELL, j * CELL, CELL + 1, CELL + 1), tn_cols[h % 4])
+	var a := i * CELL + (h >> 2) % 30 + 4
+	var b := j * CELL + (h >> 6) % 30 + 4
+	if h % 11 == 0:
+		ell_fill(ci, Vector2(a + 2, b + 3), 9, 5, Color(0, 0, 0, 0.18))
+		ell_fill(ci, Vector2(a, b), 8, 5, Color("#625846"))
+		ci.draw_rect(Rect2(a - 4, b - 3, 5, 2), Color("#7a6f5a"))
+	elif h % 13 == 1:
+		ci.draw_polyline(PackedVector2Array([Vector2(a, b), Vector2(a + 10, b + 4), Vector2(a + 16, b + 1)]), Color(0, 0, 0, 0.22), 1.0)
+	elif h % 7 == 2:
+		ci.draw_rect(Rect2(a, b, 2, 5), Color(0.47, 0.55, 0.31, 0.35))
+		ci.draw_rect(Rect2(a + 4, b + 1, 2, 4), Color(0.47, 0.55, 0.31, 0.35))
+
+func _ground(_i0: int, _j0: int, _i1: int, _j1: int) -> void:
+	pass
 
 func _outpost(o: Dictionary, f: Font) -> void:
 	var p: Vector2 = o.p
@@ -8867,7 +8937,21 @@ func _fx(f: Font) -> void:
 				if k < 0.35:
 					draw_circle(p, 5, Color(1, 1, 1, (1.0 - k / 0.35) * 0.85))
 
-func _fog(i0: int, j0: int, i1: int, j1: int) -> void:
+# 안개: 칸마다 사각형을 그리지 않고 지도 크기 그림 한 장으로 (칸 하나 = 점 하나)
+func _fog_upd(i: int, j: int) -> void:
+	if i < 0 or j < 0 or i >= GN or j >= GN:
+		return
+	var c := Color(0, 0, 0, 0)
+	if not exa(i, j):
+		c = FOG
+	elif not (exa(i - 1, j) and exa(i + 1, j) and exa(i, j - 1) and exa(i, j + 1)):
+		c = Color(FOG, 0.4)
+	fog_img.set_pixel(i, j, c)
+
+func _fog(_i0: int, _j0: int, _i1: int, _j1: int) -> void:
+	draw_texture_rect(fog_tex, Rect2(0, 0, GN * CELL, GN * CELL), false)
+
+func _fog_old(i0: int, j0: int, i1: int, j1: int) -> void:
 	var edge := Color(FOG, 0.4)
 	for j in range(j0, j1 + 1):
 		for i in range(i0, i1 + 1):
@@ -9233,20 +9317,28 @@ const TP := Color("#5a6a78")
 const GL := Color("#5fe0c4")
 const LT := Color("#d9a441")
 
+# 타원: 단위 원을 한 번만 계산해 두고 늘이고 옮겨서 써요 (매번 cos·sin 28번 계산하지 않게)
+var _ell_u := {}
+func _ell_unit(n: int, closed: bool) -> PackedVector2Array:
+	var key := n * 2 + (1 if closed else 0)
+	if not _ell_u.has(key):
+		var p := PackedVector2Array()
+		for i in n:
+			var a := TAU * i / float(n)
+			p.append(Vector2(cos(a), sin(a)))
+		if closed:
+			p.append(p[0])
+		_ell_u[key] = p
+	return _ell_u[key]
+
 func ell(c: Vector2, rx: float, ry: float, n: int = 28) -> PackedVector2Array:
-	var p := PackedVector2Array()
-	for i in n:
-		var a := TAU * i / float(n)
-		p.append(c + Vector2(cos(a) * rx, sin(a) * ry))
-	return p
+	return Transform2D(Vector2(rx, 0), Vector2(0, ry), c) * _ell_unit(n, false)
 
 func ell_fill(ci: CanvasItem, c: Vector2, rx: float, ry: float, col: Color) -> void:
 	ci.draw_colored_polygon(ell(c, rx, ry), col)
 
 func ell_line(ci: CanvasItem, c: Vector2, rx: float, ry: float, col: Color, w: float = 1.5) -> void:
-	var p := ell(c, rx, ry)
-	p.append(p[0])
-	ci.draw_polyline(p, col, w, true)
+	ci.draw_polyline(Transform2D(Vector2(rx, 0), Vector2(0, ry), c) * _ell_unit(28, true), col, w, true)
 
 func poly(ci: CanvasItem, pts: Array, col: Color) -> void:
 	ci.draw_colored_polygon(PackedVector2Array(pts), col)
