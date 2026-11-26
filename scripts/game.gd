@@ -2535,8 +2535,12 @@ func _lobby_w() -> float:
 	return minf(1000.0, ui_size().x - 40.0)
 
 func _build_lobby() -> void:
-	if not box_res.is_empty() or lsec in ["shop", "store", "pass", "prob"]:
+	if _cos_on():
 		_build_cos()
+		if not box_res.is_empty():
+			_build_box()
+		elif cash_sel >= 0:
+			_build_cash()
 		return
 	var u := ui_size()
 	var W := _lobby_w()
@@ -2566,18 +2570,6 @@ func _build_lobby() -> void:
 	else:
 		var pr := _lsec_rect()
 		_add("lback", Rect2(pr.end.x - 130.0, pr.end.y - 54.0, 116.0, 40.0))
-		if lsec == "set":
-			var y := pr.position.y + 62.0 - lob_scroll
-			_add("ltut", Rect2(pr.position.x + 20.0, y, 300.0, 38.0))
-			for i in 3:
-				_add("sl", Rect2(pr.position.x + 120.0, y + 78.0 + i * 38.0, pr.size.x - 220.0, 30.0), true, "", ["uis", "vol_s", "vol_b"][i])
-			_add("lmute", Rect2(pr.position.x + 20.0, y + 192.0, 140.0, 36.0))
-			_add("lbgm", Rect2(pr.position.x + 20.0, y + 234.0, 320.0, 36.0))
-			_add("lkeys", Rect2(pr.position.x + 20.0, y + 300.0, 220.0, 38.0))
-			_add("lacct", Rect2(pr.position.x + 252.0, y + 300.0, 200.0, 38.0))
-			_add("lprob", Rect2(pr.position.x + 464.0, y + 300.0, 160.0, 38.0))
-			_add("lwipe", Rect2(pr.position.x + 20.0, y + 366.0, 200.0, 38.0))
-			_add("lwipeall", Rect2(pr.position.x + 232.0, y + 366.0, 200.0, 38.0))
 
 func _lsec_rect() -> Rect2:
 	var u := ui_size()
@@ -2591,62 +2583,58 @@ func _btn(f: Font, r: Rect2, s: String, hi: bool = false, fs: int = 16, col: Col
 func _lobby(f: Font) -> void:
 	_ui_reset()
 	var u := ui_size()
-	draw_rect(Rect2(Vector2.ZERO, u), Color("#0b1015"))
-	for i in int(u.x / 64.0) + 1:
-		draw_line(Vector2(i * 64.0, 0), Vector2(i * 64.0, u.y), Color(1, 1, 1, 0.02), 1.0)
-	for j in int(u.y / 64.0) + 1:
-		draw_line(Vector2(0, j * 64.0), Vector2(u.x, j * 64.0), Color(1, 1, 1, 0.02), 1.0)
+	_page_bg(Rect2(Vector2.ZERO, u))
 	ui.clear()
 	_build_lobby()
 	var hov = null if touch_ui() else ui_hit(mouse_ui * us)
-	if lsec in ["shop", "store", "pass", "prob"]:
+	if _cos_on():
 		_lobby_cos(f, hov)
 	elif lsec == "main":
 		_lobby_main(f, hov)
-	elif lsec == "set":
-		_lobby_set(f, hov)
 	elif lsec == "notes":
 		_lobby_notes(f, hov)
-	if not (lsec in ["shop", "store", "pass", "prob"]):
-		_logo(f)
-	if lsec in ["shop", "store", "pass", "prob"]:
-		var pr := _wide_rect()
-		draw_rect(Rect2(0, 0, u.x, pr.position.y), Color("#0b1015"))
-		draw_rect(Rect2(0, pr.end.y + 1.0, u.x, u.y - pr.end.y), Color("#0b1015"))
-		draw_rect(pr, Color(0.79, 0.64, 0.33, 0.7), false, 1.0)
+	if not _cos_on():
 		_logo(f)
 	if not box_res.is_empty():
 		_box_overlay(f, hov)
+	elif cash_sel >= 0:
+		_cash_overlay(f, hov)
 	if keys_open:
 		_keys_win(f)
 
-func _logo(f: Font) -> void:
+func _logo(f: Font, small: bool = false) -> void:
 	var u := ui_size()
 	if acct != null:
 		var who := "로그인 안 함 · 이 기기에만 저장"
 		if acct.ses != null and str(acct.ses.get("nick", "")) != "":
 			who = str(acct.ses.nick) + "#" + str(acct.ses.get("tag", "SR1")) + " · " + ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨")
 		draw_string(f, Vector2(14, 22), who, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
-	draw_string(f, Vector2(0, 92), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#5a3a08"))
-	draw_string(f, Vector2(0, 88), "S O R O K", HORIZONTAL_ALIGNMENT_CENTER, u.x, 64, Color("#f2c86a"))
-	draw_string(f, Vector2(0, 118), "외 계  기 지  정 복  전 략", HORIZONTAL_ALIGNMENT_CENTER, u.x, 12, Color("#8a9bad"))
-	var chips := [["청석", str(SV.cs), Color("#7fd8ff"), Color("#33414d")], ["별석", str(SV.ss), Color("#c79bff"), Color("#5a4a8a")]]
+	var cy := 134.0
+	if small:
+		_spaced(fb(), "SOROK", u.x / 2.0, 54.0, 42, 0.32, Color("#5c4316"))
+		_spaced(fb(), "SOROK", u.x / 2.0, 51.0, 42, 0.32, Color("#e8c36a"))
+		cy = 64.0
+	else:
+		_spaced(fb(), "SOROK", u.x / 2.0, 92.0, 64, 0.32, Color("#5c4316"))
+		_spaced(fb(), "SOROK", u.x / 2.0, 87.0, 64, 0.32, Color("#e8c36a"))
+		draw_string(f, Vector2(0, 118), "외 계  기 지  정 복  전 략", HORIZONTAL_ALIGNMENT_CENTER, u.x, 12, Color("#7f8d99"))
+	var chips := [["청석", str(SV.cs), Color("#7fd2ff"), Color("#3a4a58")], ["별석", str(SV.ss), Color("#d2a8ff"), Color("#6a4a9a")]]
 	var cwid: Array = []
 	var ctot := 0.0
 	for ch_ in chips:
-		var w0: float = 46.0 + f.get_string_size(ch_[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 16.0
+		var w0: float = 36.0 + _tw(ch_[0], 13) + 8.0 + _tw(ch_[1], 21, true)
 		cwid.append(w0)
 		ctot += w0
-	var cx0 := u.x / 2.0 - (ctot + 6.0) / 2.0
+	var cx0 := u.x / 2.0 - (ctot + 5.0) / 2.0
 	for i in 2:
-		var r := Rect2(cx0, 134.0, cwid[i], 36.0)
-		cx0 += cwid[i] + 6.0
-		draw_rect(r, Color("#10161c"))
+		var r := Rect2(cx0, cy, cwid[i], 37.0)
+		cx0 += cwid[i] + 5.0
+		draw_rect(r, Color("#10151a"))
 		draw_rect(r, chips[i][3], false, 1.0)
-		draw_string(f, r.position + Vector2(10, 23), chips[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8a9bad"))
-		draw_string(f, r.position + Vector2(0, 25), chips[i][1], HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 12.0, 18, chips[i][2])
+		draw_string(f, r.position + Vector2(18, 24), chips[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#7f8d99"))
+		draw_string(fb(), r.position + Vector2(26.0 + _tw(chips[i][0], 13), 26), chips[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 21, chips[i][2])
 	if lmsg != "":
-		draw_string(f, Vector2(0, 192), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 13, Color("#ffd76a"))
+		draw_string(f, Vector2(0, 121.0 if small else 192.0), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 14, Color("#e0a44a"))
 
 var promo_i := 0
 var promo_t := 0.0
@@ -2771,41 +2759,6 @@ func _lobby_panel(f: Font, title: String) -> Rect2:
 	draw_string(f, pr.position + Vector2(20, 36), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, GOLD)
 	return pr
 
-func _lobby_set(f: Font, hov) -> void:
-	var pr := _lobby_panel(f, "설정")
-	var y := pr.position.y + 62.0 - lob_scroll
-	var x := pr.position.x + 20.0
-	var names := {"uis": ["UI 크기", 50, 130], "vol_s": ["효과음", 0, 100], "vol_b": ["배경음", 0, 100]}
-	draw_string(f, Vector2(x + 330.0, y + 24.0), "← 튜토리얼", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#9fb3c2"))
-	for it in ui:
-		var r: Rect2 = it.r
-		match it.id:
-			"ltut": _btn(f, r, "튜토리얼 다시하기 (새 게임으로 시작)", hov == it, 14)
-			"lmute": _btn(f, r, "음소거 켜짐" if SV.mute else "음소거", hov == it or SV.mute, 14)
-			"lbgm":
-				var b: String = str(SV.get("bgm", "auto"))
-				var nm: String = "자동 (장착한 테마 곡)" if b == "auto" else ("기본 배경음" if b == "base" else item(b).get("n", b) + " 테마곡")
-				_btn(f, r, "배경음: " + nm + "  ▸", hov == it, 14)
-			"lkeys": _btn(f, r, "조작법 전체 보기", hov == it, 14)
-			"lacct": _btn(f, r, "계정 관리", hov == it, 14)
-			"lprob": _btn(f, r, "확률표", hov == it, 14)
-			"lwipe": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", hov == it, 14, Color("#ffb0a0"))
-			"lwipeall": _btn(f, r, "정말? 한 번 더" if wipe_arm == "lwipeall" else "게임 전체 초기화", hov == it, 14, Color("#ff9a8a"))
-			"lback": _btn(f, r, "뒤로", hov == it, 15)
-			"sl":
-				var nm: Array = names[it.arg]
-				var v := float(SV[it.arg])
-				var k: float = (v - float(nm[1])) / float(nm[2] - nm[1])
-				draw_string(f, Vector2(x, r.position.y + 21.0), nm[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-				draw_rect(Rect2(r.position.x, r.position.y + 13.0, r.size.x, 4.0), Color(1, 1, 1, 0.15))
-				draw_rect(Rect2(r.position.x, r.position.y + 13.0, r.size.x * k, 4.0), Color("#ffd76a"))
-				draw_circle(Vector2(r.position.x + r.size.x * k, r.position.y + 15.0), 9.0, Color("#ffd76a"))
-				draw_string(f, Vector2(r.end.x + 14.0, r.position.y + 21.0), str(int(v)) + "%", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd76a"))
-	draw_string(f, Vector2(x, y + 68.0), "화면 · 소리", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
-	draw_string(f, Vector2(x + 150.0, y + 215.0), "게임 중에도 M 키로 음소거를 켜고 끌 수 있어요", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
-	draw_string(f, Vector2(x, y + 292.0), "조작 · 계정", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
-	draw_string(f, Vector2(x, y + 358.0), "데이터", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#9fb3c2"))
-
 const NOTES := [["고도판 첫 버전", ["웹 SOROK을 고도 엔진으로 옮겼어요 (PC · 모바일 같은 코드)", "웹과 같은 전투 AI · 공격 대형 돌격 · 지원 로봇 · 적 카이팅", "올렸을 때 말풍선 · 휠 이동 · 가장자리 이동 · 깃발 · 조작법 창", "로봇끼리 안 겹치게 밀어내기 (고도판에서 새로 추가)", "효과 · 효과음 · 배경음 · 승리/패배 연출", "로비 · 설정 · 저장 · 이어하기 · 튜토리얼"]]]
 
 func _lobby_notes(f: Font, hov) -> void:
@@ -2827,7 +2780,7 @@ func _slider_set(key: String, sp: Vector2) -> void:
 		if it.id == "sl" and it.arg == key:
 			var r: Rect2 = it.r
 			var nm: Array = {"uis": [50, 130, 5], "vol_s": [0, 100, 1], "vol_b": [0, 100, 1]}[key]
-			var k := clampf((sp.x / us - r.position.x) / r.size.x, 0.0, 1.0)
+			var k := clampf((sp.x / us - r.position.x - 11.0) / (r.size.x - 22.0), 0.0, 1.0)
 			SV[key] = int(snappedf(nm[0] + k * (nm[1] - nm[0]), nm[2]))
 			if key != "uis":
 				_apply_sv()
@@ -2840,6 +2793,7 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 		"lcont": start_game(true)
 		"lset":
 			lsec = "set"
+			set_tab = "a"
 			lob_scroll = 0.0
 		"lnotes": lsec = "notes"
 		"pdot":
@@ -2849,6 +2803,7 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			var go: String = it.arg.go
 			if go == "pass":
 				lsec = "pass"
+				pass_init = true
 			else:
 				lsec = "shop"
 				shop_tab2 = go
@@ -2859,17 +2814,38 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 		"lshop", "lstore", "lpass":
 			lsec = {"lshop": "shop", "lstore": "store", "lpass": "pass"}[it.id]
 			lob_scroll = 0.0
+			pass_init = true
 			lmsg = ""
 		"cb":
 			cos_press(it.arg)
-		"boxok":
+		"boxok", "boxskip":
 			if box_busy():
 				box_t0 = t_real - 100.0
 				box_shown = box_res.size()
-			else:
+			elif it.id == "boxok":
 				box_res = []
+				box_scroll = 0.0
+		"cashno":
+			cash_sel = -1
+		"cashok":
+			if cash_sel >= 0:
+				var P: Dictionary = CASH[cash_sel]
+				SV.cs += int(P.a)
+				SV.paid = int(SV.get("paid", 0)) + int(P.w)
+				lmsg = "청석 " + _cm(P.a) + "개 충전 완료!"
+				sv_save()
+			cash_sel = -1
+		"bgmsel":
+			bgm_open = not bgm_open
+		"bgmx":
+			bgm_open = false
+		"bgmopt":
+			SV.bgm = str(it.arg)
+			bgm_open = false
+			sv_save()
 		"lback":
-			lsec = "set" if lsec == "prob" else "main"
+			lsec = "main"
+			lob_scroll = 0.0
 			_apply_sv()
 			sv_save()
 		"ltut": start_game(false, true)
@@ -2878,20 +2854,9 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			_apply_sv()
 			sv_save()
 		"lkeys": keys_open = true
-		"lprob":
-			lsec = "prob"
-			lob_scroll = 0.0
 		"lacct":
 			if acct != null:
 				acct.show_panel()
-		"lbgm":
-			var opts: Array = ["auto", "base"]
-			for id in MUS_IDS:
-				if SV.town.has(id):
-					opts.append(id)
-			var cur: String = str(SV.get("bgm", "auto"))
-			SV.bgm = opts[(opts.find(cur) + 1) % opts.size()]
-			sv_save()
 		"sl":
 			slider_drag = it.arg
 			_slider_set(it.arg, sp)
@@ -2926,8 +2891,16 @@ func _lobby_input(e: InputEvent) -> void:
 			keys_open = false
 		elif e.keycode == KEY_TAB:
 			keys_open = true
+		elif e.keycode == KEY_ESCAPE and bgm_open:
+			bgm_open = false
+		elif e.keycode == KEY_ESCAPE and cash_sel >= 0:
+			cash_sel = -1
+		elif e.keycode == KEY_ESCAPE and not box_res.is_empty():
+			if not box_busy():
+				box_res = []
 		elif e.keycode == KEY_ESCAPE and lsec != "main":
 			lsec = "main"
+			lob_scroll = 0.0
 			_apply_sv()
 			sv_save()
 		return
@@ -2937,11 +2910,13 @@ func _lobby_input(e: InputEvent) -> void:
 	if e is InputEventMouseButton and e.device != InputEvent.DEVICE_ID_EMULATION:
 		if e.button_index == MOUSE_BUTTON_WHEEL_UP or e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			var dd := -60.0 if e.button_index == MOUSE_BUTTON_WHEEL_UP else 60.0
-			if e.pressed and lsec == "set":
-				lob_scroll = clampf(lob_scroll + dd * 0.7, 0.0, 200.0)
-			elif e.pressed and lsec == "pass" and not (e.shift_pressed):
+			if not e.pressed:
+				return
+			if not box_res.is_empty():
+				box_scroll = clampf(box_scroll + dd, 0.0, box_max)
+			elif lsec == "pass" and (e.shift_pressed or pass_tr.has_point(e.position / us)):
 				pass_scroll = clampf(pass_scroll + dd * 1.5, 0.0, _pass_max())
-			elif e.pressed and lsec in ["shop", "store", "prob"] and box_res.is_empty():
+			elif _cos_on() and not bgm_open:
 				lob_scroll = clampf(lob_scroll + dd, 0.0, lob_max)
 			return
 		if e.button_index != MOUSE_BUTTON_LEFT:
@@ -2965,10 +2940,12 @@ func _lobby_input(e: InputEvent) -> void:
 			if (e.position - lob_drag.p).length() > 12.0:
 				lob_drag.m = true
 			if lob_drag.m:
-				if lsec == "pass":
+				if not box_res.is_empty():
+					box_scroll = clampf(box_scroll - e.relative.y / us, 0.0, box_max)
+				elif lsec == "pass" and pass_tr.has_point(lob_drag.p / us):
 					pass_scroll = clampf(pass_scroll - e.relative.x / us, 0.0, _pass_max())
-				elif lsec in ["shop", "store", "set", "prob"]:
-					lob_scroll = clampf(lob_scroll - e.relative.y / us, 0.0, lob_max if lsec != "set" else 200.0)
+				elif _cos_on():
+					lob_scroll = clampf(lob_scroll - e.relative.y / us, 0.0, lob_max)
 		return
 	if pos == null:
 		return
@@ -3830,14 +3807,18 @@ func _hist(k: String, R: Array) -> void:
 	for i in range(R.size() - 1, -1, -1):
 		var q: Dictionary = R[i]
 		var x := ""
+		var g := ""
 		if k == "box":
 			if q.res == "jack":
+				g = "jack"
 				x = q.it.n + " (크로 세트 통째로)"
 			else:
+				g = "base" if q.g == "b" else q.g
 				x = q.it.n + " 파편 ×" + str(q.amt) + (" → 완성" if q.res == "done" else (" → 보유 중, 청석 +" + str(q.v) if q.res == "dup" else " (" + str(q.get("c", 0)) + "/" + str(q.get("need", 0)) + ")"))
 		else:
+			g = "star" if q.res in ["star", "starx"] else "sf"
 			x = ("★ 걸작 완품 · " + q.it.n) if q.res == "star" else ("★ 걸작 완품 (모두 보유) → 별 파편 +30" if q.res == "starx" else "★ 별 파편 ×" + str(q.a))
-		SV.hist.push_front({"t": now, "k": k, "x": x})
+		SV.hist.push_front({"t": now * 1000, "k": k, "g": g, "x": x})
 	if SV.hist.size() > 500:
 		SV.hist.resize(500)
 
@@ -3913,22 +3894,32 @@ func buy_set(i: int) -> void:
 	sv_save()
 
 
-# ═════════ 꾸미기 화면: 상점 · 창고 · 배틀패스 · 상자 열기 ═════════
+# ═════════ 꾸미기 화면: 상점 · 창고 · 배틀패스 · 설정 · 상자 열기 (웹 .lsec 모양 그대로) ═════════
 var shop_tab2 := "box"
 var stF := {"own": "all", "cat": "all", "gr": "all"}
+var hF := "all"
+var set_tab := "a"
 var lob_draw: Array = []
 var lob_max := 0.0
 var pass_scroll := 0.0
+var pass_init := false
+var pass_tr := Rect2()
 var lob_drag = null
-
-func _wide_rect() -> Rect2:
-	var u := ui_size()
-	var W := minf(1180.0, u.x - 24.0)
-	return Rect2((u.x - W) / 2.0, 180.0, W, u.y - 192.0)
-
-func _content_rect() -> Rect2:
-	var pr := _wide_rect()
-	return Rect2(pr.position.x + 14.0, pr.position.y + (100.0 if lsec == "shop" else 54.0), pr.size.x - 28.0, pr.size.y - (160.0 if lsec == "shop" else 114.0))
+var cash_sel := -1
+var bgm_open := false
+var bgm_prev_id := ""
+var bgm_prev_u := 0.0
+var box_scroll := 0.0
+var box_max := 0.0
+var box_vp := Rect2()
+var FB: Font = null
+var _cl: Array = []
+var cos_pr := Rect2()
+var cos_vp := Rect2()
+var cos_hdr: Array = []
+var _gtex := {}
+const CASH := [{"a": 100, "bn": 0, "w": 1200}, {"a": 550, "bn": 50, "w": 5900}, {"a": 1200, "bn": 200, "w": 11000}, {"a": 2600, "bn": 600, "w": 25000}, {"a": 6500, "bn": 1500, "w": 55000}]
+const PBG := Color("#12181e")
 
 # ── 미리보기 (140×84 기준 좌표) ──
 func _pv_xf(r: Rect2) -> Transform2D:
@@ -4064,50 +4055,820 @@ func draw_preview(r: Rect2, kind: String, id, tm: float) -> void:
 			draw_colored_polygon(st, Color("#ffd76a"))
 	_ui_reset()
 
-# ── 줄 단위 배치 ──
+# ── 그리기 도구: 굵은 글씨 · 둥근 상자 · 그라데이션 · 빛 ──
+func fb() -> Font:
+	if FB == null:
+		var v := FontVariation.new()
+		v.base_font = ThemeDB.fallback_font
+		v.variation_embolden = 0.65
+		FB = v
+	return FB
+
+func _tw(s: String, fs: int, bold: bool = false) -> float:
+	return (fb() if bold else ThemeDB.fallback_font).get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+
+func _cm(n) -> String:
+	var s := str(absi(int(n)))
+	var o := ""
+	while s.length() > 3:
+		o = "," + s.substr(s.length() - 3) + o
+		s = s.substr(0, s.length() - 3)
+	return ("-" if int(n) < 0 else "") + s + o
+
+func _rr_pts(r: Rect2, rad) -> PackedVector2Array:
+	var R: Array = rad if rad is Array else [rad, rad, rad, rad]
+	var m := minf(r.size.x, r.size.y) / 2.0
+	var P := PackedVector2Array()
+	var cs := [[Vector2(r.end.x, r.position.y), Vector2(-1, 1), -PI / 2.0, R[1]], [r.end, Vector2(-1, -1), 0.0, R[2]], [Vector2(r.position.x, r.end.y), Vector2(1, -1), PI / 2.0, R[3]], [r.position, Vector2(1, 1), PI, R[0]]]
+	for c in cs:
+		var rr := minf(float(c[3]), m)
+		if rr <= 0.5:
+			P.append(c[0])
+			continue
+		var o: Vector2 = c[0] + c[1] * rr
+		for i in 6:
+			var a: float = c[2] + i * (PI / 2.0) / 5.0
+			P.append(o + Vector2(cos(a), sin(a)) * rr)
+	return P
+
+func _gt(stops: Array) -> Texture2D:
+	var key := str(stops)
+	if _gtex.has(key):
+		return _gtex[key]
+	var g := Gradient.new()
+	var O := PackedFloat32Array()
+	var Cs := PackedColorArray()
+	for s in stops:
+		O.append(float(s[0]))
+		Cs.append(s[1])
+	g.offsets = O
+	g.colors = Cs
+	var tx := GradientTexture1D.new()
+	tx.gradient = g
+	tx.width = 256
+	_gtex[key] = tx
+	return tx
+
+# CSS linear-gradient(ang, …) 와 같은 방식 · stops = [[0, 색], [1, 색]] 또는 색 하나
+func _gbox(r: Rect2, stops, ang: float = 180.0, rad = 0.0, bc: Color = Color(0, 0, 0, 0), bw: float = 1.0, dash: bool = false) -> void:
+	if r.size.x < 1.0 or r.size.y < 1.0:
+		return
+	var P := _rr_pts(r, rad)
+	if stops is Color:
+		draw_colored_polygon(P, stops)
+	else:
+		var d := Vector2(sin(deg_to_rad(ang)), -cos(deg_to_rad(ang)))
+		var L := maxf(0.001, absf(r.size.x * d.x) + absf(r.size.y * d.y))
+		var cen := r.get_center()
+		var uv := PackedVector2Array()
+		var cols := PackedColorArray()
+		for p in P:
+			uv.append(Vector2(clampf((p - cen).dot(d) / L + 0.5, 0.002, 0.998), 0.5))
+			cols.append(Color.WHITE)
+		draw_polygon(P, cols, uv, _gt(stops))
+	if bc.a > 0.0:
+		if dash:
+			var g := r.grow(-bw / 2.0)
+			var Q := [g.position, Vector2(g.end.x, g.position.y), g.end, Vector2(g.position.x, g.end.y), g.position]
+			for i in 4:
+				draw_dashed_line(Q[i], Q[i + 1], bc, bw, 4.0)
+		else:
+			var B := _rr_pts(r.grow(-bw / 2.0), (rad if rad is Array else maxf(0.0, float(rad) - bw / 2.0)))
+			B.append(B[0])
+			draw_polyline(B, bc, bw, true)
+
+func _g2(a: String, b: String) -> Array:
+	return [[0.0, Color(a)], [1.0, Color(b)]]
+
+func _glow(r: Rect2, col: Color, sz: float, rad: float = 0.0) -> void:
+	for i in 5:
+		var k := (i + 1) / 5.0
+		draw_colored_polygon(_rr_pts(r.grow(sz * k), rad + sz * k), Color(col, col.a * 0.32 * (1.0 - k * 0.8)))
+
+func _fade(r: Rect2, a: float, col: Color = PBG) -> void:
+	if a > 0.0:
+		draw_rect(r, Color(col, a))
+
+# 웹 로비 배경 (radial-gradient(ellipse at 50% 25%, …))
+func _bg_col(p: Vector2, u: Vector2) -> Color:
+	var d := p - Vector2(u.x * 0.5, u.y * 0.25)
+	var t := clampf(sqrt(pow(d.x / (u.x * 0.72), 2.0) + pow(d.y / (u.y * 1.06), 2.0)), 0.0, 1.0)
+	return Color("#202a35").lerp(Color("#06090c"), t)
+
+func _page_bg(r: Rect2) -> void:
+	if r.size.x < 1.0 or r.size.y < 1.0:
+		return
+	var u := ui_size()
+	var nx := 8
+	var ny := 6
+	for j in ny:
+		for i in nx:
+			var a := r.position + Vector2(r.size.x * i / nx, r.size.y * j / ny)
+			var b := r.position + Vector2(r.size.x * (i + 1) / nx, r.size.y * (j + 1) / ny)
+			var P := PackedVector2Array([a, Vector2(b.x, a.y), b, Vector2(a.x, b.y)])
+			draw_polygon(P, PackedColorArray([_bg_col(P[0], u), _bg_col(P[1], u), _bg_col(P[2], u), _bg_col(P[3], u)]))
+
+# 글자 (자간 · 그림자 · 굵게)
+func _dt(e: Dictionary) -> void:
+	var f: Font = fb() if e.get("b", false) else ThemeDB.fallback_font
+	var fs: int = e.get("fs", 13)
+	var p: Vector2 = e.p
+	var col: Color = e.get("c", Color("#dfe6ea"))
+	var ls: float = e.get("ls", 0.0)
+	var ic: String = e.get("ic", "")
+	if ic != "":
+		_icon(ic, Vector2(p.x + fs * 0.6, p.y - fs * 0.38), fs * 1.05)
+		p.x += fs * 1.2 + 4.0
+	var al: int = e.get("al", 0)
+	if ls > 0.0:
+		var w := 0.0
+		for ch in e.s:
+			w += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + fs * ls
+		if al == 1:
+			p.x += (float(e.w) - w) / 2.0
+		for ch in e.s:
+			if e.has("sh"):
+				draw_string(f, p + Vector2(0, float(e.sh[0])), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, e.sh[1])
+			draw_string(f, p, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+			p.x += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + fs * ls
+		return
+	var w2: float = e.get("w", -1.0)
+	var ha := [HORIZONTAL_ALIGNMENT_LEFT, HORIZONTAL_ALIGNMENT_CENTER, HORIZONTAL_ALIGNMENT_RIGHT][al]
+	if e.has("sh"):
+		draw_string(f, p + Vector2(0, float(e.sh[0])), e.s, ha, w2, fs, e.sh[1])
+	draw_string(f, p, e.s, ha, w2, fs, col)
+
+# 작은 그림 아이콘 (웹의 이모지 자리)
+func _icon(k: String, c: Vector2, s: float) -> void:
+	match k:
+		"gift":
+			var r := Rect2(c.x - s * 0.42, c.y - s * 0.22, s * 0.84, s * 0.62)
+			draw_rect(r, Color("#e0503c"))
+			draw_rect(Rect2(c.x - s * 0.48, c.y - s * 0.4, s * 0.96, s * 0.22), Color("#f06a50"))
+			draw_rect(Rect2(c.x - s * 0.08, c.y - s * 0.4, s * 0.16, s * 0.8), Color("#ffd25a"))
+			draw_circle(c + Vector2(-s * 0.14, -s * 0.46), s * 0.12, Color("#ffd25a"))
+			draw_circle(c + Vector2(s * 0.14, -s * 0.46), s * 0.12, Color("#ffd25a"))
+		"scroll":
+			draw_rect(Rect2(c.x - s * 0.32, c.y - s * 0.4, s * 0.64, s * 0.8), Color("#e8d4a0"))
+			draw_rect(Rect2(c.x - s * 0.42, c.y - s * 0.46, s * 0.84, s * 0.14), Color("#b8945a"))
+			draw_rect(Rect2(c.x - s * 0.42, c.y + s * 0.32, s * 0.84, s * 0.14), Color("#b8945a"))
+			for i in 3:
+				draw_line(Vector2(c.x - s * 0.2, c.y - s * 0.16 + i * s * 0.16), Vector2(c.x + s * 0.2, c.y - s * 0.16 + i * s * 0.16), Color("#8a6a3a"), 1.0)
+		"gem":
+			var P := PackedVector2Array([c + Vector2(0, -s * 0.46), c + Vector2(s * 0.42, -s * 0.08), c + Vector2(0, s * 0.46), c + Vector2(-s * 0.42, -s * 0.08)])
+			draw_colored_polygon(P, Color("#5ab8f0"))
+			draw_colored_polygon(PackedVector2Array([P[0], P[1], c + Vector2(0, -s * 0.08)]), Color("#d8f6ff"))
+		"chart":
+			draw_rect(Rect2(c.x - s * 0.45, c.y - s * 0.45, s * 0.9, s * 0.9), Color("#e8eef2"))
+			var hs := [0.35, 0.6, 0.25]
+			var cl := [Color("#e05050"), Color("#3a9ce0"), Color("#3ac07a")]
+			for i in 3:
+				draw_rect(Rect2(c.x - s * 0.33 + i * s * 0.24, c.y + s * 0.35 - s * float(hs[i]), s * 0.16, s * float(hs[i])), cl[i])
+		"crown":
+			var P2 := PackedVector2Array([c + Vector2(-s * 0.45, s * 0.3), c + Vector2(-s * 0.45, -s * 0.25), c + Vector2(-s * 0.2, s * 0.02), c + Vector2(0, -s * 0.38), c + Vector2(s * 0.2, s * 0.02), c + Vector2(s * 0.45, -s * 0.25), c + Vector2(s * 0.45, s * 0.3)])
+			draw_colored_polygon(P2, Color("#ffc83a"))
+			draw_circle(c + Vector2(0, s * 0.12), s * 0.08, Color("#e0503c"))
+		"lock":
+			draw_arc(c + Vector2(0, -s * 0.12), s * 0.22, PI, TAU, 8, Color("#c9a255"), maxf(1.5, s * 0.1))
+			draw_rect(Rect2(c.x - s * 0.32, c.y - s * 0.1, s * 0.64, s * 0.5), Color("#e8c36a"))
+			draw_circle(c + Vector2(0, s * 0.12), s * 0.06, Color("#5c4316"))
+		"note":
+			draw_circle(c + Vector2(-s * 0.18, s * 0.28), s * 0.15, Color("#dfe6ea"))
+			draw_circle(c + Vector2(s * 0.28, s * 0.18), s * 0.15, Color("#dfe6ea"))
+			draw_line(c + Vector2(-s * 0.05, s * 0.28), c + Vector2(-s * 0.05, -s * 0.38), Color("#dfe6ea"), 1.5)
+			draw_line(c + Vector2(s * 0.41, s * 0.18), c + Vector2(s * 0.41, -s * 0.46), Color("#dfe6ea"), 1.5)
+			draw_line(c + Vector2(-s * 0.05, -s * 0.38), c + Vector2(s * 0.41, -s * 0.46), Color("#dfe6ea"), 2.0)
+		"sparkle":
+			var st := PackedVector2Array()
+			for i in 10:
+				var a := i * PI / 5.0 - PI / 2.0
+				st.append(c + Vector2(cos(a), sin(a)) * (s * 0.5 if i % 2 == 0 else s * 0.2))
+			draw_colored_polygon(st, Color("#ffd25a"))
+
+# 소로 상자 (.sbx) · 별 상자 (.stbx) · 청석 (.gem)
+func _sbx(c: Vector2, sc: float, glow: bool = true) -> void:
+	var r := Rect2(c - Vector2(35, 31) * sc, Vector2(70, 62) * sc)
+	if glow:
+		_glow(r, Color(0.91, 0.76, 0.42, 0.4), 18.0 * sc, 8.0 * sc)
+	_gbox(r, _g2("#e8c36a", "#8a6420"), 180.0, 8.0 * sc, Color("#2a1c08"), 3.0 * sc)
+	var ip := r.position + Vector2(3, 3) * sc
+	_gbox(Rect2(ip + Vector2(-7, 12) * sc, Vector2(78, 14) * sc), Color("#5c4316"), 180.0, 3.0 * sc, Color("#2a1c08"), 2.0 * sc)
+	_gbox(Rect2(ip + Vector2(24, 4) * sc, Vector2(16, 24) * sc), Color("#7fd2ff"), 180.0, 2.0 * sc, Color("#2a1c08"), 2.0 * sc)
+
+func _stbx(c: Vector2, sc: float) -> void:
+	var M := inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(PI / 4.0, Vector2(sc, sc), 0.0, c)
+	draw_set_transform_matrix(M)
+	var r := Rect2(-31, -31, 62, 62)
+	_glow(r, Color(0.75, 0.55, 1.0, 0.6), 22.0, 10.0)
+	_gbox(r, [[0.0, Color("#fff1a8")], [0.6, Color("#c08cff")], [1.0, Color("#5a3a8a")]], 135.0, 10.0, Color("#1a0e2a"), 3.0)
+	_ui_reset()
+
+func _gem(c: Vector2, s: float) -> void:
+	var M := inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(PI / 4.0, Vector2.ONE, 0.0, c)
+	draw_set_transform_matrix(M)
+	var r := Rect2(-s / 2.0, -s / 2.0, s, s)
+	_glow(r, Color(0.35, 0.7, 1.0, 0.55), 12.0, 3.0)
+	_gbox(r, _g2("#d8f6ff", "#3a9ce0"), 135.0, 3.0, Color("#0b1118"), 2.0)
+	_ui_reset()
+
+# ── 버튼 모양 (웹 CSS 그대로) ──
+const BST := {
+	"def": {"g": ["#1b232b"], "h": "#222d37", "b": "#33414d", "r": 2.0, "t": "#dfe6ea", "s": "#8a9bad"},
+	"can": {"g": ["#1e4a30", "#123020"], "b": "#3ae07a", "r": 2.0, "t": "#c8ffd8", "s": "#9effa8", "keep": true},
+	"go": {"g": ["#e8c36a", "#b8902f"], "b": "#f3d98e", "r": 2.0, "t": "#1c1406", "s": "#1c1406", "bold": true},
+	"tab": {"g": ["#141b22"], "b": "#33414d", "r": 8.0, "t": "#dfe6ea", "s": "#8a9bad", "bold": true},
+	"tabon": {"g": ["#3a2e14", "#1e180a"], "b": "#e8c36a", "r": 8.0, "t": "#ffe9b8", "s": "#e8c36a", "bold": true, "keep": true},
+	"chip": {"g": ["#141b22"], "b": "#33414d", "r": 16.0, "t": "#dfe6ea", "s": "#8a9bad"},
+	"chipon": {"g": ["#3a2e14", "#1e180a"], "b": "#e8c36a", "r": 16.0, "t": "#ffe9b8", "s": "#e8c36a", "keep": true},
+	"soro": {"g": ["#3a2e14", "#1e180a"], "b": "#8a6d35", "r": 2.0, "t": "#dfe6ea", "s": "#7fd2ff"},
+	"spull": {"g": ["#5a3a8a", "#2a1a4a"], "b": "#c08cff", "r": 2.0, "t": "#dfe6ea", "s": "#ffd25a"},
+	"prem": {"g": ["#5a3a8a", "#2a1a4a"], "b": "#c08cff", "r": 2.0, "t": "#f0e0ff", "s": "#e8c36a", "bold": true},
+	"skip": {"g": ["#24313e", "#141b22"], "b": "#e8c36a", "r": 2.0, "t": "#dfe6ea", "s": "#7fd2ff"},
+	"fbx": {"g": ["#2a5a3a", "#123020"], "b": "#7affd4", "r": 2.0, "t": "#dfe6ea", "s": "#7affd4", "keep": true},
+	"bpc": {"g": ["#e8c36a", "#b8902f"], "b": "#f3d98e", "r": 2.0, "t": "#1c1406", "s": "#1c1406", "bold": true},
+	"red": {"g": ["#1b232b"], "h": "#222d37", "b": "#a8352a", "r": 2.0, "t": "#ff9a8a", "s": "#8a9bad", "keep": true},
+	"tpv": {"g": ["#16202a"], "b": "#33414d", "r": 2.0, "t": "#dfe6ea", "s": "#8a9bad"},
+	"bxsk": {"g": ["#0e1318"], "b": "#3a4a58", "r": 14.0, "t": "#9fb0bf", "s": "#9fb0bf"},
+	"mini": {"g": ["#1b232b"], "h": "#222d37", "b": "#33414d", "r": 2.0, "t": "#dfe6ea", "s": "#8a9bad"},
+}
+
+func _wbtn(e: Dictionary, hov) -> void:
+	var r: Rect2 = e.r
+	var S: Dictionary = BST[e.sty]
+	var h: bool = hov != null and e.get("it") != null and hov == e.it and e.en
+	var G: Array = S.g
+	var st = Color(G[0]) if G.size() == 1 else _g2(G[0], G[1])
+	if h and S.has("h"):
+		st = Color(S.h)
+	var bc := Color(S.b)
+	if h and not S.get("keep", false):
+		bc = Color("#4fd1b5")
+	_gbox(r, st, 180.0, S.r, bc, 1.0, e.get("dash", false))
+	var fs: int = e.get("fs", 13)
+	var bold: bool = e.get("bold", S.get("bold", false))
+	var l: String = e.get("l", "")
+	var sub: String = e.get("sub", "")
+	var ic: String = e.get("ic", "")
+	var tc := Color(S.t)
+	var cy := r.position.y + r.size.y / 2.0
+	if e.get("inl", "") != "":
+		var w1 := _tw(l, fs, bold) + (fs * 1.1 + 5.0 if ic != "" else 0.0)
+		var w2 := _tw(e.inl, 12)
+		var x := r.position.x + (r.size.x - w1 - 6.0 - w2) / 2.0
+		if ic != "":
+			_icon(ic, Vector2(x + fs * 0.55, cy - 1.0), fs * 1.05)
+			x += fs * 1.1 + 5.0
+		draw_string(fb() if bold else ThemeDB.fallback_font, Vector2(x, cy + fs * 0.36), l, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, tc)
+		draw_string(ThemeDB.fallback_font, Vector2(x + _tw(l, fs, bold) + 6.0, cy + 4.5), e.inl, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(S.s))
+	else:
+		var ly := cy + fs * 0.36 - (8.0 if sub != "" else 0.0)
+		var lw := _tw(l, fs, bold)
+		var x0 := r.position.x + (r.size.x - lw) / 2.0
+		if ic != "":
+			x0 = r.position.x + (r.size.x - lw - fs * 1.1 - 5.0) / 2.0
+			_icon(ic, Vector2(x0 + fs * 0.55, ly - fs * 0.36), fs * 1.05)
+			x0 += fs * 1.1 + 5.0
+		draw_string(fb() if bold else ThemeDB.fallback_font, Vector2(x0, ly), l, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, tc)
+		if sub != "":
+			draw_string(ThemeDB.fallback_font, Vector2(r.position.x, cy + 14.0), sub, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color(S.s))
+	if not e.en:
+		_fade(r.grow(1.0), 0.45, e.get("fc", PBG))
+
+# ── 줄 배치 ──
+func _E(e: Dictionary) -> Dictionary:
+	lob_draw.append(e)
+	return e
+
+func _C(id: String, r: Rect2, arg, e: Dictionary, clip: bool = true) -> void:
+	_cl.append([id, r, arg, e, clip])
+
+# 버튼 스펙: {l, s(아래 작은 글씨), a(누르면 할 일), en, cost:["cs"|"ss", n] 또는 "free", sty, fs, ic, dash, w}
+func _bnat(b: Dictionary, padx: float) -> float:
+	var fs: int = b.get("fs", 13)
+	var w := _tw(b.get("l", ""), fs, b.get("bold", BST[b.get("sty", "def")].get("bold", false)))
+	if b.get("ic", "") != "":
+		w += fs * 1.1 + 5.0
+	if b.get("inl", "") != "":
+		w += 6.0 + _tw(b.inl, 12)
+	return maxf(w, _tw(b.get("s", ""), 12)) + padx * 2.0 + 2.0
+
+func _can(b: Dictionary) -> bool:
+	if not b.get("en", true) or not b.has("cost"):
+		return false
+	if b.cost is String:
+		return true
+	return (SV.cs if b.cost[0] == "cs" else SV.ss) >= int(b.cost[1])
+
+func _B(r: Rect2, b: Dictionary, clip: bool = true) -> Dictionary:
+	var en: bool = b.get("en", true)
+	var sty: String = "can" if _can(b) else b.get("sty", "def")
+	var e := _E({"k": "btn", "r": r, "l": b.get("l", ""), "sub": b.get("s", ""), "sty": sty, "en": en, "fs": b.get("fs", 13), "ic": b.get("ic", ""), "dash": b.get("dash", false), "inl": b.get("inl", "")})
+	if b.has("bold"):
+		e.bold = b.bold
+	if en and b.has("a"):
+		if b.a is String:
+			_C(b.a, r, b.get("arg"), e, clip)
+		else:
+			_C("cb", r, b.a, e, clip)
+	return e
+
+func _tabs_layout(tabs: Array, x0: float, y: float, W: float, cur: String) -> float:
+	# flex: 1 1 auto · 줄바꿈 · 남는 폭은 똑같이 나눠요
+	var nat: Array = []
+	for tb in tabs:
+		nat.append(_bnat({"l": tb[1], "fs": 14, "bold": true, "ic": tb[3], "inl": tb[2]}, 12.0))
+	var i := 0
+	while i < tabs.size():
+		var j := i
+		var tot := 0.0
+		while j < tabs.size() and (j == i or tot + 6.0 + nat[j] <= W):
+			tot += (6.0 if j > i else 0.0) + nat[j]
+			j += 1
+		var extra := (W - tot) / float(j - i)
+		var x := x0
+		for k in range(i, j):
+			var w: float = nat[k] + extra
+			var tb: Array = tabs[k]
+			var e := {"k": "btn", "r": Rect2(x, y, w, 42.0), "l": tb[1], "sty": "tabon" if tb[0] == cur else "tab", "en": true, "fs": 14, "ic": tb[3], "inl": tb[2]}
+			cos_hdr.append(e)
+			e.it = _add("cb", e.r, true, "", {"a": "settab" if lsec == "set" else "tab", "k": tb[0]})
+			x += w + 6.0
+		y += 48.0
+		i = j
+	return y - 6.0
+
+func _card_h(c: Dictionary, cw: float) -> float:
+	var h := 10.0
+	if c.get("cash", false):
+		return 10.0 + 54.0 + 26.0 + 16.0 + 5.0 + 36.0 + 8.0
+	h += (cw - 18.0) * 0.6 + 5.0 + 18.0
+	if c.has("d"):
+		var n := _wrap(ThemeDB.fallback_font, c.d, 12, cw - 18.0).size()
+		if c.has("d2"):
+			n += _wrap(fb(), c.d2, 12, cw - 18.0).size()
+		h += 5.0 + maxf(30.0, n * 17.0)
+	if c.get("frg", "") != "":
+		h += 5.0 + 21.0
+	if c.has("sbar"):
+		h += 5.0 + 20.0
+	for b in c.get("btns", []):
+		h += 5.0 + (27.0 if b.get("sty", "") == "tpv" else 35.0)
+	return h + 8.0
+
+func _L(R: Array, x0: float, y0: float, W: float) -> float:
+	var y := y0
+	var first := true
+	var rf := ThemeDB.fallback_font
+	for row in R:
+		if row.has("h"):
+			if not first:
+				y += 6.0
+			_E({"k": "t", "p": Vector2(x0, y + 14.0), "s": row.h, "fs": 13, "c": Color("#c9a255"), "b": true, "ls": 0.14, "ic": row.get("ic", "")})
+			y += 28.0
+		elif row.has("p"):
+			var fs: int = row.get("fs", 12)
+			var lh: float = fs * 1.45
+			y += 2.0
+			for l in _wrap(rf, row.p, fs, W):
+				_E({"k": "t", "p": Vector2(x0, y + fs + 1.0), "s": l, "fs": fs, "c": row.get("c", Color("#8a9bad"))})
+				y += lh
+			y += row.get("mb", 10.0)
+		elif row.has("soro"):
+			y = _L_soro(row, x0, y, W)
+		elif row.has("stsh"):
+			var r := Rect2(x0, y, W, 70.0)
+			_E({"k": "box", "r": r, "st": [[0.0, Color("#2a1440")], [0.5, Color("#1a1030")], [1.0, Color("#2a2010")]], "ang": 120.0, "rad": 10.0, "bc": Color("#c08cff")})
+			_E({"k": "t", "p": Vector2(x0 + 14.0, y + 32.0), "s": "★ 걸작", "fs": 18, "b": true, "c": Color("#ffe9b8"), "ls": 0.06})
+			var S: Array = row.stsh
+			var x := x0 + W - 14.0
+			var spans: Array = []
+			for i in range(S.size() - 1, -1, -1):
+				var s: Array = S[i]
+				var w := 20.0 + _tw(s[0], 13) + _tw(s[1], 15, true) + _tw(s[2], 13)
+				x -= w
+				spans.append([Rect2(x, y + 20.0, w, 30.0), s])
+				x -= 12.0
+			_E({"k": "t", "p": Vector2(x0 + 14.0, y + 54.0), "s": "로봇 · 기지 · 테마가 완전히 새 모습으로 바뀌는 최상위 등급 · 오직 별 뽑기로만 얻어요", "fs": 12, "c": Color("#b8a8d8"), "w": x - x0 - 20.0})
+			for sp in spans:
+				var rr: Rect2 = sp[0]
+				var s2: Array = sp[1]
+				_E({"k": "box", "r": rr, "st": Color("#0e0a18"), "rad": 6.0, "bc": Color("#4a3a6a")})
+				_E({"k": "t", "p": rr.position + Vector2(10.0, 20.0), "s": s2[0], "fs": 13, "c": Color("#b8a8d8")})
+				_E({"k": "t", "p": rr.position + Vector2(10.0 + _tw(s2[0], 13), 21.0), "s": s2[1], "fs": 15, "b": true, "c": Color("#f0e0ff")})
+				_E({"k": "t", "p": rr.position + Vector2(10.0 + _tw(s2[0], 13) + _tw(s2[1], 15, true), 20.0), "s": s2[2], "fs": 13, "c": Color("#b8a8d8")})
+			y += 82.0
+		elif row.has("stex"):
+			var B: Array = row.stex
+			var x := x0 + W - 4.0
+			for i in range(B.size() - 1, -1, -1):
+				var w := _bnat(B[i], 14.0)
+				x -= w
+				_B(Rect2(x, y + 8.0, w, 52.0), B[i])
+				x -= 8.0
+			_E({"k": "t", "p": Vector2(x0 + 4.0, y + 39.0), "s": "별석 교환 · 별석 1개 = 청석 300", "fs": 13, "c": Color("#9fb0bf")})
+			y += 68.0
+		elif row.has("cards"):
+			y = _L_cards(row, x0, y, W)
+		elif row.has("tbl"):
+			y = _L_tbl(row, x0, y, W)
+		elif row.has("sum"):
+			var x := x0
+			for s in row.sum:
+				var w := 24.0 + _tw(s[0], 13) + 6.0 + _tw(s[1], 13, true)
+				var bb: Dictionary = s[3] if s.size() > 3 else {}
+				if not bb.is_empty():
+					w += 6.0 + _bnat(bb, 9.0)
+				if x > x0 and x + w > x0 + W:
+					x = x0
+					y += 40.0
+				var r := Rect2(x, y, w, 32.0)
+				var sp: bool = s[2]
+				_E({"k": "box", "r": r, "st": Color("#0b1015"), "rad": 7.0, "bc": Color("#6a4a9a") if sp else Color("#2b3640")})
+				_E({"k": "t", "p": r.position + Vector2(11.0, 21.0), "s": s[0], "fs": 13, "c": Color("#9fb0bf")})
+				_E({"k": "t", "p": r.position + Vector2(17.0 + _tw(s[0], 13), 21.0), "s": s[1], "fs": 13, "b": true, "c": Color("#d2a8ff") if sp else Color("#e8eef2")})
+				if not bb.is_empty():
+					var bw := _bnat(bb, 9.0)
+					_B(Rect2(r.end.x - 11.0 - bw, y + 5.0, bw, 22.0), bb)
+				x += w + 8.0
+			y += 40.0
+		elif row.has("sfbar"):
+			_E({"k": "ln", "a": Vector2(x0, y), "b": Vector2(x0 + W, y), "c": Color("#2b3640")})
+			var x := x0
+			var yy := y + 10.0
+			for g in row.sfbar:
+				var gw := _tw(g[0], 12) + 7.0
+				for c in g[1]:
+					gw += _bnat({"l": c[0], "fs": 13}, 12.0) + 5.0
+				if x > x0 and x + gw > x0 + W:
+					x = x0
+					yy += 40.0
+				_E({"k": "t", "p": Vector2(x, yy + 21.0), "s": g[0], "fs": 12, "c": Color("#8a9bad")})
+				x += _tw(g[0], 12) + 7.0
+				for c in g[1]:
+					var w := _bnat({"l": c[0], "fs": 13}, 12.0)
+					_B(Rect2(x, yy, w, 32.0), {"l": c[0], "fs": 13, "a": c[1], "sty": "chipon" if c[2] else "chip"})
+					x += w + 5.0
+				x += 9.0
+			yy += 42.0
+			_E({"k": "ln", "a": Vector2(x0, yy), "b": Vector2(x0 + W, yy), "c": Color("#2b3640")})
+			y = yy + 10.0
+		elif row.has("row2"):
+			var B: Array = row.row2
+			var w := (W - 8.0 * (B.size() - 1)) / B.size()
+			for i in B.size():
+				_B(Rect2(x0 + i * (w + 8.0), y + 6.0, w, 42.0), B[i])
+			y += 54.0
+		elif row.has("vol"):
+			var x := x0
+			for v in row.vol:
+				_E({"k": "t", "p": Vector2(x, y + 21.0), "s": v[0], "fs": 13, "c": Color("#c9d3dc")})
+				x += _tw(v[0], 13) + 8.0
+				var r := Rect2(x, y + 4.0, 150.0, 24.0)
+				var e := _E({"k": "sl", "r": r, "key": v[1]})
+				_C("sl", r.grow_individual(4.0, 6.0, 4.0, 6.0), v[1], e)
+				x += 158.0
+				var vs := str(int(SV[v[1]])) + ("%" if v[1] == "uis" else "")
+				_E({"k": "t", "p": Vector2(x, y + 21.0), "s": vs, "fs": 13, "b": true, "c": Color("#ffe9b8")})
+				x += maxf(26.0, _tw(vs, 13, true)) + 22.0
+			if row.has("btn"):
+				var bw := _bnat(row.btn, 14.0)
+				_B(Rect2(x, y, bw, 34.0), row.btn)
+			y += 44.0
+		elif row.has("sel"):
+			var r := Rect2(x0, y, maxf(240.0, row.sel_w), 36.0)
+			var e := _E({"k": "sel", "r": r, "s": row.sel})
+			_C("bgmsel", r, null, e)
+			y += 46.0
+		elif row.has("season"):
+			var r := Rect2(x0, y, W, 46.0)
+			_E({"k": "box", "r": r, "st": [[0.0, Color("#1a1440")], [0.6, Color("#0c0a1e")], [1.0, Color("#2a1a4a")]], "ang": 120.0, "rad": 10.0, "bc": Color("#c08cff")})
+			_E({"k": "t", "p": Vector2(x0 + 14.0, y + 30.0), "s": SEASON.n, "fs": 19, "b": true, "c": Color("#f0e0ff"), "ls": 0.08})
+			var nw := 0.0
+			for ch in SEASON.n:
+				nw += _tw(ch, 19, true) + 19 * 0.08
+			_E({"k": "t", "p": Vector2(x0 + 26.0 + nw, y + 29.0), "s": SEASON.d, "fs": 13, "c": Color("#b8a8d8")})
+			y += 56.0
+		elif row.has("bph"):
+			y = _L_bph(x0, y, W)
+		elif row.has("track"):
+			y = _L_track(x0, y, W)
+		first = false
+	return y - y0
+
+func _L_soro(row: Dictionary, x0: float, y: float, W: float) -> float:
+	var star: bool = row.soro == "star"
+	var B: Array = row.btns
+	var bw := 118.0
+	for b in B:
+		bw = maxf(bw, _bnat(b, 18.0))
+	var colh := B.size() * 56.0 + (B.size() - 1) * 6.0
+	var iw := W - 28.0 - 90.0 - 14.0 - bw - 14.0
+	var lines: Array = []
+	for l in _wrap(ThemeDB.fallback_font, row.info[0], 14, iw):
+		lines.append([l, 14, Color("#dfe6ea")])
+	for i in range(1, row.info.size()):
+		for l in _wrap(ThemeDB.fallback_font, row.info[i], 12, iw):
+			lines.append([l, 12, Color("#8a9bad")])
+	var ih := lines.size() * 22.0
+	var h := maxf(colh, ih) + 28.0
+	var r := Rect2(x0, y, W, h)
+	if star:
+		_E({"k": "box", "r": r, "st": _g2("#1e1430", "#10151a"), "rad": 10.0, "bc": Color("#c08cff")})
+	else:
+		_E({"k": "box", "r": r, "st": _g2("#20180c", "#10151a"), "rad": 10.0, "bc": Color("#8a6d35")})
+	_E({"k": "ic", "kind": "stbx" if star else "sbx", "c": Vector2(x0 + 14.0 + 45.0, y + h / 2.0)})
+	var ty := y + (h - ih) / 2.0
+	for l in lines:
+		_E({"k": "t", "p": Vector2(x0 + 118.0, ty + 16.0), "s": l[0], "fs": l[1], "c": l[2]})
+		ty += 22.0
+	var by := y + (h - colh) / 2.0
+	for b in B:
+		_B(Rect2(x0 + W - 14.0 - bw, by, bw, 56.0), b)
+		by += 62.0
+	return y + h + (10.0 if star else 14.0)
+
+func _L_cards(row: Dictionary, x0: float, y: float, W: float) -> float:
+	var mn: float = row.get("min", 150.0)
+	var gap: float = 10.0 if mn > 200.0 else 8.0
+	var cols := maxi(1, int((W + gap) / (mn + gap)))
+	var cw := (W - gap * (cols - 1)) / cols
+	var C2: Array = row.cards
+	if C2.is_empty():
+		_E({"k": "t", "p": Vector2(x0, y + 16.0), "s": row.get("empty", ""), "fs": 12, "c": Color("#8a9bad")})
+		return y + 30.0
+	var i := 0
+	while i < C2.size():
+		var hh := 0.0
+		for k in range(i, mini(i + cols, C2.size())):
+			hh = maxf(hh, _card_h(C2[k], cw))
+		for k in range(i, mini(i + cols, C2.size())):
+			_L_card(C2[k], Rect2(x0 + (k - i) * (cw + gap), y, cw, hh))
+		y += hh + gap
+		i += cols
+	return y - gap + (12.0 if mn > 200.0 else 14.0)
+
+func _L_card(c: Dictionary, r: Rect2) -> void:
+	var af := false
+	for b in c.get("btns", []):
+		if _can(b):
+			af = true
+	var e := _E({"k": "card", "r": r, "c": c, "af": af})
+	var x := r.position.x + 9.0
+	var w := r.size.x - 18.0
+	var y := r.position.y + 9.0
+	if c.get("cash", false):
+		e.gy = y
+		y += 54.0 + 26.0 + 16.0 + 5.0
+		_B(Rect2(x, y, w, 36.0), c.btns[0])
+		return
+	e.pv = Rect2(x, y, w, w * 0.6)
+	y += w * 0.6 + 5.0
+	e.ny = y + 14.0
+	y += 18.0
+	if c.has("d"):
+		e.dl = _wrap(ThemeDB.fallback_font, c.d, 12, w)
+		e.dy = y + 5.0 + 12.0
+		var n := e.dl.size()
+		if c.has("d2"):
+			e.d2l = _wrap(fb(), c.d2, 12, w)
+			e.d2y = e.dy + n * 17.0
+			n += e.d2l.size()
+		y += 5.0 + maxf(30.0, n * 17.0)
+	if c.get("frg", "") != "":
+		e.fr = Rect2(x, y + 5.0, _tw(c.frg, 12) + 14.0, 21.0)
+		y += 26.0
+	if c.has("sbar"):
+		e.sb = Rect2(x, y + 5.0, w, 20.0)
+		y += 25.0
+	for b in c.get("btns", []):
+		var bh := 27.0 if b.get("sty", "") == "tpv" else 35.0
+		var bb: Dictionary = b.duplicate()
+		if bb.get("sty", "") == "tpv":
+			bb.fs = 12
+			bb.ic = "note"
+		_B(Rect2(x, y + 5.0, w, bh), bb)
+		y += 5.0 + bh
+
+func _L_tbl(row: Dictionary, x0: float, y: float, W: float) -> float:
+	var T: Array = row.tbl
+	var hist: bool = row.get("hist", false)
+	var nat := [0.0, 0.0, 0.0]
+	for ri in T.size():
+		for ci in 3:
+			nat[ci] = maxf(nat[ci], _tw(str(T[ri][ci]), 13, ri == 0 or ci == 1) + 20.0)
+	var tot: float = nat[0] + nat[1] + nat[2]
+	var cwid: Array = []
+	for ci in 3:
+		cwid.append(nat[ci] + (W - tot) * (nat[ci] / tot) if tot < W else W * nat[ci] / tot)
+	if hist:
+		cwid = [nat[0] + 10.0, nat[1] + 10.0, W - nat[0] - nat[1] - 20.0]
+	y += 6.0
+	for ri in T.size():
+		var hd := ri == 0
+		var rh := 33.0 if hd else 32.0
+		var r := Rect2(x0, y, W, rh)
+		if hd:
+			_E({"k": "box", "r": r, "st": Color("#141b22")})
+		_E({"k": "ln", "a": Vector2(x0, y + rh - 0.5), "b": Vector2(x0 + W, y + rh - 0.5), "c": Color("#4a3c1e") if hd else Color("#1e2830")})
+		var xx := x0 + 10.0
+		var gcl: String = row.get("g", [])[ri] if (hist and ri > 0 and ri < row.get("g", []).size()) else ""
+		for ci in 3:
+			var col := Color("#c9d3dc")
+			var fs := 13
+			var bold := false
+			if hd:
+				col = Color("#e8c36a")
+				bold = true
+			elif hist:
+				fs = 13 if ci != 1 else 12
+				col = [Color("#8a9bad"), Color("#9fb0bf"), Color("#dfe6ea")][ci]
+				if ci == 2:
+					if gcl == "kro":
+						col = Color("#ffe28a")
+					elif gcl == "jack":
+						col = Color("#7affd4")
+						bold = true
+					elif gcl == "star":
+						col = Color("#d2a8ff")
+						bold = true
+					elif gcl == "sf":
+						col = Color("#c8b8e8")
+			elif ci == 1:
+				col = Color("#ffe9b8")
+				bold = true
+			elif ci == 2:
+				col = Color("#8a9bad")
+				fs = 12
+			_E({"k": "t", "p": Vector2(xx, y + rh / 2.0 + 5.0), "s": str(T[ri][ci]), "fs": fs, "b": bold, "c": col, "w": cwid[ci] - 14.0})
+			xx += cwid[ci]
+		y += rh
+	return y + 10.0
+
+func _L_bph(x0: float, y: float, W: float) -> float:
+	var P := bp()
+	var lv := bp_lv()
+	var cur := int(P.xp) - lv * 500
+	var lvw := _tw("단계", 15) + 4.0 + _tw(str(lv), 46, true) + 4.0 + _tw("/30", 15)
+	var B: Array = []
+	if not P.prem:
+		B.append({"l": "프리미엄 해금", "ic": "crown", "s": "청석 2,000", "a": {"a": "bpbuy"}, "sty": "prem"})
+	if lv < 30:
+		B.append({"l": "1단계 구매", "s": "청석 100", "a": {"a": "bpskip", "n": 1}, "sty": "skip"})
+		B.append({"l": "5단계 구매", "s": "청석 500", "a": {"a": "bpskip", "n": 5}, "sty": "skip"})
+	B.append({"l": "모두 받기", "a": {"a": "bpall"}, "sty": "go", "bold": true})
+	var bws := 0.0
+	var bw: Array = []
+	for b in B:
+		var w := _bnat(b, 18.0 if b.sty != "skip" else 14.0)
+		bw.append(w)
+		bws += w + 14.0
+	var premw := 0.0
+	if P.prem:
+		premw = _tw("프리미엄 활성", 13, true) + 50.0
+		bws += premw + 14.0
+	var xw := W - lvw - 14.0 - bws
+	var wrap := xw < 220.0
+	if wrap:
+		xw = W - lvw - 14.0
+	var cy := y + 30.0
+	_E({"k": "t", "p": Vector2(x0, cy + 14.0), "s": "단계", "fs": 15, "c": Color("#8a9bad")})
+	_E({"k": "t", "p": Vector2(x0 + _tw("단계", 15) + 4.0, cy + 16.0), "s": str(lv), "fs": 46, "b": true, "c": Color("#e8c36a")})
+	_E({"k": "t", "p": Vector2(x0 + _tw("단계", 15) + 8.0 + _tw(str(lv), 46, true), cy + 14.0), "s": "/30", "fs": 15, "c": Color("#8a9bad")})
+	var bx := x0 + lvw + 14.0
+	_E({"k": "bar", "r": Rect2(bx, cy - 20.0, xw, 22.0), "v": 1.0 if lv >= 30 else cur / 500.0, "s": "MAX" if lv >= 30 else str(cur) + " / 500 XP"})
+	_E({"k": "t", "p": Vector2(bx, cy + 20.0), "s": "플레이 1분 +10 · 적 처치 +2 · 기지 정복 +30 · 레이드 방어 +50 · 게임이 끝날 때 들어와요", "fs": 12, "c": Color("#8a9bad"), "w": xw})
+	var x := bx + xw + 14.0
+	if wrap:
+		y += 72.0
+		cy = y + 30.0
+		x = x0
+	if P.prem:
+		var pr := Rect2(x, cy - 22.0, premw, 44.0)
+		_E({"k": "box", "r": pr.grow(0.0), "st": _g2("#5a3a8a", "#2a1a4a"), "rad": 8.0, "bc": Color("#c08cff"), "glow": Color(0.75, 0.55, 1.0, 0.4)})
+		_E({"k": "t", "p": Vector2(pr.position.x + 16.0, cy + 5.0), "s": "프리미엄 활성", "fs": 13, "b": true, "c": Color("#f0e0ff"), "ic": "crown"})
+		x += premw + 14.0
+	for i in B.size():
+		var b: Dictionary = B[i]
+		var h := 54.0 if b.has("s") else 40.0
+		_B(Rect2(x, cy - h / 2.0, bw[i], h), b)
+		x += bw[i] + 14.0
+	return y + 72.0
+
+func _L_track(x0: float, y: float, W: float) -> float:
+	var P := bp()
+	var lv := bp_lv()
+	var top := y + 4.0
+	pass_tr = Rect2(x0, top, W, 293.0)
+	var vr := Rect2(x0 + 74.0, top - 4.0, W - 74.0, 300.0)
+	if pass_init:
+		pass_init = false
+		pass_scroll = clampf(80.0 + mini(29, lv) * 118.0 - 160.0, 0.0, _pass_max())
+	for L in range(1, 31):
+		var cx := x0 + 80.0 + (L - 1) * 118.0 - pass_scroll
+		if cx > x0 + W + 4.0 or cx + 112.0 < x0 + 70.0:
+			continue
+		_E({"k": "bpn", "r": Rect2(cx, top, 112.0, 25.0), "s": str(L), "got": lv >= L, "next": lv + 1 == L})
+		for ti in 2:
+			var tp := "f" if ti == 0 else "p"
+			var rw = bpr(L)[tp]
+			var cr := Rect2(cx, top + 31.0 + ti * 134.0, 112.0, 128.0)
+			var got: bool = (P.cf if tp == "f" else P.cp).has(L)
+			var lk: bool = lv < L or (tp == "p" and not P.prem)
+			var e := _E({"k": "bpr", "r": cr, "rw": rw, "got": got, "lk": lk, "tp": tp, "can": rw != null and not got and not lk})
+			if rw != null and not got and not lk:
+				var hh := _bpr_stack(e)
+				var bw := _tw("받기", 12, true) + 30.0
+				var br := Rect2(cr.position.x + (112.0 - bw) / 2.0, cr.position.y + (128.0 - hh) / 2.0 + hh - 24.0, bw, 24.0)
+				e.btn = {"k": "btn", "r": br, "l": "받기", "sty": "bpc", "en": true, "fs": 12}
+				_C("cb", br.intersection(vr), {"a": "bpc", "t": tp, "L": L}, e.btn)
+	_E({"k": "hmask", "y0": top - 4.0, "y1": top + 300.0, "x0": x0, "x1": x0 + W})
+	_E({"k": "bpn", "r": Rect2(x0, top, 74.0, 25.0), "s": "단계", "lab": true})
+	_E({"k": "bpr", "r": Rect2(x0, top + 31.0, 74.0, 128.0), "lab": "무료", "tp": "f"})
+	_E({"k": "bpr", "r": Rect2(x0, top + 165.0, 74.0, 128.0), "lab": "프리미엄", "tp": "p"})
+	var mx := _pass_max()
+	if mx > 0.0:
+		var tw := W - 74.0
+		var hw := maxf(40.0, tw * tw / (tw + mx))
+		_E({"k": "box", "r": Rect2(x0 + 74.0 + (tw - hw) * pass_scroll / mx, top + 297.0, hw, 8.0), "st": Color("#3a4a58"), "rad": 4.0})
+	return top + 309.0
+
+func _pass_max() -> float:
+	return maxf(0.0, 80.0 + 30.0 * 118.0 - 6.0 - pass_tr.size.x)
+
+func _bpr_stack(e: Dictionary) -> float:
+	var r: Dictionary = e.rw
+	var ih := 32.0
+	if r.has("cs"):
+		ih = 32.0
+	elif r.has("box"):
+		ih = 32.0
+	elif r.has("frag"):
+		ih = 28.0
+	else:
+		ih = 55.0
+	var n := _wrap(ThemeDB.fallback_font, rt_txt(r), 12, 100.0).size()
+	var h := ih + 5.0 + n * 16.0
+	if e.got or e.can or (e.tp == "p" and not bp().prem):
+		h += 5.0 + (24.0 if e.can else 16.0)
+	return h
+
+# ── 섹션 내용 ──
+func _cpr(id: String) -> int:
+	var it := item(id)
+	var p: int = int(it.get("p", 0))
+	return p if p > 0 else (500 if cat_of(id) == "b" else 300)
+
 func _rows_shop() -> Array:
 	var R: Array = []
 	match shop_tab2:
 		"star":
-			R.append({"h": "★ 걸작 · 로봇 · 기지 · 테마가 완전히 새 모습으로 바뀌는 최상위 등급 · 오직 별 뽑기로만 얻어요"})
-			R.append({"p": "별석 " + str(SV.ss) + " · ★ 별 파편 " + str(SV.sfrag) + " / 30 · 천장 " + str(SV.spity) + " / 500  —  500번째 뽑기는 걸작 완품 확정 · 별 파편 30개로 원하는 걸작 제작"})
-			R.append({"btns": [["별 뽑기 1회 · 별석 15", {"a": "spull", "n": 1}, SV.ss >= 15], ["별 뽑기 10회 · 별석 150", {"a": "spull", "n": 10}, SV.ss >= 150], ["별석 1개 교환 · 청석 300", {"a": "sx", "n": 1}, SV.cs >= 300], ["별석 10개 교환 · 청석 3,000", {"a": "sx", "n": 10}, SV.cs >= 3000]]})
+			R.append({"stsh": [["별석 ", str(SV.ss), ""], ["★ 별 파편 ", str(SV.sfrag), " / 30"], ["천장 ", str(SV.spity), " / 500"]]})
+			var sb: Array = [{"l": "1회 뽑기", "s": "별석 15", "a": {"a": "spull", "n": 1}, "cost": ["ss", 15], "sty": "spull"}, {"l": "10회 뽑기", "s": "별석 150", "a": {"a": "spull", "n": 10}, "cost": ["ss", 150], "sty": "spull"}]
+			var na := mini(100, int(SV.ss / 15))
+			if na > 10:
+				sb.append({"l": "모두 뽑기", "s": str(na) + "회 · 별석 " + _cm(na * 15), "a": {"a": "spull", "n": na}, "cost": ["ss", na * 15], "sty": "spull", "dash": true})
+			R.append({"soro": "star", "btns": sb, "info": ["별 뽑기 1회 = 별석 15 · 별 파편 1~4개 또는 걸작 완품 (로봇·기지·테마 중 하나)", "파편 1개 54% · 2개 32% · 3개 11% · 4개 3% · 완품 0.001%", "500번째 뽑기는 완품 확정(천장) · 완품이 나오면 천장이 초기화돼요"]})
+			R.append({"stex": [{"l": "별석 1개", "s": "청석 300", "a": {"a": "sx", "n": 1}, "cost": ["cs", 300]}, {"l": "별석 10개", "s": "청석 3,000", "a": {"a": "sx", "n": 10}, "cost": ["cs", 3000]}]})
+			R.append({"h": "걸작 세트"})
 			var cards: Array = []
-			for it in star_all():
-				var c := cat_of(it.id)
-				var o := owns(it.id)
-				var e := equipped(it.id)
-				cards.append({"pv": [c, it.id], "tag": "★ 걸작 · " + {"s": "로봇", "b": "기지", "t": "테마"}[c], "n": it.n, "d": it.d, "star": true,
-					"btns": [[("장착 중" if e else "장착") if o else "★ 별 파편 30개로 제작", {"a": "eq", "id": it.id} if o else {"a": "craft", "id": it.id}, (not e) if o else SV.sfrag >= 30]]})
-			R.append({"cards": cards})
-			R.append({"h": "★ 걸작 세트"})
-			cards = []
 			for i in MSET.size():
 				var S: Dictionary = MSET[i]
 				var n := [S.r, S.b, S.t].filter(func(id): return owns(id)).size()
 				var e: bool = SV.eq == S.r and SV.beq == S.b and SV.teq == S.t
-				cards.append({"pv": ["mset", i], "tag": "★ 세트", "n": S.n, "d": "보유 " + str(n) + " / 3", "star": true,
-					"btns": [["세트 장착 중" if e else ("세트 장착" if n == 3 else "3종을 모두 모으면 장착"), {"a": "mset", "i": i}, n == 3 and not e]]})
-			R.append({"cards": cards})
+				cards.append({"pv": ["mset", i], "tag": "★ 세트", "tc": "star", "n": S.n, "d": item(S.r).n + " · " + item(S.b).n + " · " + item(S.t).n + " · 보유 " + str(n) + "/3", "cls": "star",
+					"btns": [{"l": ("세트 장착 중" if e else "세트 장착") if n == 3 else "3종을 모두 모으면 장착", "a": {"a": "mset", "i": i}, "en": n == 3 and not e}]})
+			R.append({"cards": cards, "min": 230.0})
+			for g in [["s", "걸작 로봇"], ["b", "걸작 기지 · 기지 모양과 폭발 연출이 바뀌어요"], ["t", "걸작 테마 · 필드 · 날씨 · 적 탄환이 바뀌어요"]]:
+				R.append({"h": g[1]})
+				cards = []
+				for it in star_all():
+					var c := cat_of(it.id)
+					if c != g[0]:
+						continue
+					var o := owns(it.id)
+					var e := equipped(it.id)
+					var cd := {"pv": [c, it.id], "tag": "★ 걸작", "tc": "star", "n": it.n, "d": it.d, "cls": "star", "btns": []}
+					if c == "t":
+						cd.d2 = "전용 웅장한 테마곡 포함 · 세트 완성 시 레이드 전용 편곡"
+						cd.btns.append({"l": "테마곡 미리듣기", "a": {"a": "tprev", "id": it.id}, "sty": "tpv"})
+					if o:
+						cd.btns.append({"l": "장착 중" if e else "장착", "a": {"a": "eq", "id": it.id}, "en": not e})
+					else:
+						cd.btns.append({"l": "★ 별 파편 30개로 제작", "a": {"a": "craft", "id": it.id}, "en": SV.sfrag >= 30, "cost": "free"})
+					cards.append(cd)
+				R.append({"cards": cards, "min": 230.0})
 		"box":
 			R.append({"h": "소로 상자 · 스킨 파편 (로봇 6개 · 기지 5개 · 테마 4개 모으면 완성)"})
-			R.append({"p": "상자 1개에서 스킨 1종의 파편이 1~3개 나와요 (1개 65% · 2개 25% · 3개 10%) · 로봇 40% · 기지 25% · 테마 35% · 주 등급 82% · 크로 등급 18% · 이미 가진 스킨의 파편은 청석으로 돌려받아요 · 0.01% 확률로 크로 세트가 통째로!"})
 			var b: Array = []
 			if SV.fbox > 0:
-				b.append(["무료 상자 열기 · 보유 " + str(SV.fbox) + "개", {"a": "fbox"}, true])
-			b.append(["1개 열기 · 청석 600", {"a": "box", "n": 1}, SV.cs >= 600])
-			b.append(["5개 열기 · 청석 3,000", {"a": "box", "n": 5}, SV.cs >= 3000])
-			b.append(["10개 열기 · 청석 6,000", {"a": "box", "n": 10}, SV.cs >= 6000])
+				b.append({"l": "무료 상자 열기", "s": "보유 " + str(SV.fbox) + "개", "a": {"a": "fbox"}, "sty": "fbx", "cost": "free"})
+			b.append({"l": "1개 열기", "s": "청석 600", "a": {"a": "box", "n": 1}, "cost": ["cs", 600], "sty": "soro"})
+			b.append({"l": "5개 열기", "s": "청석 3,000", "a": {"a": "box", "n": 5}, "cost": ["cs", 3000], "sty": "soro"})
+			b.append({"l": "10개 열기", "s": "청석 6,000", "a": {"a": "box", "n": 10}, "cost": ["cs", 6000], "sty": "soro"})
 			var na := mini(100, int(SV.cs / 600))
 			if na > 10:
-				b.append(["모두 열기 · " + str(na) + "개", {"a": "box", "n": na}, true])
-			R.append({"btns": b})
-			R.append({"h": "최근 뽑기 기록"})
-			var H: Array = SV.hist.slice(0, 12)
-			for h in H:
-				R.append({"p": ("소로 상자 · " if h.k == "box" else "별 뽑기 · ") + h.x})
-			if H.is_empty():
-				R.append({"p": "아직 뽑기 기록이 없어요"})
+				b.append({"l": "모두 열기", "s": str(na) + "개 · 청석 " + _cm(na * 600), "a": {"a": "box", "n": na}, "cost": ["cs", na * 600], "sty": "soro", "dash": true})
+			R.append({"soro": "box", "btns": b, "info": ["상자 1개에서 스킨 1종의 파편이 1~3개 나와요", "1개 65% · 2개 25% · 3개 10%", "로봇 40% · 기지 25% · 테마 35% · 주 등급 82% · 크로 등급 18%", "이미 가진 스킨의 파편은 청석으로 돌려받아요 · 0.01% 확률로 크로 세트가 통째로!"]})
 		"set":
 			R.append({"h": "로봇 + 기지 + 테마 · 없는 것만 15% 할인"})
 			var cards: Array = []
@@ -4117,29 +4878,76 @@ func _rows_shop() -> Array:
 				var miss := set_miss(S)
 				var cost := roundi(miss * 0.85)
 				var e: bool = SV.eq == S.r and SV.beq == S.b and SV.teq == S.t
-				cards.append({"pv": ["set", i], "tag": "세트", "n": S.n, "d": P[0].n + " · " + P[1].n + " · " + P[2].n, "kro": true,
-					"btns": [["장착 중" if e else ("청석 " + str(cost) if miss > 0 else "세트 장착"), {"a": "set", "i": i}, not e]]})
+				var bt := {"l": "장착 중" if e else ("청석 " + str(cost) if miss > 0 else "세트 장착"), "a": {"a": "set", "i": i}, "en": not e}
+				if miss > 0 and not e:
+					bt.cost = ["cs", cost]
+				cards.append({"pv": ["set", i], "tag": "세트", "tc": "kro", "n": S.n, "d": P[0].n + " · " + P[1].n + " · " + P[2].n, "cls": "kro", "btns": [bt]})
 			R.append({"cards": cards})
 		"r", "b", "t":
 			var c: String = shop_tab2
 			var cat := "s" if c == "r" else c
-			var hdr: String = {"r": "주 등급 · 외형 변경 · 청석 300  /  크로 등급 · 외형 + 투사체 + 타격 효과", "b": "기지 모습 + 패배 시 폭발 연출 · 청석 500", "t": "필드 배경 · 상대 기지 · 상대 로봇 · 광산"}[c]
-			R.append({"h": hdr})
-			var cards: Array = [{"pv": [cat, ""], "tag": "기본", "n": {"r": "기본 도색", "b": "기본 기지", "t": "기본 테마"}[c], "d": "처음 모습",
-				"btns": [["장착 중" if SV[{"s": "eq", "b": "beq", "t": "teq"}[cat]] == "" else "장착", {"a": "uneq", "c": cat}, SV[{"s": "eq", "b": "beq", "t": "teq"}[cat]] != ""]]}]
-			for it in list_of(cat):
-				if it.get("g", "") == "star" or (it.has("ex") and not owns(it.id)):
-					continue
+			var key: String = {"s": "eq", "b": "beq", "t": "teq"}[cat]
+			var dflt := {"pv": [cat, ""], "n": {"r": "기본 도색", "b": "기본 기지", "t": "기본 테마"}[c], "d": "처음 모습",
+				"btns": [{"l": "장착 중" if SV[key] == "" else "장착", "a": {"a": "uneq", "c": cat}, "en": SV[key] != ""}]}
+			var mk := func(it: Dictionary) -> Dictionary:
 				var o := owns(it.id)
 				var e := equipped(it.id)
-				var pr: int = int(it.get("p", 0)) if int(it.get("p", 0)) > 0 else (500 if cat == "b" else 300)
-				var fr: int = int(SV.frag.get(it.id, 0))
 				var g: String = it.get("g", "b")
-				cards.append({"pv": [cat, it.id], "tag": {"ju": "주", "kro": "크로", "b": "기지"}.get(g, ""), "n": it.n, "d": it.d, "kro": g == "kro",
-					"st": ("파편 " + str(fr) + " / " + str(FN[cat if cat != "s" else "r"])) if (fr > 0 and not o) else "",
-					"btns": [["장착 중" if e else ("장착" if o else "청석 " + str(pr)), {"a": "buy", "id": it.id}, not e]]})
+				var fr: int = int(SV.frag.get(it.id, 0))
+				var bt := {"l": "장착 중" if e else ("장착" if o else "청석 " + str(_cpr(it.id))), "a": {"a": "buy", "id": it.id}, "en": not e}
+				if not o:
+					bt.cost = ["cs", _cpr(it.id)]
+				var cd := {"pv": [cat, it.id], "tag": {"ju": "주", "kro": "크로", "b": "기지"}.get(g, ""), "tc": "kro" if g == "kro" else "ju", "n": it.n, "d": it.d, "cls": "kro" if g == "kro" else "",
+					"frg": ("파편 " + str(fr) + " / " + str(FN[c])) if (fr > 0 and not o) else "", "btns": [bt]}
+				if cat == "t":
+					cd.btns.append({"l": "테마곡 미리듣기", "a": {"a": "tprev", "id": it.id}, "sty": "tpv"})
+				return cd
+			var L: Array = list_of(cat).filter(func(q): return q.get("g", "") != "star" and (not q.has("ex") or owns(q.id)))
+			if c == "r":
+				R.append({"h": "기본"})
+				R.append({"cards": [dflt]})
+				R.append({"h": "주 등급 · 외형 변경 · 청석 300"})
+				R.append({"cards": L.filter(func(q): return q.g == "ju").map(mk)})
+				R.append({"h": "크로 등급 · 외형 + 투사체 + 타격 효과"})
+				R.append({"cards": L.filter(func(q): return q.g == "kro").map(mk)})
+			else:
+				R.append({"h": "기지 모습 + 패배 시 폭발 연출 · 청석 500" if c == "b" else "필드 배경 · 상대 기지 · 상대 로봇 · 광산"})
+				R.append({"cards": [dflt] + L.map(mk)})
+		"hist":
+			var H: Array = SV.hist
+			var nb := H.filter(func(h): return h.get("k", "") == "box").size()
+			var ns := H.filter(func(h): return h.get("k", "") == "star").size()
+			var nk := H.filter(func(h): return h.get("g", "") in ["kro", "jack"]).size()
+			var nst := H.filter(func(h): return h.get("g", "") == "star").size()
+			R.append({"sum": [["소로 상자", str(nb) + "회", false], ["별 뽑기", str(ns) + "회", false], ["크로·잭팟", str(nk) + "회", false], ["★ 걸작 완품", str(nst) + "회", true]]})
+			R.append({"sfbar": [["종류", [["전체", {"a": "hf", "v": "all"}, hF == "all"], ["소로 상자", {"a": "hf", "v": "box"}, hF == "box"], ["별 뽑기", {"a": "hf", "v": "star"}, hF == "star"]]], ["최근 500회까지 기록돼요", []]]})
+			var L: Array = H.filter(func(h): return hF == "all" or h.get("k", "") == hF)
+			if L.is_empty():
+				R.append({"p": "아직 뽑기 기록이 없어요"})
+			else:
+				var GLN := {"ju": "주", "kro": "크로", "base": "기지", "jack": "잭팟", "star": "★ 걸작", "sf": "별 파편"}
+				var T: Array = [["시간", "종류", "결과"]]
+				var G: Array = [""]
+				for h in L.slice(0, 300):
+					T.append([_fmt_t(h.get("t", 0)), ("소로 상자" if h.get("k", "") == "box" else "별 뽑기") + " · " + GLN.get(h.get("g", ""), ""), str(h.get("x", ""))])
+					G.append(str(h.get("g", "")))
+				R.append({"tbl": T, "hist": true, "g": G})
+		"cash":
+			R.append({"h": "가상 결제 (실제 돈은 나가지 않아요) · 누적 ₩" + _cm(SV.get("paid", 0))})
+			var cards: Array = []
+			for i in CASH.size():
+				var P: Dictionary = CASH[i]
+				cards.append({"cash": true, "a": P.a, "bn": P.bn, "btns": [{"l": "₩" + _cm(P.w), "a": {"a": "cash", "i": i}}]})
 			R.append({"cards": cards})
 	return R
+
+func _fmt_t(t) -> String:
+	var s := float(t)
+	if s > 1e11:
+		s /= 1000.0
+	var bias: int = int(Time.get_time_zone_from_system().get("bias", 0))
+	var d := Time.get_datetime_dict_from_unix_time(int(s) + bias * 60)
+	return str(d.month) + "/" + str(d.day) + " " + "%02d:%02d" % [d.hour, d.minute]
 
 func _pc(n: float) -> String:
 	var v := n * 100.0
@@ -4154,14 +4962,14 @@ func _rows_prob() -> Array:
 	var cnt := func(L: Array, g: String) -> int: return L.filter(func(q): return q.get("g", "") == g and not q.has("ex")).size()
 	var rj: int = cnt.call(SK, "ju")
 	var rk: int = cnt.call(SK, "kro")
-	var bn: int = BS.filter(func(q): return not q.has("ex")).size()
+	var bn: int = BS.filter(func(q): return not q.has("ex") and q.get("g", "") != "star").size()
 	var tj: int = cnt.call(TS, "ju")
 	var tk: int = cnt.call(TS, "kro")
 	var ks: int = SETS.filter(func(S): return item(S.r).g == "kro").size()
 	var ms := star_all().size()
 	var R: Array = []
-	R.append({"p": "모든 확률은 게임 안에서 실제로 쓰이는 값과 같아요. 확률은 매번 독립적으로 적용돼요."})
-	R.append({"h": "소로 상자 · 청석 600"})
+	R.append({"p": "모든 확률은 게임 안에서 실제로 쓰이는 값과 같아요. 확률은 매번 독립적으로 적용돼요.", "mb": 14.0})
+	R.append({"h": "소로 상자 · 청석 600", "ic": "gift"})
 	R.append({"tbl": [["결과", "확률", "비고"],
 		["주 등급 로봇 스킨 파편", _pc(0.4 * 0.82 * JN), "1종당 " + _pc(0.4 * 0.82 * JN / rj) + " · " + str(rj) + "종"],
 		["크로 등급 로봇 스킨 파편", _pc(0.4 * 0.18 * JN), "1종당 " + _pc(0.4 * 0.18 * JN / rk) + " · " + str(rk) + "종"],
@@ -4175,7 +4983,7 @@ func _rows_prob() -> Array:
 	var Q := 1.0 - 1e-5
 	R.append({"tbl": [["결과", "확률", "비고"], ["★ 별 파편 1개", _pc(0.54 * Q), ""], ["★ 별 파편 2개", _pc(0.32 * Q), ""], ["★ 별 파편 3개", _pc(0.11 * Q), ""], ["★ 별 파편 4개", _pc(0.03 * Q), ""], ["★ 걸작 완품", _pc(1e-5), "미보유 걸작 " + str(ms) + "종 중 1개 균등"]]})
 	R.append({"p": "천장: 500번째 뽑기는 걸작 완품 확정 · 완품이 나오면 천장 초기화 · 별 파편 30개로 원하는 걸작 제작 · 걸작을 모두 가졌다면 완품 대신 별 파편 30개"})
-	R.append({"h": "배틀패스"})
+	R.append({"h": "배틀패스", "ic": "scroll"})
 	R.append({"p": "배틀패스 보상은 확률이 아닌 확정 보상이에요. 크로 파편 보상은 아직 없는 크로 로봇·테마 중 1종에 균등하게 들어가요."})
 	return R
 
@@ -4200,18 +5008,22 @@ func _rows_store() -> Array:
 	var fsum := 0
 	for v in SV.frag.values():
 		fsum += int(v)
-	R.append({"p": "로봇 " + cnt.call("s") + " · 기지 " + cnt.call("b") + " · 테마 " + cnt.call("t") + " · 스킨 파편 " + str(fsum) + " · ★ 별 파편 " + str(SV.sfrag) + " · 무료 상자 " + str(SV.fbox)})
+	var st: Array = star_all()
+	R.append({"sum": [["로봇", cnt.call("s"), false], ["기지", cnt.call("b"), false], ["테마", cnt.call("t"), false], ["★ 걸작", str(st.filter(func(q): return owns(q.id)).size()) + " / " + str(st.size()), true], ["스킨 파편", str(fsum), false], ["★ 별 파편", str(SV.sfrag), true], ["무료 상자", str(SV.fbox), false]]})
 	var nm := func(c: String) -> String:
 		var id: String = SV[{"s": "eq", "b": "beq", "t": "teq"}[c]]
 		return item(id).get("n", "기본") if id != "" else "기본"
-	R.append({"btns": [["로봇: " + nm.call("s") + (" · 기본으로" if SV.eq != "" else ""), {"a": "uneq", "c": "s"}, SV.eq != ""], ["기지: " + nm.call("b") + (" · 기본으로" if SV.beq != "" else ""), {"a": "uneq", "c": "b"}, SV.beq != ""], ["테마: " + nm.call("t") + (" · 기본으로" if SV.teq != "" else ""), {"a": "uneq", "c": "t"}, SV.teq != ""]]})
-	var chips := func(k: String, opts: Array) -> Array:
+	var eqr: Array = []
+	for q in [["s", "장착 중 · 로봇"], ["b", "기지"], ["t", "테마"]]:
+		var on: bool = SV[{"s": "eq", "b": "beq", "t": "teq"}[q[0]]] != ""
+		eqr.append([q[1], nm.call(q[0]), false, {"l": "기본으로", "a": {"a": "uneq", "c": q[0]}, "fs": 12, "sty": "mini"} if on else {}])
+	R.append({"sum": eqr})
+	var ch := func(k: String, opts: Array) -> Array:
 		var o: Array = []
 		for q in opts:
-			o.append([q[1], {"a": "sf", "k": k, "v": q[0]}, true, stF[k] == q[0]])
+			o.append([q[1], {"a": "sf", "k": k, "v": q[0]}, stF[k] == q[0]])
 		return o
-	R.append({"chips": chips.call("own", [["all", "전체"], ["yes", "보유"], ["no", "미보유"]]) + chips.call("cat", [["all", "모든 종류"], ["s", "로봇"], ["b", "기지"], ["t", "테마"]])})
-	R.append({"chips": chips.call("gr", [["all", "모든 등급"], ["ju", "주"], ["kro", "크로"], ["star", "★ 걸작"], ["pass", "패스 전용"], ["base", "일반 기지"]])})
+	R.append({"sfbar": [["보유", ch.call("own", [["all", "전체"], ["yes", "보유"], ["no", "미보유"]])], ["종류", ch.call("cat", [["all", "전체"], ["s", "로봇"], ["b", "기지"], ["t", "테마"]])], ["등급", ch.call("gr", [["all", "전체"], ["ju", "주"], ["kro", "크로"], ["star", "★ 걸작"], ["pass", "패스 전용"], ["base", "일반 기지"]])]]})
 	var cards: Array = []
 	for it in all:
 		var c := cat_of(it.id)
@@ -4224,353 +5036,687 @@ func _rows_store() -> Array:
 		if stF.gr != "all" and stF.gr != g:
 			continue
 		var e := equipped(it.id)
-		var st := ""
-		var bar := -1.0
-		if not o:
-			if g == "star":
-				st = "★ 별 파편 " + str(SV.sfrag) + " / 30"
-				bar = minf(1.0, SV.sfrag / 30.0)
-			elif g == "pass":
-				st = "배틀패스 보상"
-			else:
-				var n: int = int(SV.frag.get(it.id, 0))
-				var need: int = FN[c if c != "s" else "r"]
-				st = "파편 " + str(n) + " / " + str(need)
-				bar = float(n) / need
-		cards.append({"pv": [c, it.id], "tag": {"s": "로봇", "b": "기지", "t": "테마"}[c] + " · " + {"ju": "주", "kro": "크로", "star": "★ 걸작", "pass": "패스 전용", "base": "일반"}[g], "n": it.n, "d": "", "st": st, "bar": bar,
-			"star": g == "star", "kro": g == "kro", "dim": not o, "btns": [[("장착 중" if e else "장착"), {"a": "eq", "id": it.id}, not e]] if o else []})
-	R.append({"p": str(cards.size()) + "개"})
-	R.append({"cards": cards})
+		var cd := {"pv": [c, it.id], "tag": {"s": "로봇", "b": "기지", "t": "테마"}[c] + " · " + {"ju": "주", "kro": "크로", "star": "★ 걸작", "pass": "패스 전용", "base": "일반"}[g], "tc": "star" if g == "star" else ("kro" if g == "kro" else "ju"),
+			"n": it.n, "cls": "star" if g == "star" else ("kro" if g == "kro" else ""), "notown": not o}
+		if o:
+			cd.btns = [{"l": "장착 중" if e else "장착", "a": {"a": "eq", "id": it.id}, "en": not e}]
+		elif g == "star":
+			cd.sbar = {"v": minf(1.0, SV.sfrag / 30.0), "s": "★ 별 파편 " + str(SV.sfrag) + " / 30", "star": true}
+		elif g == "pass":
+			cd.sbar = {"v": 0.0, "s": "배틀패스 보상"}
+		else:
+			var n: int = int(SV.frag.get(it.id, 0))
+			var need: int = FN[c if c != "s" else "r"]
+			cd.sbar = {"v": float(n) / need, "s": "파편 " + str(n) + " / " + str(need)}
+		cards.append(cd)
+	R.append({"p": str(cards.size()) + "개", "mb": 8.0})
+	R.append({"cards": cards, "empty": "조건에 맞는 스킨이 없어요"})
 	return R
 
 func _rows_pass() -> Array:
-	var P := bp()
-	var lv := bp_lv()
-	var cur := int(P.xp) - lv * 500
+	return [{"season": true}, {"bph": true}, {"track": true}, {"p": "30단계 프리미엄 보상 · 패스 전용 은하 세트 (10단계 기지 · 20단계 테마 · 30단계 로봇) · 패스 전용 스킨은 상점과 상자에서 나오지 않아요", "mb": 4.0}]
+
+func _bgm_name(id: String) -> String:
+	if id == "auto":
+		return "자동 (장착한 테마 따라가기)"
+	if id == "base":
+		return "기본 배경음"
+	var it := item(id)
+	return ("★ " if it.get("g", "") == "star" else "") + str(it.get("n", id))
+
+func _bgm_opts() -> Array:
+	var o: Array = ["auto", "base"]
+	var L: Array = []
+	for id in MUS_IDS:
+		if SV.town.has(id):
+			L.append(id)
+	L.sort_custom(func(a, b): return item(a).get("g", "") == "star" and item(b).get("g", "") != "star")
+	return o + L
+
+func _rows_set() -> Array:
+	if set_tab == "p":
+		return _rows_prob()
 	var R: Array = []
-	R.append({"h": SEASON.n + "  ·  " + str(lv) + " / 30단계" + ("  ·  프리미엄" if P.prem else "")})
-	R.append({"bar": 1.0 if lv >= 30 else cur / 500.0, "bt": "MAX" if lv >= 30 else str(cur) + " / 500 XP"})
-	R.append({"p": "플레이 1분 +10 · 적 처치 +2 · 기지 정복 +30 · 레이드 방어 +50 · 게임을 끝내면 들어와요"})
-	R.append({"btns": [["프리미엄 해금 · 청석 2,000" if not P.prem else "프리미엄 해금됨", {"a": "bpbuy"}, not P.prem], ["1단계 구매 · 청석 100", {"a": "bpskip", "n": 1}, lv < 30], ["5단계 구매 · 청석 500", {"a": "bpskip", "n": 5}, lv < 30], ["받을 보상 모두 받기", {"a": "bpall"}, true]]})
-	R.append({"pass": true})
+	R.append({"h": "튜토리얼"})
+	R.append({"row2": [{"l": "튜토리얼 다시하기 (새 게임으로 시작)", "a": "ltut"}]})
+	R.append({"h": "화면"})
+	R.append({"vol": [["UI 크기", "uis"]]})
+	R.append({"p": "버튼 · 상점 · 로비 · 지도 글씨 크기를 한꺼번에 줄이거나 키워요. 폰은 100%여도 PC보다 작게 맞춰져 있어요."})
+	R.append({"h": "소리"})
+	R.append({"vol": [["효과음", "vol_s"], ["배경음", "vol_b"]], "btn": {"l": "음소거 해제" if SV.mute else "음소거", "a": "lmute", "fs": 13}})
+	R.append({"p": "게임 중에도 M 키로 음소거를 켜고 끌 수 있어요"})
+	R.append({"h": "배경음"})
+	var sw := 0.0
+	for id in _bgm_opts():
+		sw = maxf(sw, _tw(_bgm_name(id), 14) + 46.0)
+	R.append({"sel": _bgm_name(str(SV.get("bgm", "auto"))), "sel_w": sw})
+	R.append({"p": "테마마다 배경음이 달라요. 가진 테마의 곡은 따로 골라 들을 수 있어요. ★ 걸작 테마는 웅장한 전용곡이 있고, 걸작 세트를 완성하면 레이드 때 전용 편곡이 나와요."})
+	R.append({"h": "조작"})
+	R.append({"row2": [{"l": "조작법 전체 보기" + ("" if touch_ui() else " (Tab)"), "a": "lkeys"}, {"l": "계정 관리", "a": "lacct"}]})
+	R.append({"p": "한 손가락으로 지도 이동 · 두 손가락으로 확대 · 탭 선택·명령 · 같은 종류 두 번 탭 = 모두 선택 · 꾹 누르고 끌어서 묶기" if touch_ui() else "좌클릭 명령 · 좌클릭 드래그나 WASD로 지도 이동 · 우클릭 누른 채 드래그로 로봇 묶기 · 1~5 로봇 종류별 선택 · Ctrl(또는 Shift)+1~5 또는 숫자 두 번 = 그 로봇들이 모인 곳으로 화면 이동 · 6/스페이스 기름 · T 깃발 · Ctrl+휠 확대/축소"})
+	R.append({"h": "데이터"})
+	R.append({"row2": [{"l": "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", "a": "lwipe"}, {"l": "정말? 한 번 더" if wipe_arm == "lwipeall" else "게임 전체 초기화", "a": "lwipeall", "sty": "red"}, {"l": "뒤로", "a": "lback"}]})
 	return R
 
-func _layout_rows(R: Array, cr: Rect2, f: Font) -> void:
-	lob_draw.clear()
-	var y := cr.position.y - lob_scroll
-	var x0 := cr.position.x
-	var W := cr.size.x
-	for row in R:
-		if row.has("h"):
-			lob_draw.append({"k": "h", "p": Vector2(x0, y + 22.0), "s": row.h})
-			y += 34.0
-		elif row.has("p"):
-			var L := _wrap(f, row.p, 13, W)
-			for l in L:
-				lob_draw.append({"k": "p", "p": Vector2(x0, y + 16.0), "s": l})
-				y += 20.0
-			y += 6.0
-		elif row.has("bar"):
-			lob_draw.append({"k": "bar", "r": Rect2(x0, y, W, 22.0), "v": row.bar, "s": row.bt})
-			y += 32.0
-		elif row.has("tbl"):
-			var T: Array = row.tbl
-			for ri in T.size():
-				lob_draw.append({"k": "trow", "r": Rect2(x0, y, W, 26.0), "c": T[ri], "head": ri == 0})
-				y += 26.0
-			y += 10.0
-		elif row.has("btns") or row.has("chips"):
-			var B: Array = row.btns if row.has("btns") else row.chips
-			var bx := x0
-			var bh := 38.0 if row.has("btns") else 30.0
-			for b in B:
-				var bw: float = f.get_string_size(b[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 30.0
-				if bx + bw > x0 + W:
-					bx = x0
-					y += bh + 8.0
-				var r := Rect2(bx, y, bw, bh)
-				var on: bool = b[3] if b.size() > 3 else false
-				lob_draw.append({"k": "btn", "r": r, "s": b[0], "en": b[2], "on": on, "chip": row.has("chips")})
-				if r.end.y > cr.position.y and r.position.y < cr.end.y:
-					_add("cb", r, b[2], "", b[1])
-				bx += bw + 8.0
-			y += bh + 12.0
-		elif row.has("cards"):
-			var cw := 172.0
-			var ch := 262.0
-			var cols := maxi(1, int((W + 12.0) / (cw + 12.0)))
-			cw = (W - 12.0 * (cols - 1)) / cols
-			var n: int = row.cards.size()
-			for i in n:
-				var c: Dictionary = row.cards[i]
-				var r := Rect2(x0 + (i % cols) * (cw + 12.0), y + int(i / cols) * (ch + 12.0), cw, ch)
-				if r.end.y < cr.position.y - 10.0 or r.position.y > cr.end.y + 10.0:
-					continue
-				lob_draw.append({"k": "card", "r": r, "c": c})
-				var bts: Array = c.get("btns", [])
-				for j in bts.size():
-					var b: Array = bts[j]
-					var br := Rect2(r.position.x + 8.0, r.end.y - 38.0 - j * 34.0, r.size.x - 16.0, 30.0)
-					lob_draw.append({"k": "btn", "r": br, "s": b[0], "en": b[2], "on": false, "chip": false})
-					if br.end.y > cr.position.y and br.position.y < cr.end.y:
-						_add("cb", br, b[2], "", b[1])
-			y += ceili(n / float(cols)) * (ch + 12.0) + 6.0
-		elif row.has("pass"):
-			var cw := 120.0
-			var th := 290.0
-			var tr := Rect2(x0, y, W, th)
-			lob_draw.append({"k": "track", "r": tr})
-			var P := bp()
-			var lv := bp_lv()
-			for L in range(1, 31):
-				var cx := x0 + 96.0 + (L - 1) * (cw + 8.0) - pass_scroll
-				if cx < x0 + 90.0 or cx + cw > x0 + W:
-					continue
-				for ti in 2:
-					var tp := "f" if ti == 0 else "p"
-					var r = bpr(L)[tp]
-					var cr2 := Rect2(cx, y + 34.0 + ti * 128.0, cw, 120.0)
-					var got: bool = (P.cf if tp == "f" else P.cp).has(L)
-					var lk: bool = lv < L or (tp == "p" and not P.prem)
-					lob_draw.append({"k": "bpr", "r": cr2, "rw": r, "got": got, "lk": lk, "L": L, "tp": tp})
-					if r != null and not got and not lk:
-						var br := Rect2(cr2.position.x + 8.0, cr2.end.y - 32.0, cw - 16.0, 26.0)
-						lob_draw.append({"k": "btn", "r": br, "s": "받기", "en": true, "on": true, "chip": false})
-						_add("cb", br, true, "", {"a": "bpc", "t": tp, "L": L})
-				lob_draw.append({"k": "lvn", "p": Vector2(cx, y + 24.0), "w": cw, "L": L, "on": lv >= L})
-			y += th + 10.0
-	lob_max = maxf(0.0, y + lob_scroll - cr.end.y + 20.0)
+# ── 화면 만들기 ──
+func _cos_on() -> bool:
+	return lsec in ["shop", "store", "pass", "set", "prob"]
 
-func _draw_rows(f: Font, hov) -> void:
-	var cr := _content_rect()
+func _cos_small() -> bool:
+	return lsec in ["shop", "store", "pass"]
+
+func _build_cos() -> void:
+	if lsec == "prob":
+		lsec = "set"
+		set_tab = "p"
+	var u := ui_size()
+	var small := _cos_small()
+	var W := minf(1040.0 if small else 1000.0, u.x - 24.0)
+	var px := (u.x - W) / 2.0
+	var top := 132.0 if small else 205.0
+	var x0 := px + 16.0
+	var iw := W - 32.0
+	var y := top + 16.0
+	cos_hdr = []
+	var tabs: Array = []
+	var cur := ""
+	if lsec == "shop":
+		for l in _wrap(ThemeDB.fallback_font, "게임이 끝나면 그 판에 번 광석 총량의 4% + 정복한 기지마다 보너스(1구역 10 ~ 7구역 70)가 청석으로 들어와요. 스킨은 모든 로봇에 적용돼요.", 12, iw):
+			cos_hdr.append({"k": "t", "p": Vector2(x0, y + 13.0), "s": l, "fs": 12, "c": Color("#8a9bad")})
+			y += 18.0
+		y += 19.0
+		var own := func(a: Array, L: Array) -> String: return str(L.filter(func(q): return a.has(q.id) and q.get("g", "") != "star").size()) + "/" + str(L.filter(func(q): return q.get("g", "") != "star").size())
+		tabs = [["star", "★ 걸작", "", ""], ["box", "소로 상자", "", "gift"], ["set", "세트", "", ""], ["r", "로봇 스킨", own.call(SV.own, SK), ""], ["b", "기지 스킨", own.call(SV.bown, BS), ""], ["t", "테마", own.call(SV.town, TS), ""], ["hist", "뽑기 내역", "", "scroll"]]
+		if SV.get("cashOn", true) != false:
+			tabs.append(["cash", "충전", "", "gem"])
+		cur = shop_tab2
+	elif lsec == "set":
+		tabs = [["a", "일반", "", ""], ["p", "확률표", "", "chart"]]
+		cur = set_tab
+	if not tabs.is_empty():
+		y = _tabs_layout(tabs, x0, y, iw, cur)
+		cos_hdr.append({"k": "ln", "a": Vector2(x0, y + 10.0), "b": Vector2(x0 + iw, y + 10.0), "c": Color("#2b3640")})
+		y += 21.0
+	var R: Array = []
+	match lsec:
+		"shop": R = _rows_shop()
+		"store": R = _rows_store()
+		"pass": R = _rows_pass()
+		"set": R = _rows_set()
+	lob_draw = []
+	_cl = []
+	var H := _L(R, x0, y - lob_scroll, iw)
+	var reserve := 54.0 if small else 0.0
+	var vh := minf(H, maxf(120.0, u.y - y - reserve - 24.0))
+	cos_vp = Rect2(px + 1.0, y, W - 2.0, vh)
+	lob_max = maxf(0.0, H - vh)
+	var bot := y + vh
+	if small:
+		var be := {"k": "btn", "r": Rect2(x0, bot + 6.0, iw, 42.0), "l": "뒤로", "sty": "def", "en": true, "fs": 13}
+		cos_hdr.append(be)
+		be.it = _add("lback", be.r)
+		bot += 48.0
+	cos_pr = Rect2(px, top, W, bot + 16.0 - top)
+	for c in _cl:
+		var rr: Rect2 = (c[1] as Rect2).intersection(cos_vp) if c[4] else c[1]
+		if rr.size.x > 1.0 and rr.size.y > 1.0:
+			c[3].it = _add(c[0], rr, true, "", c[2])
+	if bgm_open and lsec == "set":
+		_build_bgm_list()
+
+func _build_bgm_list() -> void:
+	var sel = null
 	for e in lob_draw:
-		match e.k:
-			"h":
-				if e.p.y > cr.position.y and e.p.y < cr.end.y + 10.0:
-					draw_string(f, e.p, e.s, HORIZONTAL_ALIGNMENT_LEFT, cr.size.x, 15, Color("#ffe6a6"))
-			"p":
-				if e.p.y > cr.position.y and e.p.y < cr.end.y + 10.0:
-					draw_string(f, e.p, e.s, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#9fb3c2"))
-			"trow":
-				var r: Rect2 = e.r
-				if r.end.y < cr.position.y or r.position.y > cr.end.y:
-					continue
-				draw_rect(r, Color(1, 1, 1, 0.08) if e.head else Color(1, 1, 1, 0.02))
-				draw_line(Vector2(r.position.x, r.end.y), r.end, Color(1, 1, 1, 0.08), 1.0)
-				var ws_ := [0.42, 0.18, 0.40]
-				var xx := r.position.x + 8.0
-				for ci in 3:
-					draw_string(f, Vector2(xx, r.position.y + 18.0), str(e.c[ci]), HORIZONTAL_ALIGNMENT_LEFT, r.size.x * ws_[ci] - 10.0, 13, Color("#ffe6a6") if e.head else (Color.WHITE if ci < 2 else Color("#9fb3c2")))
-					xx += r.size.x * ws_[ci]
-			"bar":
-				var r: Rect2 = e.r
-				draw_rect(r, Color(1, 1, 1, 0.08))
-				draw_rect(Rect2(r.position, Vector2(r.size.x * clampf(e.v, 0, 1), r.size.y)), Color("#c79bff"))
-				draw_string(f, r.position + Vector2(0, 16), e.s, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, Color.WHITE)
-			"btn":
-				var r: Rect2 = e.r
-				if r.end.y < cr.position.y or r.position.y > cr.end.y:
-					continue
-				var sb := StyleBoxFlat.new()
-				sb.set_corner_radius_all(6)
-				sb.set_border_width_all(1)
-				if e.chip:
-					sb.bg_color = Color("#3a2c10") if e.on else Color("#141c24")
-					sb.border_color = Color("#ffd76a") if e.on else Color(1, 1, 1, 0.15)
-				elif e.en:
-					sb.bg_color = Color("#d9b04e") if e.on else Color("#1c2834")
-					sb.border_color = Color("#ffd76a") if e.on else Color("#c9a255")
-				else:
-					sb.bg_color = Color("#10151a")
-					sb.border_color = Color(1, 1, 1, 0.1)
-				sb.draw(get_canvas_item(), r)
-				var tc := Color("#2a1a02") if (e.on and not e.chip and e.en) else (Color.WHITE if e.en else Color("#6a7682"))
-				draw_string(f, Vector2(r.position.x, r.position.y + r.size.y / 2.0 + 5.0), e.s, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, tc)
-			"card":
-				_draw_card(f, e.r, e.c)
-			"track":
-				draw_rect(e.r, Color(0, 0, 0, 0.25))
-				draw_string(f, e.r.position + Vector2(8, 24), "단계", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#9fb3c2"))
-				draw_string(f, e.r.position + Vector2(8, 34 + 64), "무료", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
-				draw_string(f, e.r.position + Vector2(8, 34 + 128 + 64), "프리미엄", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffd76a"))
-			"lvn":
-				draw_string(f, e.p, str(e.L), HORIZONTAL_ALIGNMENT_CENTER, e.w, 15, Color("#ffd76a") if e.on else Color("#6a7682"))
-			"bpr":
-				var r: Rect2 = e.r
-				var sb := StyleBoxFlat.new()
-				sb.set_corner_radius_all(8)
-				sb.set_border_width_all(1)
-				sb.bg_color = Color("#141c24") if not e.got else Color("#10261e")
-				sb.border_color = Color("#ffd76a") if (e.tp == "p" and e.rw != null and e.rw.has("skin")) else Color(1, 1, 1, 0.12)
-				sb.draw(get_canvas_item(), r)
-				if e.rw == null:
-					continue
-				var rw: Dictionary = e.rw
-				if rw.has("skin"):
-					draw_preview(Rect2(r.position + Vector2(10, 8), Vector2(r.size.x - 20, (r.size.x - 20) * 0.6)), cat_of(rw.skin), rw.skin, t_real)
-				else:
-					var ic := Color("#7fd8ff") if rw.has("cs") else (Color("#c79bff") if rw.has("box") else Color("#ff8fb8"))
-					draw_circle(r.position + Vector2(r.size.x / 2.0, 34), 16, Color(ic, 0.3))
-					draw_circle(r.position + Vector2(r.size.x / 2.0, 34), 9, ic)
-				draw_string(f, r.position + Vector2(4, 78), rt_txt(rw), HORIZONTAL_ALIGNMENT_CENTER, r.size.x - 8.0, 11, Color.WHITE if not e.lk else Color("#6a7682"))
-				if e.got:
-					draw_string(f, r.position + Vector2(0, r.size.y - 12.0), "받음", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#8be28b"))
-				elif e.lk:
-					draw_string(f, r.position + Vector2(0, r.size.y - 12.0), "잠김", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#6a7682"))
+		if e.k == "sel":
+			sel = e
+	if sel == null:
+		bgm_open = false
+		return
+	var u := ui_size()
+	_add("bgmx", Rect2(Vector2.ZERO, u))
+	var O := _bgm_opts()
+	var r: Rect2 = sel.r
+	var h := O.size() * 28.0 + 4.0
+	var y := r.end.y + 2.0
+	if y + h > u.y - 8.0:
+		y = maxf(8.0, r.position.y - 2.0 - h)
+	for i in O.size():
+		_add("bgmopt", Rect2(r.position.x + 2.0, y + 2.0 + i * 28.0, r.size.x - 4.0, 28.0), true, "", O[i])
 
-func _draw_card(f: Font, r: Rect2, c: Dictionary) -> void:
-	var cr := _content_rect()
-	var sb := StyleBoxFlat.new()
-	sb.set_corner_radius_all(10)
-	sb.set_border_width_all(1)
-	sb.bg_color = Color("#161320") if c.get("star", false) else Color("#121a22")
-	sb.border_color = Color("#ffd76a") if c.get("star", false) else (Color("#b07aff") if c.get("kro", false) else Color(1, 1, 1, 0.12))
-	sb.draw(get_canvas_item(), r)
-	var pv := Rect2(r.position + Vector2(8, 8), Vector2(r.size.x - 16, (r.size.x - 16) * 0.6))
-	if pv.position.y > cr.position.y - 20.0 and pv.end.y < cr.end.y + 40.0:
+func _lobby_cos(f: Font, hov) -> void:
+	var u := ui_size()
+	var pr := cos_pr
+	var vp := cos_vp
+	draw_rect(pr, PBG)
+	_draw_rows(hov)
+	# 내용이 패널 밖으로 안 나가게 가려요
+	_page_bg(Rect2(0, 0, u.x, pr.position.y))
+	_page_bg(Rect2(0, pr.end.y, u.x, u.y - pr.end.y))
+	draw_rect(Rect2(pr.position.x, pr.position.y, pr.size.x, vp.position.y - pr.position.y), PBG)
+	draw_rect(Rect2(pr.position.x, vp.end.y, pr.size.x, pr.end.y - vp.end.y), PBG)
+	draw_rect(pr, Color("#2b3640"), false, 1.0)
+	for e in cos_hdr:
+		_draw_e(e, hov)
+	if lob_max > 0.0:
+		var k := clampf(lob_scroll / lob_max, 0.0, 1.0)
+		var hh := maxf(30.0, vp.size.y * vp.size.y / (vp.size.y + lob_max))
+		_gbox(Rect2(pr.end.x - 11.0, vp.position.y + (vp.size.y - hh) * k, 7.0, hh), Color("#3a4a58"), 180.0, 4.0)
+	_logo(f, _cos_small())
+	if bgm_open and lsec == "set":
+		_draw_bgm_list(hov)
+
+func _draw_bgm_list(hov) -> void:
+	var first := true
+	for it in ui:
+		if it.id != "bgmopt":
+			continue
+		var r: Rect2 = it.r
+		if first:
+			var n := _bgm_opts().size()
+			var box := Rect2(r.position.x - 2.0, r.position.y - 2.0, r.size.x + 4.0, n * 28.0 + 4.0)
+			_glow(box, Color(0, 0, 0, 0.6), 10.0)
+			_gbox(box, Color("#10151a"), 180.0, 2.0, Color("#33414d"))
+			first = false
+		var on: bool = str(SV.get("bgm", "auto")) == str(it.arg)
+		if on or hov == it:
+			draw_rect(r, Color("#2a3a4e") if hov == it else Color("#1e2a36"))
+		draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 10.0, r.position.y + 19.0), _bgm_name(str(it.arg)), HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20.0, 14, Color("#ffe9b8") if on else Color("#dfe6ea"))
+
+func _draw_rows(hov) -> void:
+	var vp := cos_vp
+	for e in lob_draw:
+		var r = e.get("r")
+		if r != null and ((r as Rect2).end.y < vp.position.y - 4.0 or (r as Rect2).position.y > vp.end.y + 4.0):
+			continue
+		if e.k == "t" and (e.p.y < vp.position.y - 30.0 or e.p.y > vp.end.y + 30.0):
+			continue
+		_draw_e(e, hov)
+
+func _draw_e(e: Dictionary, hov) -> void:
+	var f := ThemeDB.fallback_font
+	match e.k:
+		"t":
+			_dt(e)
+		"ln":
+			draw_line(e.a, e.b, e.c, 1.0)
+		"box":
+			if e.has("glow"):
+				_glow(e.r, e.glow, 14.0, e.get("rad", 0.0))
+			_gbox(e.r, e.st, e.get("ang", 180.0), e.get("rad", 0.0), e.get("bc", Color(0, 0, 0, 0)), 1.0)
+		"btn":
+			_wbtn(e, hov)
+		"ic":
+			if e.kind == "sbx":
+				_sbx(e.c, 1.0)
+			else:
+				_stbx(e.c, 1.0)
+		"card":
+			_draw_card(e)
+		"sl":
+			var r: Rect2 = e.r
+			var nm: Array = {"uis": [50, 130], "vol_s": [0, 100], "vol_b": [0, 100]}[e.key]
+			var k: float = clampf((float(SV[e.key]) - float(nm[0])) / float(nm[1] - nm[0]), 0.0, 1.0)
+			var cy := r.position.y + r.size.y / 2.0
+			_gbox(Rect2(r.position.x, cy - 3.0, r.size.x, 6.0), Color("#c9ced4"), 180.0, 3.0)
+			_gbox(Rect2(r.position.x, cy - 3.0, r.size.x * k, 6.0), Color("#e8c36a"), 180.0, 3.0)
+			draw_circle(Vector2(r.position.x + 7.0 + (r.size.x - 14.0) * k, cy), 8.0, Color("#e8c36a"))
+		"sel":
+			var r: Rect2 = e.r
+			var h: bool = hov != null and e.get("it") != null and hov == e.it
+			_gbox(r, Color("#10151a"), 180.0, 2.0, Color("#4fd1b5") if h else Color("#33414d"))
+			draw_string(f, Vector2(r.position.x + 9.0, r.position.y + 24.0), e.s, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 34.0, 14, Color("#dfe6ea"))
+			var c := Vector2(r.end.x - 16.0, r.position.y + 18.0)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-5, -2), c + Vector2(5, -2), c + Vector2(0, 4)]), Color("#dfe6ea"))
+		"bar":
+			var r: Rect2 = e.r
+			_gbox(r, Color("#05080b"), 180.0, 11.0, Color("#3a4a58"))
+			var fw: float = r.size.x * clampf(e.v, 0.0, 1.0)
+			if fw > 2.0:
+				var fr := Rect2(r.position.x + 1.0, r.position.y + 1.0, fw - 2.0, r.size.y - 2.0)
+				_glow(fr, Color(1.0, 0.89, 0.54, 0.5), 8.0, 10.0)
+				_gbox(fr, _g2("#b8902f", "#ffe28a"), 90.0, 10.0)
+			_dt({"p": Vector2(r.position.x, r.position.y + 16.0), "s": e.s, "fs": 13, "b": true, "c": Color("#dfe6ea"), "al": 1, "w": r.size.x, "sh": [1.0, Color(0, 0, 0, 0.8)]})
+		"bpn":
+			var r: Rect2 = e.r
+			if e.get("lab", false):
+				draw_rect(r.grow_individual(0, 4, 6, 6), PBG)
+			if e.get("got", false):
+				_gbox(r, _g2("#e8c36a", "#b8902f"), 180.0, 6.0, Color("#f3d98e"))
+			else:
+				_gbox(r, Color("#0b1015"), 180.0, 6.0, Color("#e8c36a") if e.get("next", false) else Color("#2b3640"))
+			var tc := Color("#1c1406") if e.get("got", false) else (Color("#ffe9b8") if e.get("next", false) else Color("#8a9bad"))
+			draw_string(fb(), Vector2(r.position.x, r.position.y + 18.0), e.s, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 14, tc)
+		"bpr":
+			_draw_bpr(e, hov)
+		"hmask":
+			var u := ui_size()
+			var y0: float = e.y0
+			var hh: float = e.y1 - e.y0
+			_page_bg(Rect2(0, y0, cos_pr.position.x, hh))
+			draw_rect(Rect2(cos_pr.position.x, y0, e.x0 - cos_pr.position.x, hh), PBG)
+			draw_rect(Rect2(e.x1, y0, cos_pr.end.x - e.x1, hh), PBG)
+			_page_bg(Rect2(cos_pr.end.x, y0, u.x - cos_pr.end.x, hh))
+
+func _draw_bpr(e: Dictionary, hov) -> void:
+	var r: Rect2 = e.r
+	var p: bool = e.tp == "p"
+	if e.has("lab"):
+		draw_rect(r.grow_individual(0, 3, 6, 3), PBG)
+	var isx: bool = e.get("rw") != null and (e.rw as Dictionary).has("skin")
+	var bc := Color("#4a3a6a") if p else Color("#2b3640")
+	if isx:
+		bc = Color("#c08cff")
+	if e.get("can", false):
+		bc = Color("#c08cff") if isx else Color("#e8c36a")
+		_glow(r, Color(0.75, 0.55, 1.0, 0.7) if isx else Color(0.91, 0.76, 0.42, 0.45), 12.0 if not isx else 16.0, 9.0)
+	_gbox(r, _g2("#1e1430", "#0e0a18") if p else Color("#0e141a"), 180.0, 9.0, bc)
+	if e.has("lab"):
+		var tc := Color("#d2a8ff") if p else Color("#9fb0bf")
+		if p:
+			_icon("crown", Vector2(r.position.x + r.size.x / 2.0, r.position.y + 50.0), 16.0)
+		draw_string(fb(), Vector2(r.position.x, r.position.y + (78.0 if p else 69.0)), e.lab, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, tc)
+		return
+	if e.rw == null:
+		_fade(r.grow(1.0), 0.65)
+		return
+	var rw: Dictionary = e.rw
+	var hh := _bpr_stack(e)
+	var y := r.position.y + (128.0 - hh) / 2.0
+	var cx := r.position.x + 56.0
+	if rw.has("cs"):
+		_gem(Vector2(cx, y + 16.0), 20.0)
+		y += 32.0
+	elif rw.has("box"):
+		_sbx(Vector2(cx, y + 16.0), 38.0 / 70.0, false)
+		y += 32.0
+	elif rw.has("frag"):
+		draw_string(ThemeDB.fallback_font, Vector2(r.position.x, y + 24.0), "◆", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 26, Color("#e8c36a"))
+		y += 28.0
+	else:
+		var pv := Rect2(cx - 46.0, y, 92.0, 55.0)
+		draw_preview(pv, cat_of(rw.skin), rw.skin, t_real)
+		if e.lk:
+			_fade(pv, 0.35, Color("#3a3a3a"))
+		y += 55.0
+	y += 5.0
+	for l in _wrap(ThemeDB.fallback_font, rt_txt(rw), 12, 100.0):
+		draw_string(ThemeDB.fallback_font, Vector2(r.position.x, y + 12.0), l, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#dfe6ea"))
+		y += 16.0
+	y += 5.0
+	if e.got:
+		draw_string(ThemeDB.fallback_font, Vector2(r.position.x, y + 12.0), "✓ 받음", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#7affd4"))
+	elif e.can and e.has("btn"):
+		_wbtn(e.btn, hov)
+	elif p and not bp().prem:
+		_icon("lock", Vector2(cx, y + 7.0), 13.0)
+	if e.got:
+		_fade(r.grow(1.0), 0.45)
+	elif e.lk:
+		_fade(r.grow(1.0), 0.5)
+
+func _draw_card(e: Dictionary) -> void:
+	var c: Dictionary = e.c
+	var r: Rect2 = e.r
+	var f := ThemeDB.fallback_font
+	var cls: String = c.get("cls", "")
+	if c.get("cash", false):
+		_gbox(r, _g2("#122233", "#0c141c"), 180.0, 0.0, Color("#2f5a7a"))
+		_gem(Vector2(r.get_center().x, e.gy + 27.0), 30.0)
+		draw_string(fb(), Vector2(r.position.x, e.gy + 54.0 + 22.0), _cm(c.a), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 19, Color("#7fd2ff"))
+		if int(c.bn) > 0:
+			draw_string(f, Vector2(r.position.x, e.gy + 54.0 + 26.0 + 13.0), "+" + str(c.bn) + " 보너스 포함", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 11, Color("#ffd27a"))
+		return
+	if cls == "star":
+		_glow(r, Color(0.75, 0.55, 1.0, 0.25), 16.0)
+	if e.af:
+		_glow(r, Color(0.23, 0.88, 0.48, 0.28), 12.0)
+	var bc := Color("#2b3640")
+	var st = Color("#10151a")
+	if cls == "kro":
+		bc = Color("#6a5a2a")
+		st = _g2("#211c10", "#10151a")
+	elif cls == "star":
+		bc = Color("#c08cff")
+		st = _g2("#22183a", "#0e0a18")
+	if e.af:
+		bc = Color("#3ae07a")
+	_gbox(r, st, 180.0, 0.0, bc)
+	var pv: Rect2 = e.pv
+	if pv.end.y > cos_vp.position.y - 4.0 and pv.position.y < cos_vp.end.y + 4.0:
 		draw_preview(pv, c.pv[0], c.pv[1], t_real)
-		if c.get("dim", false):
-			draw_rect(pv, Color(0, 0, 0, 0.45))
-	var y := pv.end.y + 18.0
-	draw_string(f, Vector2(r.position.x + 10, y), c.tag, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20.0, 11, Color("#ffd76a") if c.get("star", false) else (Color("#c79bff") if c.get("kro", false) else Color("#8a9bad")))
-	draw_string(f, Vector2(r.position.x + 10, y + 20), c.n, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 20.0, 15, Color.WHITE)
-	var L := _wrap(f, c.get("d", ""), 11, r.size.x - 20.0)
-	for i in mini(2, L.size()):
-		draw_string(f, Vector2(r.position.x + 10, y + 38 + i * 15), L[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#9fb3c2"))
-	if c.get("st", "") != "":
-		var by: float = r.end.y - 38.0 - float(c.get("btns", []).size()) * 34.0 - 4.0
-		if c.get("bar", -1.0) >= 0.0:
-			draw_rect(Rect2(r.position.x + 8, by - 18, r.size.x - 16, 16), Color(1, 1, 1, 0.08))
-			draw_rect(Rect2(r.position.x + 8, by - 18, (r.size.x - 16) * clampf(c.bar, 0, 1), 16), Color("#5a7a9a"))
-		draw_string(f, Vector2(r.position.x, by - 6), c.st, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 11, Color("#c9d4dc"))
+		if c.get("notown", false):
+			_fade(pv, 0.45, Color("#3a3e44"))
+	var x := pv.position.x
+	var tg: String = c.get("tag", "")
+	if tg != "":
+		var tw := _tw(tg, 11) + 12.0
+		var tcol := Color("#5fe0c4")
+		if c.get("tc", "") == "kro":
+			tcol = Color("#e8c36a")
+		elif c.get("tc", "") == "star":
+			tcol = Color("#ffd25a")
+		draw_rect(Rect2(x, e.ny - 12.0, tw, 17.0), tcol, false, 1.0)
+		draw_string(f, Vector2(x + 6.0, e.ny + 1.0), tg, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, tcol)
+		x += tw + 6.0
+	draw_string(fb(), Vector2(x, e.ny + 1.0), c.n, HORIZONTAL_ALIGNMENT_LEFT, maxf(10.0, pv.end.x - x), 14, Color("#dfe6ea"))
+	if e.has("dl"):
+		var y: float = e.dy
+		for l in e.dl:
+			draw_string(f, Vector2(pv.position.x, y), l, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8a9bad"))
+			y += 17.0
+	if e.has("d2l"):
+		var y2: float = e.d2y
+		for l in e.d2l:
+			draw_string(fb(), Vector2(pv.position.x, y2), l, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#ffd76a"))
+			y2 += 17.0
+	if e.has("fr"):
+		_gbox(e.fr, Color("#1e180a"), 180.0, 4.0, Color("#5c4316"))
+		draw_string(f, e.fr.position + Vector2(7.0, 15.0), c.frg, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#ffd27a"))
+	if e.has("sb"):
+		var sr: Rect2 = e.sb
+		_gbox(sr, Color("#05080b"), 180.0, 5.0, Color("#2b3640"))
+		var v: float = clampf(c.sbar.v, 0.0, 1.0)
+		if v > 0.0:
+			_gbox(Rect2(sr.position.x + 1.0, sr.position.y + 1.0, maxf(4.0, (sr.size.x - 2.0) * v), sr.size.y - 2.0), _g2("#7a5aff", "#d2a8ff") if c.sbar.get("star", false) else _g2("#b8902f", "#ffe28a"), 90.0, 4.0)
+		_dt({"p": Vector2(sr.position.x, sr.position.y + 15.0), "s": c.sbar.s, "fs": 12, "b": true, "c": Color("#dfe6ea"), "al": 1, "w": sr.size.x, "sh": [1.0, Color(0, 0, 0, 0.9)]})
+	if c.get("notown", false):
+		_fade(r.grow(1.0), 0.38)
+
+# ── 상자 열기 창 (#boxw .bxin) ──
+func _box_card_h(q: Dictionary, cw: float) -> float:
+	if box_star and q.res == "sf":
+		return 12.0 + 48.0 + 5.0 + 22.0 + 5.0 + 20.0 + 12.0 + 4.0
+	var pvh := (cw - 28.0) * 0.6
+	if q.res == "starx":
+		pvh = 0.0
+	return 12.0 + pvh + 5.0 + 16.0 + 5.0 + (26.0 if q.res in ["jack", "star", "starx"] else 22.0) + 5.0 + 20.0 + (5.0 + 17.0 if not box_star else 0.0) + 12.0 + 4.0
+
+func _box_geo() -> Dictionary:
+	var u := ui_size()
+	var W := minf(820.0, u.x * 0.94)
+	var iw := W - 36.0
+	var cols := maxi(1, int((iw + 12.0) / (190.0 + 12.0)))
+	var cw := minf(230.0, (iw - 12.0 * (cols - 1)) / cols)
+	var gw := cols * cw + (cols - 1) * 12.0
+	# 줄 나누기 (잭팟·걸작 완품은 한 줄 통째로)
+	var rows: Array = []
+	var cur: Array = []
+	for i in box_res.size():
+		var q: Dictionary = box_res[i]
+		if q.res in ["jack", "star", "starx"]:
+			if not cur.is_empty():
+				rows.append(cur)
+				cur = []
+			rows.append([i])
+		else:
+			cur.append(i)
+			if cur.size() == cols:
+				rows.append(cur)
+				cur = []
+	if not cur.is_empty():
+		rows.append(cur)
+	var pos := {}
+	var y := 0.0
+	for rw in rows:
+		var hh := 0.0
+		var big: bool = rw.size() == 1 and box_res[rw[0]].res in ["jack", "star", "starx"]
+		var w := minf(420.0, iw) if big else cw
+		for i in rw:
+			hh = maxf(hh, _box_card_h(box_res[i], w))
+		var x := (iw - (w if big else rw.size() * cw + (rw.size() - 1) * 12.0)) / 2.0 if big else (iw - gw) / 2.0
+		for k in rw.size():
+			pos[rw[k]] = Rect2(x + k * (cw + 12.0), y, w, hh)
+		y += hh + 12.0
+	var gh := maxf(0.0, y - 12.0)
+	var busy := box_busy()
+	var fixed := 18.0 + 76.0 + 12.0 + 20.0 + 12.0 + 12.0 + 38.0 + 30.0 + 18.0
+	var gvis := minf(gh, minf(u.y * 0.6, u.y * 0.9 - fixed))
+	var H := fixed + gvis
+	var top := (u.y - H) / 2.0
+	var x0 := (u.x - W) / 2.0
+	return {"pr": Rect2(x0, top, W, H), "iw": iw, "pos": pos, "gh": gh, "gvis": gvis, "gy": top + 18.0 + 76.0 + 12.0 + 20.0 + 12.0, "busy": busy}
+
+func _build_box() -> void:
+	ui.clear()
+	var G := _box_geo()
+	var pr: Rect2 = G.pr
+	box_vp = Rect2(pr.position.x + 18.0, G.gy, G.iw, G.gvis)
+	box_max = maxf(0.0, G.gh - G.gvis)
+	if G.busy and box_shown > 0:
+		var last: Rect2 = G.pos.get(box_shown - 1, Rect2())
+		box_scroll = maxf(box_scroll, last.end.y - G.gvis)
+	box_scroll = clampf(box_scroll, 0.0, box_max)
+	var by := G.gy + G.gvis + 12.0
+	_add("boxok", Rect2(pr.position.x + 18.0, by, G.iw, 38.0))
+	if G.busy:
+		var w := _tw("건너뛰기 ▸▸", 12) + 30.0
+		_add("boxskip", Rect2(pr.position.x + (pr.size.x - w) / 2.0, by + 46.0, w, 26.0))
 
 func _box_overlay(f: Font, hov) -> void:
 	var u := ui_size()
-	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.75))
-	var W := minf(980.0, u.x - 40.0)
-	var pr := Rect2((u.x - W) / 2.0, 60.0, W, u.y - 100.0)
-	sb_panel.draw(get_canvas_item(), pr)
+	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.72))
+	var G := _box_geo()
+	var pr: Rect2 = G.pr
+	var bst := _g2("#18212a", "#0e1318")
+	_glow(pr, Color(0, 0, 0, 0.5), 20.0, 12.0)
+	_gbox(pr, bst, 180.0, 12.0)
+	var x0 := pr.position.x + 18.0
+	var gy: float = G.gy
 	var et := t_real - box_t0
-	# 상자 흔들림 → 열림
-	var bc := Vector2(u.x / 2.0, pr.position.y + 70.0)
-	var gold := box_res.any(func(q): return q.get("g", "") == "kro" or q.res in ["jack", "star", "starx"] or int(q.get("a", 0)) >= 3)
-	var sh := sin(et * 40.0) * 4.0 * clampf(1.0 - et, 0.0, 1.0)
-	draw_preview(Rect2(bc + Vector2(sh - 63.0, -38.0), Vector2(126, 76)), "star" if box_star else "box", "gold" if gold else "", t_real)
-	if et > 0.9 and et < 1.3:
-		draw_circle(bc, 60 + (et - 0.9) * 400, Color(1, 0.95, 0.8, 0.5 * (1.3 - et) / 0.4))
+	# 결과 카드
+	for i in mini(box_shown, box_res.size()):
+		var r0: Rect2 = G.pos[i]
+		var r := Rect2(x0 + r0.position.x, gy + r0.position.y - box_scroll, r0.size.x, r0.size.y)
+		if r.end.y < gy - 20.0 or r.position.y > gy + G.gvis + 20.0:
+			continue
+		var age := et - (1.0 + i * box_step())
+		var k := clampf(age / 0.35, 0.0, 1.0) if G.busy else 1.0
+		k = 1.0 - pow(1.0 - k, 3.0)
+		r.position.y += 12.0 * (1.0 - k)
+		_box_card(f, box_res[i], r)
+		if k < 1.0:
+			_fade(r.grow(14.0), 1.0 - k, Color("#141a21"))
+	# 위아래 가리기
+	var tmask := Rect2(pr.position.x + 2.0, pr.position.y + 2.0, pr.size.x - 4.0, gy - pr.position.y - 2.0)
+	var bmask := Rect2(pr.position.x + 2.0, gy + G.gvis, pr.size.x - 4.0, pr.end.y - gy - G.gvis - 2.0)
+	var col := func(y: float) -> Color: return Color("#18212a").lerp(Color("#0e1318"), clampf((y - pr.position.y) / pr.size.y, 0.0, 1.0))
+	_gbox(tmask, [[0.0, col.call(tmask.position.y)], [1.0, col.call(tmask.end.y)]], 180.0, [10.0, 10.0, 0.0, 0.0])
+	_gbox(bmask, [[0.0, col.call(bmask.position.y)], [1.0, col.call(bmask.end.y)]], 180.0, [0.0, 0.0, 10.0, 10.0])
+	_gbox(pr, Color(0, 0, 0, 0), 180.0, 12.0, Color("#c9a255"), 2.0)
+	# 흔들리는 상자 → 커지며 사라짐 (웹 bshake)
+	if et < 1.0:
+		var k := et
+		var rot := 0.0
+		var sc := 1.0
+		var KF := [[0.0, 0.0, 1.0], [0.15, -9.0, 1.0], [0.3, 9.0, 1.0], [0.45, -12.0, 1.0], [0.6, 12.0, 1.05], [0.8, 0.0, 1.15], [1.0, 0.0, 1.7]]
+		for j in range(1, KF.size()):
+			if k <= KF[j][0]:
+				var a: Array = KF[j - 1]
+				var b: Array = KF[j]
+				var q: float = (k - a[0]) / (b[0] - a[0])
+				q = q * q
+				rot = lerpf(a[1], b[1], q)
+				sc = lerpf(a[2], b[2], q)
+				break
+		var al := 1.0 if k < 0.8 else 1.0 - (k - 0.8) / 0.2
+		var c := Vector2(u.x / 2.0, pr.position.y + 18.0 + 38.0)
+		var M := inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(deg_to_rad(rot), Vector2(sc, sc), 0.0, c)
+		draw_set_transform_matrix(M)
+		var br := Rect2(-40, -35, 80, 70)
+		var gold := box_res.any(func(q2): return q2.get("g", "") == "kro")
+		if gold and not box_star:
+			_glow(br, Color(1.0, 0.82, 0.35, al), 30.0, 9.0)
+		if box_star:
+			_glow(br, Color(0.75, 0.55, 1.0, 0.6 * al), 22.0, 12.0)
+			_gbox(br, [[0.0, Color(Color("#fff1a8"), al)], [0.6, Color(Color("#c08cff"), al)], [1.0, Color(Color("#5a3a8a"), al)]], 135.0, 12.0, Color(Color("#2a1c08"), al), 3.0)
+		else:
+			_gbox(br, [[0.0, Color(Color("#e8c36a"), al)], [1.0, Color(Color("#8a6420"), al)]], 180.0, 9.0, Color(Color("#2a1c08"), al), 3.0)
+		if k > 0.6:
+			_gbox(br, Color(1, 1, 1, (k - 0.6) * 1.2 * al), 180.0, 9.0)
+		_ui_reset()
+	# 요약
 	var tot := 0
+	var done := 0
+	var ref := 0
 	for q in box_res:
 		tot += int(q.get("amt", q.get("a", 0)))
-	var sm := ("별 뽑기 " + str(box_res.size()) + "회 · 별 파편 +" + str(tot) + " (보유 " + str(SV.sfrag) + "/30) · 천장 " + str(SV.spity) + "/500") if box_star else ("상자 " + str(box_res.size()) + "개 · 파편 " + str(tot) + "개")
-	draw_string(f, Vector2(pr.position.x, pr.position.y + 136.0), sm, HORIZONTAL_ALIGNMENT_CENTER, pr.size.x, 14, Color("#ffe6a6"))
-	var cw := 150.0
-	var ch := 160.0
-	var cols := maxi(1, int((pr.size.x - 20.0) / (cw + 8.0)))
-	var x0 := pr.position.x + (pr.size.x - cols * (cw + 8.0) + 8.0) / 2.0
-	var show := mini(box_res.size(), box_shown)
-	var rows_fit := maxi(1, int((pr.size.y - 230.0) / (ch + 8.0)))
-	var first := maxi(0, (int((show - 1) / cols) - rows_fit + 1) * cols)
-	for i in range(first, show):
-		var q: Dictionary = box_res[i]
-		var k := i - first
-		var r := Rect2(x0 + (k % cols) * (cw + 8.0), pr.position.y + 152.0 + int(k / cols) * (ch + 8.0), cw, ch)
-		var sb := StyleBoxFlat.new()
-		sb.set_corner_radius_all(8)
-		sb.set_border_width_all(2)
-		var big: bool = q.res in ["jack", "star", "starx", "done"]
-		sb.bg_color = Color("#161320")
-		sb.border_color = Color("#ffd76a") if big else (Color("#b07aff") if q.get("g", "") == "kro" else Color(1, 1, 1, 0.15))
-		sb.draw(get_canvas_item(), r)
-		var pv := Rect2(r.position + Vector2(8, 8), Vector2(cw - 16, (cw - 16) * 0.6))
-		var title := ""
-		var line2 := ""
-		var line3 := ""
-		if box_star:
-			if q.res == "star":
-				draw_preview(pv, q.cat, q.it.id, t_real)
-				title = q.it.n
-				line2 = "★ 걸작 완품!"
-			elif q.res == "starx":
-				draw_preview(pv, "star", "", t_real)
-				title = "모든 걸작 보유 중"
-				line2 = "별 파편 +30"
-			else:
-				draw_preview(pv, "star", "", t_real)
-				title = "★ 별 파편"
-				line2 = "×" + str(q.a)
-		else:
-			if q.res == "jack":
-				var si := 0
-				for j in SETS.size():
-					if SETS[j].r == q.it.id:
-						si = j
-				draw_preview(pv, "set", si, t_real)
-				title = q.it.n
-				line2 = "크로 세트 획득!"
-				line3 = ("이미 보유 → 청석 +" + str(q.v)) if int(q.v) > 0 else "로봇 + 기지 + 테마 전부!"
-			else:
-				draw_preview(pv, "s" if q.cat == "r" else q.cat, q.it.id, t_real)
-				title = q.it.n
-				line2 = {"r": "로봇", "b": "기지", "t": "테마"}[q.cat] + " · " + {"ju": "주", "kro": "크로", "b": "기지"}[q.g] + " · 파편 ×" + str(q.amt)
-				line3 = "완성!" if q.res == "done" else (("보유 중 → 청석 +" + str(q.v)) if q.res == "dup" else str(q.c) + " / " + str(q.need))
-		draw_string(f, Vector2(r.position.x, pv.end.y + 20.0), title, HORIZONTAL_ALIGNMENT_CENTER, cw, 13, Color.WHITE)
-		draw_string(f, Vector2(r.position.x, pv.end.y + 38.0), line2, HORIZONTAL_ALIGNMENT_CENTER, cw, 11, Color("#c79bff") if big else Color("#9fb3c2"))
-		draw_string(f, Vector2(r.position.x, pv.end.y + 54.0), line3, HORIZONTAL_ALIGNMENT_CENTER, cw, 11, Color("#ffd76a") if big else Color("#c9d4dc"))
+		if q.res == "done":
+			done += 1
+		ref += int(q.get("v", 0))
+	var sm := ""
+	if box_star:
+		sm = "별 뽑기 " + str(box_res.size()) + "회 · 별 파편 +" + str(tot) + " (보유 " + str(SV.sfrag) + "/30) · 천장 " + str(SV.spity) + "/500"
+	else:
+		sm = "상자 " + str(box_res.size()) + "개 · 파편 " + str(tot) + "개" + (" · 완성 " + str(done) + "개!" if done > 0 else "") + (" · 청석 환급 +" + str(ref) if ref > 0 else "")
+	draw_string(f, Vector2(pr.position.x, pr.position.y + 18.0 + 76.0 + 12.0 + 15.0), sm, HORIZONTAL_ALIGNMENT_CENTER, pr.size.x, 14, Color("#ffd27a"))
+	if box_max > 0.0:
+		var hh := maxf(30.0, G.gvis * G.gvis / (G.gvis + box_max))
+		_gbox(Rect2(pr.end.x - 12.0, gy + (G.gvis - hh) * box_scroll / box_max, 6.0, hh), Color("#3a4a58"), 180.0, 3.0)
 	for it in ui:
 		if it.id == "boxok":
-			_btn(f, it.r, "건너뛰기" if box_busy() else "확인", hov == it, 16)
+			_wbtn({"r": it.r, "l": "여는 중..." if G.busy else "확인", "sty": "go", "en": not G.busy, "it": it, "fc": Color("#10161c")}, hov)
+		elif it.id == "boxskip":
+			_wbtn({"r": it.r, "l": "건너뛰기 ▸▸", "sty": "bxsk", "en": true, "it": it, "fs": 12}, hov)
 
-func _build_cos() -> void:
-	if not box_res.is_empty():
-		var u := ui_size()
-		_add("boxok", Rect2(u.x / 2.0 - 90.0, u.y - 96.0, 180.0, 44.0))
+func _box_card(f: Font, q: Dictionary, r: Rect2) -> void:
+	var big: bool = q.res in ["jack", "star", "starx"]
+	var bc := Color("#2f5a7a")
+	var st = Color("#0b1015")
+	if big:
+		bc = Color("#fff1a8")
+		st = [[0.0, Color("#3a2a08")], [0.5, Color("#2a1440")], [1.0, Color("#0b2a3a")]]
+		var gk := 0.5 + 0.5 * sin(t_real * 2.6)
+		_glow(r, Color(1.0, 0.89, 0.48, 0.5).lerp(Color(0.75, 0.55, 1.0, 0.8), gk), 18.0 + 22.0 * gk, 12.0)
+	elif box_star:
+		bc = Color("#c08cff") if int(q.get("a", 0)) >= 4 else Color("#6a4a9a")
+		st = _g2("#1e1430", "#0b1015")
+		if int(q.get("a", 0)) >= 4:
+			_glow(r, Color(0.75, 0.55, 1.0, 0.6), 18.0, 12.0)
+	elif q.get("g", "") == "kro":
+		bc = Color("#e8c36a")
+		st = _g2("#2a2210", "#0b1015")
+		_glow(r, Color(0.91, 0.76, 0.42, 0.35), 12.0, 12.0)
+	elif q.get("g", "") == "b":
+		bc = Color("#5a86c8")
+	if q.res == "done":
+		bc = Color("#7affd4")
+		_glow(r, Color(0.48, 1.0, 0.83, 0.45), 16.0, 12.0)
+	_gbox(r, st, 135.0 if big else 180.0, 12.0, bc, 2.0)
+	var x := r.position.x + 14.0
+	var w := r.size.x - 28.0
+	var y := r.position.y + 14.0
+	if box_star and q.res == "sf":
+		var a: int = int(q.a)
+		var sc := Color("#f0e0ff") if a >= 4 else Color("#ffd25a")
+		_glow(Rect2(r.get_center().x - 10.0, y + 10.0, 20.0, 20.0), Color(Color("#c08cff") if a >= 4 else Color("#ffd25a"), 0.6), 12.0, 10.0)
+		draw_string(f, Vector2(r.position.x, y + 42.0), "★", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 40, sc)
+		y += 48.0 + 5.0
+		draw_string(fb(), Vector2(r.position.x, y + 18.0), "별 파편", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 18, Color("#dfe6ea"))
+		y += 27.0
+		draw_string(fb(), Vector2(r.position.x, y + 16.0), "×" + str(a), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 16, [Color("#7fd2ff"), Color("#9effa8"), Color("#ffd27a")][mini(3, a) - 1])
 		return
-	var pr := _wide_rect()
-	_add("lback", Rect2(pr.end.x - 130.0, pr.end.y - 52.0, 116.0, 40.0))
-	if lsec == "shop":
-		var tabs := [["star", "★ 걸작"], ["box", "소로 상자"], ["set", "세트"], ["r", "로봇 스킨"], ["b", "기지 스킨"], ["t", "테마"]]
-		var x := pr.position.x + 14.0
-		for tb in tabs:
-			var w := 112.0
-			_add("cb", Rect2(x, pr.position.y + 50.0, w, 36.0), true, "", {"a": "tab", "k": tb[0], "lb": tb[1]})
-			x += w + 6.0
-	var cr := _content_rect()
-	var R: Array = _rows_shop() if lsec == "shop" else (_rows_store() if lsec == "store" else (_rows_pass() if lsec == "pass" else _rows_prob()))
-	_layout_rows(R, cr, ThemeDB.fallback_font)
+	var al := HORIZONTAL_ALIGNMENT_CENTER if big else HORIZONTAL_ALIGNMENT_LEFT
+	var tag := ""
+	var nm2 := ""
+	var amt := ""
+	var amc := Color("#7fd2ff")
+	var emt := ""
+	var emc := Color("#c9d3dc")
+	if q.res != "starx":
+		var pvh := (r.size.x - 28.0) * 0.6
+		var pv := Rect2(x, y, w, pvh)
+		if q.res == "jack":
+			var si := 0
+			for j in SETS.size():
+				if SETS[j].r == q.it.id:
+					si = j
+			draw_preview(pv, "set", si, t_real)
+		else:
+			var cat: String = q.get("cat", "s")
+			draw_preview(pv, "s" if cat == "r" else cat, q.it.id, t_real)
+		y += pvh + 5.0
+	if box_star:
+		tag = "★ 걸작 완품" + ("" if q.res == "starx" else " · " + {"s": "로봇", "b": "기지", "t": "테마"}.get(q.get("cat", "s"), ""))
+		nm2 = "모든 걸작 보유 중" if q.res == "starx" else q.it.n
+		amt = "별 파편 +30" if q.res == "starx" else "걸작 획득!"
+		amc = Color("#ffd27a")
+	else:
+		var CN := {"r": "로봇", "b": "기지", "t": "테마", "set": "세트"}
+		tag = CN.get(q.cat, "") + " · " + ("크로" if q.g == "kro" else ("주" if q.g == "ju" else "기지"))
+		nm2 = q.it.n
+		if q.res == "jack":
+			amt = "크로 세트 획득!"
+			amc = Color("#ffd27a")
+			emt = ("이미 보유 → 청석 +" + str(q.v)) if int(q.v) > 0 else "로봇 + 기지 + 테마 전부!"
+		else:
+			var a: int = int(q.amt)
+			amt = "파편 ×" + str(a)
+			amc = [Color("#7fd2ff"), Color("#9effa8"), Color("#ffd27a")][clampi(a, 1, 3) - 1]
+			if q.res == "done":
+				emt = "완성!"
+				emc = Color("#7affd4")
+			elif q.res == "dup":
+				emt = "보유 중 → 청석 +" + str(q.v)
+			else:
+				emt = str(q.c) + " / " + str(q.need)
+	draw_string(f, Vector2(x, y + 13.0), tag, al, w, 13, Color("#8a9bad"))
+	y += 21.0
+	var nfs := 22 if big else 18
+	draw_string(fb(), Vector2(x, y + nfs - 2.0), nm2, al, w, nfs, Color("#fff1a8") if big else (Color("#ffe28a") if q.get("g", "") == "kro" else Color("#dfe6ea")))
+	y += nfs + 9.0
+	if q.res == "done":
+		_icon("sparkle", Vector2(x + 7.0, y + 30.0), 13.0)
+	if amc == Color("#ffd27a"):
+		draw_string(fb(), Vector2(x, y + 16.0), amt, al, w, 16, Color(1.0, 0.82, 0.48, 0.35))
+	draw_string(fb(), Vector2(x, y + 15.0), amt, al, w, 16, amc)
+	y += 25.0
+	if emt != "":
+		draw_string(fb() if q.res == "done" else f, Vector2(x + (17.0 if q.res == "done" else 0.0), y + 14.0), emt, al, w, 14, emc)
 
-func _pass_max() -> float:
-	return maxf(0.0, 96.0 + 30.0 * 128.0 - _content_rect().size.x)
+# ── 가상 결제 창 (#cashw) ──
+func _build_cash() -> void:
+	ui.clear()
+	var u := ui_size()
+	var r := Rect2(u.x / 2.0 - 180.0, u.y / 2.0 - 125.0, 360.0, 250.0)
+	_add("cashno", Rect2(r.position.x + 26.0, r.end.y - 62.0, 150.0, 40.0))
+	_add("cashok", Rect2(r.end.x - 176.0, r.end.y - 62.0, 150.0, 40.0))
 
-func _lobby_cos(f: Font, hov) -> void:
-	var pr := _wide_rect()
-	sb_panel.draw(get_canvas_item(), pr)
-	_draw_rows(f, hov)
-	var cr := _content_rect()
-	var mk := Color("#0a0e14")
-	draw_rect(Rect2(pr.position.x + 2, pr.position.y + 2, pr.size.x - 4, cr.position.y - pr.position.y - 2), mk)
-	draw_rect(Rect2(pr.position.x + 2, cr.end.y, pr.size.x - 4, pr.end.y - cr.end.y - 2), mk)
-	draw_string(f, pr.position + Vector2(18, 34), {"shop": "상점", "store": "창고", "pass": "배틀패스", "prob": "확률표"}[lsec], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, GOLD)
-	var info := "청석 " + str(SV.cs) + " · 별석 " + str(SV.ss)
-	if lsec == "shop":
-		info += " · 게임이 끝나면 번 광석의 4% + 정복 보너스가 청석으로 들어와요"
-	draw_string(f, pr.position + Vector2(130, 32), info, HORIZONTAL_ALIGNMENT_LEFT, pr.size.x - 150.0, 12, Color("#9fb3c2"))
+func _cash_overlay(f: Font, hov) -> void:
+	var u := ui_size()
+	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
+	var r := Rect2(u.x / 2.0 - 180.0, u.y / 2.0 - 125.0, 360.0, 250.0)
+	_glow(r, Color(0, 0, 0, 0.6), 30.0, 12.0)
+	_gbox(r, _g2("#18212a", "#0e1318"), 180.0, 12.0, Color("#c9a255"), 2.0)
+	var P: Dictionary = CASH[clampi(cash_sel, 0, CASH.size() - 1)]
+	_gem(Vector2(u.x / 2.0, r.position.y + 48.0), 30.0)
+	var l1 := "청석 " + _cm(P.a) + "개" + (" (보너스 " + str(P.bn) + " 포함)" if int(P.bn) > 0 else "") + "를"
+	draw_string(fb(), Vector2(r.position.x, r.position.y + 100.0), l1, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 15, Color("#dfe6ea"))
+	draw_string(fb(), Vector2(r.position.x, r.position.y + 124.0), "₩" + _cm(P.w) + "에 구매할까요?", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 15, Color("#dfe6ea"))
+	draw_string(f, Vector2(r.position.x, r.position.y + 156.0), "가상 결제예요. 실제로 돈이 빠져나가지 않아요.", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#8a9bad"))
 	for it in ui:
-		if it.id == "lback":
-			_btn(f, it.r, "뒤로", hov == it, 15)
-		elif it.id == "cb" and it.arg.get("a", "") == "tab":
-			var on: bool = shop_tab2 == it.arg.k
-			(sb_tab_on if on else sb_btn).draw(get_canvas_item(), it.r)
-			draw_string(f, Vector2(it.r.position.x, it.r.position.y + 23.0), it.arg.lb, HORIZONTAL_ALIGNMENT_CENTER, it.r.size.x, 13, Color.WHITE)
-	if lob_max > 0.0:
-		var k := lob_scroll / lob_max
-		var hh := maxf(30.0, cr.size.y * cr.size.y / (cr.size.y + lob_max))
-		draw_rect(Rect2(cr.end.x + 4.0, cr.position.y + (cr.size.y - hh) * k, 4.0, hh), Color(1, 1, 1, 0.25))
+		if it.id == "cashno":
+			_wbtn({"r": it.r, "l": "취소", "sty": "def", "en": true, "it": it}, hov)
+		elif it.id == "cashok":
+			_wbtn({"r": it.r, "l": "결제하기", "sty": "go", "en": true, "it": it}, hov)
 
 func cos_press(a: Dictionary) -> void:
 	match a.a:
 		"tab":
 			shop_tab2 = a.k
 			lob_scroll = 0.0
+		"settab":
+			set_tab = a.k
+			lob_scroll = 0.0
+			bgm_open = false
+		"hf":
+			hF = a.v
+			lob_scroll = 0.0
+		"cash":
+			cash_sel = int(a.i)
+		"tprev":
+			bgm_prev_id = a.id
+			bgm_prev_u = t_real + 15.0
+			lmsg = item(a.id).get("n", "") + " 테마곡 미리듣기 중 (15초)" + (" · 음소거를 풀어야 들려요" if SV.mute else "")
 		"buy": buy_skin(a.id)
 		"eq":
 			equip(a.id)
@@ -4879,6 +6025,8 @@ func _bgm_tick() -> void:
 	var tid := bgm_theme()
 	if not muted and vol_b > 0 and scene == "lobby" and box_res.is_empty():
 		want = ("bgm_" + tid) if tid != "" else "bgm_lobby"
+		if t_real < bgm_prev_u and bgm_prev_id != "":
+			want = "bgm_" + bgm_prev_id
 	elif not muted and vol_b > 0 and scene == "game" and not paused and not lost:
 		if tid != "":
 			want = "bgm_" + tid + (("_raidx" if mset_done(tid) else "_raid") if raid_alive else "")
@@ -6622,21 +7770,44 @@ func _selftest() -> void:
 	await _wait(0.6)
 	await _shot("00_lobby")
 	lsec = "set"
+	set_tab = "a"
 	await _shot("00b_set")
-	lsec = "prob"
+	bgm_open = true
+	await _shot("00b1_set_bgm")
+	bgm_open = false
+	set_tab = "p"
 	await _shot("00b2_prob")
+	set_tab = "a"
 	SV.cs = 30000
 	SV.ss = 200
 	lsec = "shop"
 	shop_tab2 = "box"
 	await _shot("00c_shop_box")
 	open_box(10, false)
-	await _wait(1.6)
+	await _wait(0.45)
+	await _shot("00d0_box_shake")
+	await _wait(1.0)
 	await _shot("00d_box_open")
 	await _wait(1.5)
+	await _shot("00d2_box_done")
+	box_res = []
+	star_pull(10)
+	await _wait(3.0)
+	await _shot("00d3_star_done")
 	box_res = []
 	shop_tab2 = "r"
 	await _shot("00e_shop_r")
+	shop_tab2 = "t"
+	await _shot("00e2_shop_t")
+	shop_tab2 = "set"
+	await _shot("00e3_shop_set")
+	shop_tab2 = "hist"
+	await _shot("00e4_shop_hist")
+	shop_tab2 = "cash"
+	await _shot("00e5_shop_cash")
+	cash_sel = 2
+	await _shot("00e6_cash_ask")
+	cash_sel = -1
 	shop_tab2 = "star"
 	await _shot("00f_shop_star")
 	buy_set(0)
@@ -6645,6 +7816,7 @@ func _selftest() -> void:
 	await _shot("00g_store")
 	SV.bp.xp = 6200
 	lsec = "pass"
+	pass_init = true
 	await _shot("00h_pass")
 	cos_press({"a": "bpall"})
 	print("BP ", lmsg, " cs=", SV.cs, " fbox=", SV.fbox)
