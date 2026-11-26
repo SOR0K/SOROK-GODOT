@@ -6041,7 +6041,7 @@ func _acp_draw(f: Font, hov) -> void:
 				sty = "pfo"
 			"acp_close":
 				lab = "닫기"
-				sty = "pfgo"
+				sty = "pfgo" if _acp_geo().logged else "pf"
 			"acp_login":
 				lab = "로그인 / 회원가입"
 				sty = "pfgo"
