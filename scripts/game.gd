@@ -4193,7 +4193,7 @@ func _dt(e: Dictionary) -> void:
 			p.x += f.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + fs * ls
 		return
 	var w2: float = e.get("w", -1.0)
-	var ha := [HORIZONTAL_ALIGNMENT_LEFT, HORIZONTAL_ALIGNMENT_CENTER, HORIZONTAL_ALIGNMENT_RIGHT][al]
+	var ha: HorizontalAlignment = [HORIZONTAL_ALIGNMENT_LEFT, HORIZONTAL_ALIGNMENT_CENTER, HORIZONTAL_ALIGNMENT_RIGHT][al]
 	if e.has("sh"):
 		draw_string(f, p + Vector2(0, float(e.sh[0])), e.s, ha, w2, fs, e.sh[1])
 	draw_string(f, p, e.s, ha, w2, fs, col)
@@ -4628,7 +4628,7 @@ func _L_card(c: Dictionary, r: Rect2) -> void:
 	if c.has("d"):
 		e.dl = _wrap(ThemeDB.fallback_font, c.d, 12, w)
 		e.dy = y + 5.0 + 12.0
-		var n := e.dl.size()
+		var n: int = e.dl.size()
 		if c.has("d2"):
 			e.d2l = _wrap(fb(), c.d2, 12, w)
 			e.d2y = e.dy + n * 17.0
@@ -5463,7 +5463,7 @@ func _box_geo() -> Dictionary:
 		var w := minf(420.0, iw) if big else cw
 		for i in rw:
 			hh = maxf(hh, _box_card_h(box_res[i], w))
-		var x := (iw - (w if big else rw.size() * cw + (rw.size() - 1) * 12.0)) / 2.0 if big else (iw - gw) / 2.0
+		var x: float = (iw - (w if big else rw.size() * cw + (rw.size() - 1) * 12.0)) / 2.0 if big else (iw - gw) / 2.0
 		for k in rw.size():
 			pos[rw[k]] = Rect2(x + k * (cw + 12.0), y, w, hh)
 		y += hh + 12.0
@@ -5486,7 +5486,7 @@ func _build_box() -> void:
 		var last: Rect2 = G.pos.get(box_shown - 1, Rect2())
 		box_scroll = maxf(box_scroll, last.end.y - G.gvis)
 	box_scroll = clampf(box_scroll, 0.0, box_max)
-	var by := G.gy + G.gvis + 12.0
+	var by: float = G.gy + G.gvis + 12.0
 	_add("boxok", Rect2(pr.position.x + 18.0, by, G.iw, 38.0))
 	if G.busy:
 		var w := _tw("건너뛰기 ▸▸", 12) + 30.0
