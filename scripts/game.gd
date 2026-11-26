@@ -1395,10 +1395,23 @@ func box_rect() -> Rect2:
 
 func finish_box(add: bool) -> void:
 	var r := box_rect()
+	# PC 우클릭 (웹과 같음): 거의 안 끌었으면 가까운 로봇 하나만 선택 · 빈 곳이면 선택 해제
+	if not touch_ui() and r.size.x < 8.0 and r.size.y < 8.0:
+		var nu = nearest(box_a, bots, 24.0)
+		if nu == null:
+			if not add:
+				clear_sel()
+			return
+		if not add:
+			clear_sel()
+		nu.sel = true
+		return
 	if r.size.length() < 8.0:
 		r = r.grow(22.0)
 	var hit_: Array = bots.filter(func(u): return r.has_point(u.p))
 	if hit_.is_empty():
+		if not add and not touch_ui():
+			clear_sel()
 		return
 	if not add:
 		clear_sel()
