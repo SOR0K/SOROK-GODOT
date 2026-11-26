@@ -13,6 +13,8 @@ const ZMIN := 0.6
 const ZMAX := 1.8
 const BASE_VIEW := 280.0
 const WELL := 300.0
+# 테스트 모드: 재화 무한 · 기록은 테스트 전용 파일에만 · 클라우드에 올리지 않아요 (출시할 땐 false)
+const TEST := true
 const UT := {
 	"s": {"n": "정찰", "c": 15, "hp": 20.0, "atk": 0.0, "rng": 0.0, "sp": 150.0, "col": Color("#f2d14e"), "acc": Color("#ffffff"), "z": 7.0},
 	"m": {"n": "채굴", "c": 35, "hp": 30.0, "atk": 0.0, "rng": 0.0, "sp": 100.0, "col": Color("#f2a64e"), "acc": Color("#ffd9a8"), "z": 11.0},
@@ -49,6 +51,9 @@ var lost := false
 var next_raid := 0.0
 var raid_warned := false
 var raid_alive := false
+var rvm := -99.0
+var mdm := -99.0
+var bwm := -99.0
 var kills := 0
 var lost_n := 0
 var oil := 0
@@ -156,6 +161,7 @@ func _ready() -> void:
 	new_game()
 	scene = "lobby"
 	acct = preload("res://scripts/account.gd").new()
+	acct.no_push = TEST
 	acct.g = self
 	acct.srv = "m" if touch_mode else "pc"
 	add_child(acct)
@@ -329,7 +335,7 @@ func mk_bot(k: String, p: Vector2) -> Dictionary:
 		"lv": 1, "ev": 0, "hp": 1.0, "mh": 1.0, "sp": 1.0, "aspd": 1.0, "rng": float(UT[k].rng), "cd": 0.0,
 		"tgt": null, "mine": null, "st": "go", "c": 0, "w": 0.0, "f": 0.0, "fm": 0.0, "cbt": -99.0,
 		"mo": 0.0, "ms": 0, "acq": 0.0, "pk": -1, "pt": 0.0, "pp": [], "pok": true, "oilT": 0.0,
-		"ai": 0.0, "dodge": 0.0, "dgo": null, "fo": null, "kite": 0.0, "kx": null, "rh": null, "rw": false, "sq": null, "spc": 0.0}
+		"ai": 0.0, "dodge": 0.0, "dgo": null, "fo": null, "kite": 0.0, "kx": null, "rh": null, "rw": false, "sq": null, "spc": 0.0, "wh": 0.0}
 	calc(u)
 	u.hp = u.mh
 	u.f = u.fm
@@ -579,8 +585,9 @@ func hit_base(u: Dictionary) -> void:
 	u.cd = 1.0 / u.aspd
 	fx.append({"k": "imp", "p": B + Vector2(rng.randf_range(-20, 20), rng.randf_range(-20, 20)), "t": 0.18, "c": Color("#ff7a66")})
 	fx.append({"k": "txt", "p": B + Vector2(rng.randf_range(-24, 24), -40), "t": 0.9, "d0": 0.9, "s": "-" + str(roundi(u.atk)), "c": Color("#ff6a55"), "fs": 15})
-	if msg_t <= 0.0:
-		msg("기지가 공격받고 있어요!")
+	if t - bwm > 8.0:
+		bwm = t
+		msg("⚠ 기지가 공격받고 있어요! " + ("(기지 버튼으로 보기)" if touch_ui() else "(Q로 기지 보기)"))
 
 func engage(u: Dictionary, tg: Dictionary, dt: float) -> void:
 	var d := (u.p as Vector2).distance_to(tg.p)
@@ -785,9 +792,11 @@ func sq_tick(u: Dictionary) -> void:
 
 func ctrl(u: Dictionary, dt: float) -> void:
 	u.cd -= dt
+	u.wh = 0.0
 	if u.hp < u.mh and (u.p as Vector2).distance_to(B) <= WELL:
 		var wr := 0.03 if t - u.cbt < 3.0 else 0.1
 		u.hp = minf(u.mh, u.hp + u.mh * wr * dt)
+		u.wh = wr
 	if u.sq != null:
 		sq_tick(u)
 	elif u.spc > 0.0 and u.goal == null:
@@ -879,7 +888,9 @@ func _miner(u: Dictionary, dt: float) -> void:
 		else:
 			u.mine = null
 			u.goal = B + Vector2(rng.randf_range(-80, 80), rng.randf_range(-80, 80))
-			msg("광산이 바닥났어요 · 채굴 로봇에게 다른 광산을 지정해 주세요")
+			if t - mdm > 6.0:
+				mdm = t
+				msg("⛏ 광산이 바닥나서 채굴 로봇이 기지로 돌아와요. 다른 광산을 지정해 주세요")
 			return
 	if u.st == "go":
 		var r := move_to(u, m.p, dt)
@@ -915,7 +926,9 @@ func _miner(u: Dictionary, dt: float) -> void:
 			if m.amt <= 0:
 				u.mine = null
 				u.goal = B + Vector2(rng.randf_range(-80, 80), rng.randf_range(-80, 80))
-				msg("광산이 바닥났어요 · 채굴 로봇에게 다른 광산을 지정해 주세요")
+				if t - mdm > 6.0:
+					mdm = t
+					msg("⛏ 광산이 바닥나서 채굴 로봇이 기지에 대기해요. 다른 광산을 지정해 주세요")
 
 func _support(u: Dictionary, dt: float) -> void:
 	var b = null
@@ -1079,7 +1092,7 @@ func raid() -> void:
 		ens.append(mk_raid("c" if rng.randf() < 0.55 else "r", lv, ev, a + Vector2(rng.randf_range(-80, 80), rng.randf_range(-80, 80))))
 	var nm: String = ["약한", "보통", "강한", "매우 강한", "재앙급"][tier]
 	sfx("raid")
-	msg("레이드 출현! " + nm + " 적 " + str(n) + "마리가 기지로 몰려와요 (Lv " + str(lv) + ")")
+	msg("🚨 " + nm + " 레이드 출현! " + str(n) + "마리가 기지로 몰려와요 (Lv " + str(lv) + ")")
 
 # ═════════ 생산·업그레이드 ═════════
 func produce(k: String) -> void:
@@ -1166,7 +1179,7 @@ func do_sell() -> void:
 		return
 	if t > sell_arm:
 		sell_arm = t + 3.0
-		msg("한 번 더 누르면 " + str(s.size()) + "대를 판매해요")
+		msg(("⚠ 진화한 로봇이 있어요. 진화석은 절반만 돌려받아요. " if s.any(func(q): return int(q.ev) > 0) else "") + "한 번 더 누르면 " + str(s.size()) + "대를 판매해요")
 		return
 	sell_arm = 0.0
 	var v := 0
@@ -1179,7 +1192,8 @@ func do_sell() -> void:
 	bots = bots.filter(func(u): return u.hp > 0)
 	ore += v
 	stone += sv
-	msg("로봇 " + str(s.size()) + "대 판매 · 광석 +" + str(v) + ("" if sv == 0 else " · 진화석 +" + str(sv)))
+	sfx("ore")
+	msg("로봇 " + str(s.size()) + "대를 판매했어요 · 광석 +" + str(v) + ("" if sv == 0 else " · 진화석 +" + str(sv)))
 
 func revive(d: Dictionary) -> void:
 	var u := mk_bot(d.t, B + Vector2(rng.randf_range(-40, 50), rng.randf_range(-50, 40)) + Vector2(70, 0))
@@ -1335,6 +1349,12 @@ func click(w: Vector2, add: bool) -> void:
 		if n > 0:
 			sfx("cmd_mv")
 			fx.append({"k": "mine", "p": m.p, "t": 0.75, "pts": s.filter(func(q): return q.t == "m").map(func(q): return q.p)})
+		return
+	if s.any(func(q): return q.t != "s") and not seen(w):
+		msg("어두운 곳으로는 정찰 로봇만 갈 수 있어요")
+		var sc: Array = s.filter(func(q): return q.t == "s")
+		if not sc.is_empty():
+			command_move(sc, w)
 		return
 	command_move(s, w)
 
@@ -1576,6 +1596,10 @@ func ctl_state(u: Dictionary) -> String:
 		return ("진화석 채굴 중" if u.mine.ev else "광석 채굴 중") if u.mine != null else "대기"
 	if u.t == "s":
 		return "정찰 중" if u.goal != null else "대기"
+	if float(u.get("wh", 0.0)) > 0.0:
+		return "우물 회복 중" if u.wh > 0.05 else "전투 중 (기지)"
+	if u.get("rw", false):
+		return "우물로 귀환 중"
 	if u.tgt != null:
 		return "적과 전투 중" if not u.tgt.has("op") else "기지 공격 중"
 	if u.goal != null:
@@ -2182,8 +2206,8 @@ func _hud(f: Font) -> void:
 		_world_tip(f)
 
 # ═════════ 흐름: 로비 · 설정 · 저장 · 이어하기 · 튜토리얼 ═════════
-const SAVE_P := "user://save.dat"
-const SV_P := "user://sv.dat"
+const SAVE_P := "user://test_save.dat" if TEST else "user://save.dat"
+const SV_P := "user://test_sv.dat" if TEST else "user://sv.dat"
 var scene := "lobby"
 var lsec := "main"
 var lmsg := ""
@@ -2609,6 +2633,8 @@ func _logo(f: Font, small: bool = false) -> void:
 		if acct.ses != null and str(acct.ses.get("nick", "")) != "":
 			who = str(acct.ses.nick) + "#" + str(acct.ses.get("tag", "SR1")) + " · " + ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨")
 		draw_string(f, Vector2(14, 22), who, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
+	if TEST:
+		draw_string(fb(), Vector2(0, 22), "테스트 모드 · 재화 무한 · 클라우드 저장 꺼짐  ", HORIZONTAL_ALIGNMENT_RIGHT, u.x, 12, Color("#ff9a5a"))
 	var cy := 134.0
 	if small:
 		_spaced(fb(), "SOROK", u.x / 2.0, 54.0, 42, 0.32, Color("#5c4316"))
@@ -7262,6 +7288,14 @@ func _quit_saved() -> void:
 
 func _process(dt: float) -> void:
 	t_real += dt
+	if TEST:
+		if int(SV.cs) < 999999:
+			SV.cs = 999999
+		if int(SV.ss) < 99999:
+			SV.ss = 99999
+		if scene == "game":
+			ore = maxf(ore, 999999.0)
+			stone = maxi(stone, 99999)
 	if acct != null:
 		acct.tick(dt)
 	_tick_fx(dt)
@@ -7316,7 +7350,16 @@ func _process(dt: float) -> void:
 		queue_redraw()
 		return
 	if not won and not lost and not paused:
-		update_game(dt)
+		# 앱이 멈췄다 돌아오면 지난 시간만큼 이어서 진행 (웹: 다른 창에 있어도 게임이 계속 진행돼요 · 최대 5분)
+		if dt > 0.1:
+			var el := minf(dt, 300.0)
+			var n := ceili(el / (1.0 / 30.0))
+			for i in n:
+				if won or lost:
+					break
+				update_game(el / n)
+		else:
+			update_game(dt)
 		_tut_tick()
 		save_acc += dt
 		if save_acc > 15.0:
@@ -7419,7 +7462,7 @@ func update_game(dt: float) -> void:
 			ens = ens.filter(func(e): return e.oid != oid or e.ag != null)
 			fx.append({"k": "ring", "p": o.p, "t": 0.8, "r": 90.0})
 			sfx("capture")
-			msg("기지 정복! 광석 +" + str(int(g)) + " · 진화석 +" + str(sg) + " · 수입 x" + str(snappedf(eco(), 0.01)))
+			msg("기지 정복! 광석 +" + str(int(g)) + " · 진화석 +" + str(sg) + " · 채굴·기지 수입 ×" + String.num(eco(), 2))
 			if captured() >= outs.size():
 				won = true
 				won_at = t_real
@@ -7451,9 +7494,13 @@ func update_game(dt: float) -> void:
 		dead = dead.filter(func(d): return d.w < rev_time(d))
 		for d in rdy:
 			revive(d)
-		msg(UT[rdy[0].t].n + " 로봇이 기지에서 부활했어요")
+		if t - rvm > 4.0:
+			rvm = t
+			var d0: Dictionary = rdy[0]
+			msg(UT[d0.t].n + " 로봇(Lv" + str(d0.lv) + (" · 진화 " + str(d0.ev) if int(d0.ev) > 0 else "") + ")이 기지에서 부활했어요")
 	if raid_alive and not ra:
-		msg("레이드 방어 성공!")
+		raid_wins += 1
+		msg("🛡 레이드 방어 성공! (배틀패스 +50 XP)")
 		sfx("capture")
 	raid_alive = ra
 	if base.hp <= 0.0 and not lost:

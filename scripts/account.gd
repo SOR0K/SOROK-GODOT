@@ -12,6 +12,7 @@ var raw := {}             # 서버에서 받은 d (웹 키 그대로 보관)
 var raw_sv := {}          # 웹 sorok_v1 원본 (모르는 칸 지키기)
 var state := ""           # ok · sync · off · err · conf
 var busy := false
+var no_push := false
 var dirty := false
 var push_acc := 0.0
 var remember := true
@@ -196,6 +197,8 @@ func fields_of(d: String) -> Dictionary:
 	return {"fields": F}
 
 func push(force: bool = false) -> void:
+	if no_push:
+		return
 	if ses == null or str(ses.get("nick", "")) == "" or busy:
 		return
 	var d := pack()
