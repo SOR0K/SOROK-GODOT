@@ -4089,7 +4089,13 @@ func _rr_pts(r: Rect2, rad) -> PackedVector2Array:
 		for i in 6:
 			var a: float = c[2] + i * (PI / 2.0) / 5.0
 			P.append(o + Vector2(cos(a), sin(a)) * rr)
-	return P
+	var Q := PackedVector2Array()
+	for p in P:
+		if Q.is_empty() or (p - Q[Q.size() - 1]).length_squared() > 0.01:
+			Q.append(p)
+	while Q.size() > 3 and (Q[0] - Q[Q.size() - 1]).length_squared() <= 0.01:
+		Q.remove_at(Q.size() - 1)
+	return Q
 
 func _gt(stops: Array) -> Texture2D:
 	var key := str(stops)
@@ -4114,6 +4120,8 @@ func _gbox(r: Rect2, stops, ang: float = 180.0, rad = 0.0, bc: Color = Color(0, 
 	if r.size.x < 1.0 or r.size.y < 1.0:
 		return
 	var P := _rr_pts(r, rad)
+	if P.size() < 3:
+		return
 	if stops is Color:
 		draw_colored_polygon(P, stops)
 	else:
@@ -4143,7 +4151,9 @@ func _g2(a: String, b: String) -> Array:
 func _bglow(r: Rect2, col: Color, sz: float, rad: float = 0.0) -> void:
 	for i in 5:
 		var k := (i + 1) / 5.0
-		draw_colored_polygon(_rr_pts(r.grow(sz * k), rad + sz * k), Color(col, col.a * 0.32 * (1.0 - k * 0.8)))
+		var P := _rr_pts(r.grow(sz * k), rad + sz * k)
+		if P.size() >= 3:
+			draw_colored_polygon(P, Color(col, col.a * 0.32 * (1.0 - k * 0.8)))
 
 func _fade(r: Rect2, a: float, col: Color = PBG) -> void:
 	if a > 0.0:
@@ -4736,7 +4746,10 @@ func _L_bph(x0: float, y: float, W: float) -> float:
 	_E({"k": "t", "p": Vector2(x0 + _tw("단계", 15) + 8.0 + _tw(str(lv), 46, true), cy + 14.0), "s": "/30", "fs": 15, "c": Color("#8a9bad")})
 	var bx := x0 + lvw + 14.0
 	_E({"k": "bar", "r": Rect2(bx, cy - 20.0, xw, 22.0), "v": 1.0 if lv >= 30 else cur / 500.0, "s": "MAX" if lv >= 30 else str(cur) + " / 500 XP"})
-	_E({"k": "t", "p": Vector2(bx, cy + 20.0), "s": "플레이 1분 +10 · 적 처치 +2 · 기지 정복 +30 · 레이드 방어 +50 · 게임이 끝날 때 들어와요", "fs": 12, "c": Color("#8a9bad"), "w": xw})
+	var dy := cy + 18.0
+	for l in _wrap(ThemeDB.fallback_font, "플레이 1분 +10 · 적 처치 +2 · 기지 정복 +30 · 레이드 방어 +50 · 게임이 끝날 때 들어와요", 12, xw):
+		_E({"k": "t", "p": Vector2(bx, dy), "s": l, "fs": 12, "c": Color("#8a9bad")})
+		dy += 16.0
 	var x := bx + xw + 14.0
 	if wrap:
 		y += 72.0
@@ -5125,7 +5138,7 @@ func _build_cos() -> void:
 			cos_hdr.append({"k": "t", "p": Vector2(x0, y + 13.0), "s": l, "fs": 12, "c": Color("#8a9bad")})
 			y += 18.0
 		y += 19.0
-		var own := func(a: Array, L: Array) -> String: return str(L.filter(func(q): return a.has(q.id) and q.get("g", "") != "star").size()) + "/" + str(L.filter(func(q): return q.get("g", "") != "star").size())
+		var own := func(a: Array, L: Array) -> String: return str(L.filter(func(q): return a.has(q.id)).size()) + "/" + str(L.size())
 		tabs = [["star", "★ 걸작", "", ""], ["box", "소로 상자", "", "gift"], ["set", "세트", "", ""], ["r", "로봇 스킨", own.call(SV.own, SK), ""], ["b", "기지 스킨", own.call(SV.bown, BS), ""], ["t", "테마", own.call(SV.town, TS), ""], ["hist", "뽑기 내역", "", "scroll"]]
 		if SV.get("cashOn", true) != false:
 			tabs.append(["cash", "충전", "", "gem"])
