@@ -6419,6 +6419,243 @@ func _L_note(row: Dictionary, x0: float, y: float, W: float) -> float:
 		yy += maxf(30.0, l[1].size() * 20.0 + 10.0)
 	return y + h + 14.0
 
+
+# ═════════ SOROK CLIENT (웹 런처 화면: 왼쪽 계정 · 오른쪽 그림 + 플레이) ═════════
+var ln_on := false
+
+func ln_side_px() -> float:
+	var vs := vsize()
+	return clampf(vs.x * 0.3, 340.0 * (1.6 if touch_mode else 1.0), 620.0 * (1.6 if touch_mode else 1.0))
+
+func _ln_art(r: Rect2) -> void:
+	# 하늘 · 별 · 언덕 · 기지 · 로봇 · 적 기지 (웹 lnArt와 같은 그림, 900×560 기준으로 오른쪽 아래에 맞춤)
+	_gbox(r, _g2("#0c1420", "#1a2230"), 180.0, 0.0)
+	var s := maxf(r.size.x / 900.0, r.size.y / 560.0)
+	var o := r.end - Vector2(900, 560) * s
+	var tt := t_real
+	for i in 70:
+		var x := fmod(i * 137.5 + tt * 6.0 * (1 + i % 3), 900.0)
+		var y := float((i * 71) % 300)
+		var p := o + Vector2(x, y) * s
+		if r.has_point(p):
+			draw_rect(Rect2(p, Vector2(1.6, 1.6) * maxf(1.0, s)), Color(1, 1, 1, 0.25 + 0.5 * absf(sin(tt * 0.8 + i))))
+	var H := PackedVector2Array([o + Vector2(0, 400) * s])
+	var xx := 0.0
+	while xx <= 900.0:
+		H.append(o + Vector2(xx, 390.0 + sin(xx / 90.0) * 18.0) * s)
+		xx += 30.0
+	H.append(o + Vector2(900, 560) * s)
+	H.append(o + Vector2(0, 560) * s)
+	draw_colored_polygon(H, Color("#1b2a24"))
+	var bxf := inv * Transform2D(0.0, Vector2(us, us), 0.0, Vector2.ZERO) * Transform2D(0.0, Vector2(1.25, 1.25) * s, 0.0, o + Vector2(560, 420) * s)
+	draw_set_transform_matrix(bxf)
+	art_base(self, Vector2.ZERO, tt, bxf, bsk)
+	var cols := ["c", "r", "h", "c", "r"]
+	for i in cols.size():
+		var k: String = cols[i]
+		_ui_tf(o + Vector2(660.0 + i * 44.0 + sin(tt * 1.4 + i) * 8.0, 455.0 + cos(tt * 1.2 + i) * 5.0) * s, 0.0, 1.5 * s)
+		if skn.is_empty():
+			art_bot(self, k, UT[k].col, UT[k].acc, tt)
+		else:
+			art_bot_s(self, k, C(skn.c), C(skn.a), tt, skn.pt)
+	_ui_reset()
+	draw_colored_polygon(PackedVector2Array([o + Vector2(830, 470) * s, o + Vector2(865, 385) * s, o + Vector2(900, 470) * s]), Color(150 / 255.0, 95 / 255.0, 210 / 255.0, 0.9))
+	draw_circle(o + Vector2(865, 422) * s, 6.0 * s, Color(1.0, 90 / 255.0, 70 / 255.0, 0.5 + 0.5 * sin(tt * 3.0)))
+	# 그림자 (왼쪽 · 아래 어둡게)
+	_gbox(r, [[0.0, Color(10 / 255.0, 15 / 255.0, 21 / 255.0, 0.75)], [0.6, Color(10 / 255.0, 15 / 255.0, 21 / 255.0, 0.15)], [1.0, Color(10 / 255.0, 15 / 255.0, 21 / 255.0, 0.15)]], 90.0, 0.0)
+	_gbox(r, [[0.0, Color(10 / 255.0, 15 / 255.0, 21 / 255.0, 0.85)], [0.5, Color(10 / 255.0, 15 / 255.0, 21 / 255.0, 0.0)], [1.0, Color(10 / 255.0, 15 / 255.0, 21 / 255.0, 0.0)]], 0.0, 0.0)
+
+func _ln_logo(p: Vector2, fs: int) -> void:
+	var w := 0.0
+	for ch in "SOROK":
+		w += _tw(ch, fs, true) + fs * 0.14
+	for i in 4:
+		var k := (i + 1) / 4.0
+		_spaced_l(p + Vector2(0, fs * 0.05), "SOROK", fs, 0.14, Color(1.0, 0.75, 0.24, 0.09 * (1.0 - k * 0.5)), k * fs * 0.12)
+	_spaced_l(p, "SOROK", fs, 0.14, Color("#ffd76a"), 0.0)
+
+func _spaced_l(p: Vector2, s: String, fs: int, ls: float, col: Color, grow: float) -> void:
+	var x := p.x
+	for ch in s:
+		if grow > 0.0:
+			for d in [Vector2(-grow, 0), Vector2(grow, 0), Vector2(0, -grow), Vector2(0, grow)]:
+				draw_string(fb(), Vector2(x, p.y) + d, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+		else:
+			draw_string(fb(), Vector2(x, p.y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+		x += _tw(ch, fs, true) + fs * ls
+
+func _client_build() -> Dictionary:
+	var u := ui_size()
+	var sw := ln_side_px() / us
+	var art := Rect2(sw, 0, u.x - sw, u.y)
+	var G := {"sw": sw, "art": art}
+	if ln_on:
+		return G
+	var x := 30.0
+	var w := sw - 60.0
+	var by := u.y - 24.0
+	var logged: bool = acct != null and acct.ses != null and str(acct.ses.get("nick", "")) != ""
+	var B: Array = [["cl_acct", "계정 관리"], ["cl_keys", "조작법" if touch_ui() else "조작법 (Tab)"], ["cl_out", "로그아웃" if logged else "로그인 / 회원가입"]]
+	for i in range(B.size() - 1, -1, -1):
+		by -= 44.0
+		_add(B[i][0], Rect2(x, by, w, 44.0))
+		by -= 8.0
+	var fs := int(clampf(art.size.x * 0.085, 48.0, 96.0))
+	var hx := art.position.x + 48.0
+	var hy := u.y - 56.0
+	G.play = Rect2(hx, hy - 18.0 - 60.0, 230.0, 60.0)
+	G.fs = fs
+	_add("cl_play", G.play)
+	return G
+
+func _client(f: Font) -> void:
+	_ui_reset()
+	var u := ui_size()
+	ui.clear()
+	var G := _client_build()
+	if acp_open:
+		_build_acp()
+	var hov = null if touch_ui() else ui_hit(mouse_ui * us)
+	var art: Rect2 = G.art
+	_ln_art(art)
+	if ln_on:
+		# 로그인 화면 오른쪽: 큰 SOROK + 부제 (lnHero)
+		var fs2 := int(clampf(art.size.x * 0.085, 48.0, 96.0))
+		_ln_logo(Vector2(art.position.x + 48.0, u.y - 56.0 - 30.0), fs2)
+		draw_string(f, Vector2(art.position.x + 50.0, u.y - 56.0), "외계 기지 정복 전략", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#c9d4dc"))
+		return
+	# 왼쪽 패널
+	var sw: float = G.sw
+	draw_rect(Rect2(0, 0, sw, u.y), Color("#f4f5f7"))
+	var x := 30.0
+	var w := sw - 60.0
+	var y := 34.0
+	draw_colored_polygon(PackedVector2Array([Vector2(x, y + 6), Vector2(x + 6, y), Vector2(x + 12, y + 6), Vector2(x + 6, y + 12)]), Color("#c9a255"))
+	_spaced_l(Vector2(x + 18.0, y + 12.0), "SOROK CLIENT", 13, 0.12, Color("#c9a255"), 0.0)
+	y += 30.0
+	# 계정 카드 (.lnuser)
+	var P := _prof_info()
+	var logged: bool = P[0] != ""
+	var cr := Rect2(x, y, w, 78.0)
+	_gbox(cr, Color.WHITE, 180.0, 10.0)
+	var c := cr.position + Vector2(12.0 + 16.0, 39.0)
+	_gbox(Rect2(c - Vector2(16, 16), Vector2(32, 32)), _g2("#e8c36a", "#b8902f"), 135.0, 16.0)
+	draw_string(fb(), Vector2(c.x - 16.0, c.y + 6.0), str(P[0]).substr(0, 1).to_upper() if logged else "?", HORIZONTAL_ALIGNMENT_CENTER, 32.0, 16, Color("#1c1406"))
+	var tx := cr.position.x + 54.0
+	if logged:
+		draw_string(fb(), Vector2(tx, cr.position.y + 25.0), P[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#1a1d22"))
+		draw_string(fb(), Vector2(tx + _tw(P[0], 15, true) + 3.0, cr.position.y + 25.0), P[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8a929c"))
+	else:
+		draw_string(fb(), Vector2(tx, cr.position.y + 25.0), "로그인 안 함", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#1a1d22"))
+	draw_string(f, Vector2(tx, cr.position.y + 46.0), "청석 " + _cm(SV.cs) + " · 별석 " + str(SV.ss), HORIZONTAL_ALIGNMENT_LEFT, cr.end.x - tx - 8.0, 12, Color("#6a7480"))
+	var st := "이 기기에만 저장"
+	if logged:
+		st = ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + ("불러오는 중…" if booting() else {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨"))
+		if TEST:
+			st += " · 테스트 모드"
+	draw_string(f, Vector2(tx, cr.position.y + 66.0), st, HORIZONTAL_ALIGNMENT_LEFT, cr.end.x - tx - 8.0, 12, Color("#3a7bd5"))
+	y += 78.0 + 12.0
+	# 게임 카드 (.lngame)
+	var gr := Rect2(x, y, w, 64.0)
+	_gbox(gr, Color("#1a1d22"), 180.0, 10.0)
+	_gbox(Rect2(x, y, 4.0, 64.0), Color("#e8c36a"), 180.0, [10.0, 0.0, 0.0, 10.0])
+	_spaced_l(Vector2(x + 18.0, y + 28.0), "SOROK", 17, 0.1, Color("#ffd76a"), 0.0)
+	draw_string(f, Vector2(x + 18.0, y + 50.0), "외계 기지 정복 전략", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#c9d4dc"))
+	# 아래 메뉴 (.lnmenu)
+	for it in ui:
+		var lb := ""
+		var ic := ""
+		match it.id:
+			"cl_acct":
+				lb = "계정 관리"
+				ic = "user"
+			"cl_keys":
+				lb = "조작법" if touch_ui() else "조작법 (Tab)"
+			"cl_out":
+				lb = "로그아웃" if logged else "로그인 / 회원가입"
+			_:
+				continue
+		var h: bool = hov == it
+		_gbox(it.r, Color("#f7f8fa") if h else Color.WHITE, 180.0, 8.0, Color("#1a1d22") if h else Color("#dde1e6"))
+		var lx: float = it.r.position.x + 14.0
+		if ic == "user":
+			_icon_user(Vector2(lx + 8.0, it.r.position.y + 23.0), 16.0)
+			lx += 24.0
+		draw_string(f, Vector2(lx, it.r.position.y + 27.0), lb, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#1a1d22"))
+	# 오른쪽 히어로 (.lnhero2)
+	var hx := art.position.x + 48.0
+	var pr: Rect2 = G.play
+	var fs: int = G.fs
+	draw_string(fb(), Vector2(hx, pr.position.y - 14.0 - 22.0), "외계 기지 50개를 정복하라 · 시즌 1 은하 원정", HORIZONTAL_ALIGNMENT_LEFT, art.end.x - hx - 20.0, 15, Color("#c9d4dc"))
+	_ln_logo(Vector2(hx, pr.position.y - 14.0 - 22.0 - 24.0), fs)
+	_spaced_l(Vector2(hx, pr.position.y - 14.0 - 22.0 - 24.0 - fs - 10.0), "GAME", 12, 0.2, Color("#8a9bad"), 0.0)
+	var busy := booting()
+	var hp: bool = hov != null and hov.id == "cl_play"
+	_bglow(pr, Color(0.91, 0.65, 0.16, 0.4), 18.0, 10.0)
+	_gbox(pr, _g2("#ffe58a", "#f0b03a") if hp else _g2("#ffdf7a", "#e8a52a"), 180.0, 10.0)
+	_spaced_l(Vector2(pr.position.x + (pr.size.x - _tw("플레이", 22, true) - 3.0 * 22 * 0.1) / 2.0, pr.position.y + 39.0), "불러오는 중" if busy else "플레이", 22 if not busy else 17, 0.1, Color("#2a1a00"), 0.0)
+	if busy:
+		_fade(pr, 0.35, Color("#0c1420"))
+	var vs := "버전 " + (app_ver if app_ver != "" else "개발판") + (" · 테스트 모드 (재화 무한)" if TEST else "")
+	draw_string(f, Vector2(hx, pr.end.y + 22.0), vs, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8a9bad"))
+	if upd_url != "":
+		draw_string(fb(), Vector2(hx, pr.end.y + 42.0), "새 버전이 나왔어요 · 로비에서 받을 수 있어요", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#ffd76a"))
+	if acp_open:
+		_acp_draw(f, hov)
+	if keys_open:
+		_keys_win(f)
+
+func client_press(id: String) -> void:
+	sfx("click")
+	match id:
+		"cl_play":
+			if booting():
+				return
+			scene = "lobby"
+			lsec = "main"
+			intro_out = t_real
+		"cl_acct":
+			acp_show()
+		"cl_keys":
+			keys_open = true
+		"cl_out":
+			if acct == null:
+				return
+			if acct.ses != null:
+				acct.logout()
+			else:
+				acct.show_login("")
+		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset":
+			acp_press(id)
+
+func _client_input(e: InputEvent) -> void:
+	if e is InputEventKey and e.pressed and not e.echo:
+		if keys_open and (e.keycode == KEY_ESCAPE or e.keycode == KEY_TAB):
+			keys_open = false
+		elif e.keycode == KEY_TAB:
+			keys_open = true
+		elif e.keycode == KEY_ESCAPE and acp_open:
+			acp_open = false
+		elif (e.keycode == KEY_ENTER or e.keycode == KEY_KP_ENTER) and not acp_open:
+			client_press("cl_play")
+		return
+	if e is InputEventMouseMotion and e.device != InputEvent.DEVICE_ID_EMULATION:
+		mouse_ui = e.position / us
+		return
+	var pos = null
+	if e is InputEventMouseButton and e.device != InputEvent.DEVICE_ID_EMULATION and e.button_index == MOUSE_BUTTON_LEFT and not e.pressed:
+		pos = e.position
+	elif e is InputEventScreenTouch and not e.pressed:
+		pos = e.position
+	if pos == null:
+		return
+	if keys_open:
+		keys_open = false
+		return
+	var it = ui_hit(pos)
+	if it != null:
+		client_press(it.id)
+
 func cos_press(a: Dictionary) -> void:
 	match a.a:
 		"tab":
@@ -6661,7 +6898,7 @@ func _intro(f: Font) -> void:
 		if sa > 0.0:
 			_spaced(f, "외계 기지 정복 전략", u.x / 2.0, cy + fs * 0.5 + 52.0, int(clampf(u.x * 0.016, 14.0, 19.0)), 0.3, Color(201 / 255.0, 212 / 255.0, 220 / 255.0, sa))
 	if ti > 5.6:
-		scene = "lobby"
+		scene = "client"
 		intro_out = t_real
 		_after_intro()
 
@@ -7697,6 +7934,9 @@ func _unhandled_input(e: InputEvent) -> void:
 		return
 	if conn_msg != "":
 		return
+	if scene == "client":
+		_client_input(e)
+		return
 	if scene == "game" and slider_drag != null:
 		if (e is InputEventMouseMotion and e.device != InputEvent.DEVICE_ID_EMULATION) or e is InputEventScreenDrag:
 			_slider_set(slider_drag, e.position)
@@ -7974,6 +8214,14 @@ func go_back() -> void:
 		return
 	if scene == "intro":
 		return
+	if scene == "client":
+		if acp_open:
+			acp_open = false
+		elif t_real < back_arm:
+			_quit_saved()
+		else:
+			back_arm = t_real + 2.0
+		return
 	if scene == "game":
 		if won or lost:
 			return
@@ -8121,7 +8369,7 @@ func _process(dt: float) -> void:
 	if scene == "lobby" and t_real - promo_t > 6.0:
 		promo_t = t_real
 		promo_i += 1
-	if scene == "lobby" or scene == "intro":
+	if scene == "lobby" or scene == "intro" or scene == "client":
 		_box_tick()
 		queue_redraw()
 		return
@@ -8302,6 +8550,13 @@ func _draw() -> void:
 		inv = get_canvas_transform().affine_inverse()
 		draw_set_transform_matrix(inv)
 		_intro(f)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
+	if scene == "client":
+		inv = get_canvas_transform().affine_inverse()
+		draw_set_transform_matrix(inv)
+		_client(f)
+		_intro_fade()
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		return
 	if scene == "lobby":
@@ -8602,6 +8857,16 @@ func _selftest() -> void:
 	await _wait(2.6)
 	await _shot("00x_intro_c")
 	await _wait(1.4)
+	scene = "client"
+	await _wait(0.6)
+	await _shot("00_client")
+	acct.show_login("")
+	await _wait(0.3)
+	await _shot("00_client_login")
+	acct.show_create()
+	await _wait(0.3)
+	await _shot("00_client_create")
+	acct.hide_ui()
 	scene = "lobby"
 	await _wait(0.6)
 	await _shot("00_lobby")

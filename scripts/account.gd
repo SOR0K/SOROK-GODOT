@@ -388,19 +388,33 @@ func logout() -> void:
 	g._apply_sv()
 	g.sv_save(true)
 	g.del_save()
-	g.scene = "lobby"
+	g.scene = "client"
 	g.lsec = "main"
 	show_login("")
 
-# ── 화면 (글자 입력이 필요해서 진짜 UI 노드로 만들어요) ──
-func _style(c: Color, b: Color) -> StyleBoxFlat:
+# ── 화면 (웹 SOROK CLIENT 모양 · 글자 입력이 필요해서 진짜 UI 노드로 만들어요) ──
+func _style(c: Color, b: Color, rad: int = 8, bw: int = 1) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = c
 	s.border_color = b
-	s.set_border_width_all(1)
-	s.set_corner_radius_all(8)
+	s.set_border_width_all(bw)
+	s.set_corner_radius_all(rad)
 	s.set_content_margin_all(12)
 	return s
+
+func _fs(k: float) -> int:
+	return int(round(k * (1.6 if g.touch_mode else 1.0)))
+
+func _label(v: Container, t: String, fs: float, col: Color, bold: bool = false) -> Label:
+	var l := Label.new()
+	l.text = t
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.add_theme_font_size_override("font_size", _fs(fs))
+	l.add_theme_color_override("font_color", col)
+	if bold:
+		l.add_theme_font_override("font", g.fb())
+	v.add_child(l)
+	return l
 
 func _shell(title: String) -> VBoxContainer:
 	hide_ui()
@@ -408,78 +422,116 @@ func _shell(title: String) -> VBoxContainer:
 	fields = {}
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var th := Theme.new()
-	th.default_font_size = 26 if g.touch_mode else 16
+	th.default_font_size = _fs(15)
 	root.theme = th
 	add_child(root)
 	ui_root = root
-	var bg := ColorRect.new()
-	bg.color = Color(0.016, 0.031, 0.047, 0.86)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.add_child(bg)
-	var cc := CenterContainer.new()
-	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.add_child(cc)
-	var pan := PanelContainer.new()
-	var ps := _style(Color("#121a22"), Color("#c9a255"))
-	ps.set_corner_radius_all(14)
-	ps.set_content_margin_all(26 if g.touch_mode else 22)
-	ps.shadow_color = Color(0, 0, 0, 0.6)
-	ps.shadow_size = 30
-	pan.add_theme_stylebox_override("panel", ps)
-	pan.custom_minimum_size = Vector2(640 if g.touch_mode else 420, 0)
-	cc.add_child(pan)
+	g.ln_on = true
+	var side := PanelContainer.new()
+	var ss := StyleBoxFlat.new()
+	ss.bg_color = Color("#f4f5f7")
+	ss.content_margin_left = _fs(30)
+	ss.content_margin_right = _fs(30)
+	ss.content_margin_top = _fs(34)
+	ss.content_margin_bottom = _fs(24)
+	side.add_theme_stylebox_override("panel", ss)
+	side.anchor_bottom = 1.0
+	side.offset_right = g.ln_side_px()
+	root.add_child(side)
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	side.add_child(sc)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 10)
-	pan.add_child(v)
-	var logo := Label.new()
-	logo.text = "S O R O K"
-	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	logo.add_theme_font_size_override("font_size", 48 if g.touch_mode else 34)
-	logo.add_theme_color_override("font_color", Color("#e8c36a"))
-	logo.add_theme_color_override("font_shadow_color", Color("#5c4316"))
-	logo.add_theme_constant_override("shadow_offset_y", 3)
-	v.add_child(logo)
-	var sub := Label.new()
-	sub.text = title
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_color_override("font_color", Color("#9fb3c2"))
-	v.add_child(sub)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_theme_constant_override("separation", _fs(12))
+	sc.add_child(v)
+	_label(v, "◆ SOROK CLIENT", 13, Color("#c9a255"), true)
+	if title != "":
+		_label(v, title, 24, Color("#1a1d22"), true)
 	return v
 
-func _input_box(v: VBoxContainer, key: String, ph: String, secret: bool = false, val: String = "") -> LineEdit:
+func _input_box(v: Container, key: String, ph: String, secret: bool = false, val: String = "") -> LineEdit:
 	var e := LineEdit.new()
 	e.placeholder_text = ph
 	e.secret = secret
 	e.text = val
-	e.custom_minimum_size = Vector2(0, 58 if g.touch_mode else 40)
-	e.add_theme_stylebox_override("normal", _style(Color("#0b1015"), Color("#33414d")))
-	e.add_theme_stylebox_override("focus", _style(Color("#0b1015"), Color("#ffd76a")))
+	e.custom_minimum_size = Vector2(0, _fs(46))
+	var n := _style(Color("#e8ebef"), Color("#e8ebef"), 6, 2)
+	n.content_margin_left = _fs(14)
+	var fo := _style(Color.WHITE, Color("#1a1d22"), 6, 2)
+	fo.content_margin_left = _fs(14)
+	e.add_theme_stylebox_override("normal", n)
+	e.add_theme_stylebox_override("focus", fo)
+	e.add_theme_color_override("font_color", Color("#1a1d22"))
+	e.add_theme_color_override("font_placeholder_color", Color("#8a929c"))
+	e.add_theme_color_override("caret_color", Color("#1a1d22"))
+	e.add_theme_font_size_override("font_size", _fs(15))
 	v.add_child(e)
 	fields[key] = e
 	e.text_submitted.connect(func(_t): _enter_key())
 	return e
 
+# 흰 메뉴 버튼 (.lnmenu)
 func _btn(v: Container, txt: String, cb: Callable, gold: bool = false) -> Button:
 	var b := Button.new()
 	b.text = txt
-	b.custom_minimum_size = Vector2(0, 60 if g.touch_mode else 42)
-	b.add_theme_stylebox_override("normal", _style(Color("#d4ad4c") if gold else Color("#1c2733"), Color("#f3d98e") if gold else Color("#33414d")))
-	b.add_theme_stylebox_override("hover", _style(Color("#e2bc5c") if gold else Color("#24323f"), Color("#f3d98e") if gold else Color("#4fd1b5")))
-	b.add_theme_stylebox_override("pressed", _style(Color("#b8902e") if gold else Color("#141c24"), Color("#ffd76a")))
+	b.custom_minimum_size = Vector2(0, _fs(42))
+	b.add_theme_stylebox_override("normal", _style(Color.WHITE, Color("#dde1e6")))
+	b.add_theme_stylebox_override("hover", _style(Color("#f7f8fa"), Color("#1a1d22")))
+	b.add_theme_stylebox_override("pressed", _style(Color("#eceef1"), Color("#1a1d22")))
 	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(k, Color("#1a1d22"))
+	b.add_theme_font_size_override("font_size", _fs(13.5))
 	if gold:
-		b.add_theme_color_override("font_color", Color("#2a1a02"))
-		b.add_theme_color_override("font_hover_color", Color("#2a1a02"))
+		b.add_theme_font_override("font", g.fb())
 	b.pressed.connect(cb)
 	v.add_child(b)
 	return b
 
-func _err(v: VBoxContainer, t: String) -> void:
+# 빨간 ➜ 버튼 (.lngo)
+func _go(v: Container, cb: Callable) -> void:
+	var b := Button.new()
+	b.text = "➜"
+	var w := _fs(66)
+	b.custom_minimum_size = Vector2(w, w)
+	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var n := _style(Color("#d6303f"), Color("#d6303f"), _fs(20), 0)
+	n.shadow_color = Color(0.84, 0.19, 0.25, 0.35)
+	n.shadow_size = _fs(10)
+	n.shadow_offset = Vector2(0, _fs(6))
+	b.add_theme_stylebox_override("normal", n)
+	var h := n.duplicate()
+	h.bg_color = Color("#e23a49")
+	b.add_theme_stylebox_override("hover", h)
+	b.add_theme_stylebox_override("pressed", h)
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for k in ["font_color", "font_hover_color", "font_pressed_color"]:
+		b.add_theme_color_override(k, Color.WHITE)
+	b.add_theme_font_size_override("font_size", _fs(28))
+	b.add_theme_font_override("font", g.fb())
+	b.pressed.connect(cb)
+	v.add_child(b)
+
+func _link(v: Container, txt: String, cb: Callable) -> void:
+	var b := LinkButton.new()
+	b.text = txt
+	b.underline = LinkButton.UNDERLINE_MODE_ALWAYS
+	b.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(k, Color("#5a6470") if k == "font_color" else Color("#1a1d22"))
+	b.add_theme_font_size_override("font_size", _fs(12.5))
+	b.pressed.connect(cb)
+	v.add_child(b)
+
+func _err(v: Container, t: String) -> void:
 	err_l = Label.new()
 	err_l.text = t
 	err_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	err_l.add_theme_color_override("font_color", Color("#ffb0a0"))
+	err_l.add_theme_color_override("font_color", Color("#d23c2c"))
+	err_l.add_theme_font_size_override("font_size", _fs(13))
 	v.add_child(err_l)
 
 func say(t: String) -> void:
@@ -492,28 +544,85 @@ func _enter_key() -> void:
 		"create": _do_create()
 		"nick": _do_nick()
 
-func _tabs(v: VBoxContainer, cur: String) -> void:
+# 밑줄 탭 (.lntabs)
+func _tabs(v: Container, cur: String) -> void:
+	var wrap := PanelContainer.new()
+	var ws := StyleBoxFlat.new()
+	ws.bg_color = Color(0, 0, 0, 0)
+	ws.border_color = Color("#dde1e6")
+	ws.border_width_bottom = 2
+	wrap.add_theme_stylebox_override("panel", ws)
+	v.add_child(wrap)
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 6)
-	v.add_child(h)
-	for q in [["login", "로그인"], ["create", "회원가입"]]:
-		var b := _btn(h, q[1], (func(): show_login("")) if q[0] == "login" else (func(): show_create()), q[0] == cur)
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_theme_constant_override("separation", _fs(6))
+	wrap.add_child(h)
+	for q in [["login", "로그인"], ["create", "회원가입"], ["info", "!"]]:
+		var b := Button.new()
+		b.text = q[1]
+		b.custom_minimum_size = Vector2(_fs(40), _fs(42))
+		if q[0] != "info":
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var st := StyleBoxFlat.new()
+		st.bg_color = Color(0, 0, 0, 0)
+		st.border_color = Color("#d6303f") if q[0] == cur else Color(0, 0, 0, 0)
+		st.border_width_bottom = 3
+		for k in ["normal", "hover", "pressed"]:
+			b.add_theme_stylebox_override(k, st)
+		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		var col := Color("#1a1d22") if q[0] == cur else Color("#8a929c")
+		for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+			b.add_theme_color_override(k, col if k == "font_color" else Color("#1a1d22"))
+		b.add_theme_font_size_override("font_size", _fs(15))
+		b.add_theme_font_override("font", g.fb())
+		var id: String = q[0]
+		b.pressed.connect(func():
+			if id == "login":
+				show_login("")
+			elif id == "create":
+				show_create()
+			else:
+				show_info())
+		h.add_child(b)
 
-func _srv_label(v: VBoxContainer) -> void:
-	var l := Label.new()
-	l.text = ("모바일" if srv == "m" else "PC") + " 서버 · 웹 SOROK과 같은 계정이에요"
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", 18 if g.touch_mode else 12)
-	l.add_theme_color_override("font_color", Color("#7d8b96"))
-	v.add_child(l)
+func _srv_label(v: Container) -> void:
+	_label(v, ("모바일" if srv == "m" else "PC") + " 서버 · 웹 SOROK과 같은 계정", 12, Color("#3a7bd5"), true)
 
-func _remember(v: VBoxContainer) -> void:
+func _remember(v: Container) -> void:
 	var c := CheckBox.new()
 	c.text = "로그인 상태 유지"
 	c.button_pressed = remember
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
+		c.add_theme_color_override(k, Color("#3a424c"))
+	c.add_theme_font_size_override("font_size", _fs(13.5))
+	c.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	c.toggled.connect(func(on): remember = on)
 	v.add_child(c)
+
+# 흰 정보 카드 목록 (.lninfo)
+func _info(v: Container, items: Array) -> void:
+	for it in items:
+		var p := PanelContainer.new()
+		var s := _style(Color.WHITE, Color("#e3e6ea"))
+		s.content_margin_top = _fs(10)
+		s.content_margin_bottom = _fs(10)
+		p.add_theme_stylebox_override("panel", s)
+		var b := VBoxContainer.new()
+		b.add_theme_constant_override("separation", 2)
+		p.add_child(b)
+		_label(b, it[0], 13.5, Color("#1a1d22"), true)
+		_label(b, it[1], 13, Color("#3a424c"))
+		v.add_child(p)
+
+func _nick_row(v: Container, n: String, t: String) -> void:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", _fs(6))
+	v.add_child(h)
+	var a := _input_box(h, "n", "이름 (3~16자)", false, n)
+	a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_label(h, "#", 18, Color("#6a7480"), true)
+	var b := _input_box(h, "t", DTAG, false, t)
+	b.custom_minimum_size = Vector2(_fs(84), _fs(46))
+	_label(v, "태그를 비우면 #" + DTAG + " · 모든 서버 공통", 11.5, Color("#6a7480"))
 
 func show_msg(t: String) -> void:
 	hide_ui()
@@ -523,44 +632,50 @@ func show_msg(t: String) -> void:
 
 func show_login(e: String) -> void:
 	mode = "login"
-	var v := _shell("외계 기지 정복 전략")
+	g.scene = "client"
+	var v := _shell("")
 	_tabs(v, "login")
 	_srv_label(v)
 	_input_box(v, "em", "이메일")
 	_input_box(v, "pw", "비밀번호", true)
 	_remember(v)
 	_err(v, e)
-	_btn(v, "로그인  ➜", _do_login, true)
-	_btn(v, "비밀번호 재설정 메일 받기", _do_reset)
-	_btn(v, "로그인 없이 하기 (이 기기에만 저장)", _offline)
+	_go(v, _do_login)
+	_link(v, "비밀번호 재설정 메일 받기", _do_reset)
+	_link(v, "로그인 없이 하기 (이 기기에만 저장)", _offline)
 
 func show_create() -> void:
 	mode = "create"
-	var v := _shell("새 계정 만들기")
+	g.scene = "client"
+	var v := _shell("")
 	_tabs(v, "create")
 	_srv_label(v)
 	_input_box(v, "em", "이메일")
 	_input_box(v, "pw", "비밀번호 (6~32자)", true)
 	_input_box(v, "pw2", "비밀번호 확인", true)
-	var h := HBoxContainer.new()
-	v.add_child(h)
-	var n := _input_box(v, "n", "이름 (3~16자)")
-	n.reparent(h)
-	n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var tg := _input_box(v, "t", "태그 (" + DTAG + ")")
-	tg.reparent(h)
-	tg.custom_minimum_size = Vector2(110, 40)
+	_nick_row(v, "", "")
 	_remember(v)
 	_err(v, "")
-	_btn(v, "가입하기  ➜", _do_create, true)
+	_go(v, _do_create)
+
+func show_info() -> void:
+	mode = "info"
+	var v := _shell("")
+	_tabs(v, "info")
+	_label(v, "정보", 22, Color("#1a1d22"), true)
+	_info(v, [["계정", "이메일 + 비밀번호. 하나의 계정으로 PC·모바일 모두 로그인"],
+		["서버", "PC 서버와 모바일 서버는 청석·스킨·저장·닉네임이 완전히 따로. 지금 접속: " + ("모바일" if srv == "m" else "PC") + " 서버"],
+		["저장", "진행 데이터는 서버에 자동 저장 (약 30초마다 + 게임 저장 시). 다른 기기에서도 이어 하기 가능"],
+		["비밀번호 분실", "로그인 탭의 [비밀번호 재설정 메일 받기]"],
+		["닉네임", "이름#태그 (예: YASR#SR1). 모든 서버 공통 · 이름 3~16자, 태그 3~5자"],
+		["이메일 인증", "가입 후 받은 메일의 링크로 인증해야 플레이 가능"],
+		["버전", g.app_ver if g.app_ver != "" else "개발판"]])
 
 func show_verify() -> void:
 	mode = "verify"
+	g.scene = "client"
 	var v := _shell("이메일 인증이 필요해요")
-	var l := Label.new()
-	l.text = "인증 메일 보낸 곳: " + str(ses.get("email", "")) + "\n메일함(스팸함 포함)의 인증 링크를 누른 뒤 아래 버튼을 눌러 주세요.\n인증한 계정만 플레이할 수 있어요."
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	v.add_child(l)
+	_info(v, [["인증 메일 보낸 곳", str(ses.get("email", ""))], ["방법", "메일함(스팸함 포함)의 인증 링크 누르기 → 아래 [인증했어요, 다시 확인]"], ["이유", "인증한 계정만 플레이 가능"]])
 	_err(v, "")
 	_btn(v, "인증했어요, 다시 확인", _do_vchk, true)
 	_btn(v, "인증 메일 다시 보내기", _do_vsend)
@@ -568,30 +683,26 @@ func show_verify() -> void:
 
 func show_nick(hint: String) -> void:
 	mode = "nick"
-	var v := _shell("닉네임 정하기 · " + ("모바일" if srv == "m" else "PC") + " 서버 첫 입장")
+	g.scene = "client"
+	var v := _shell("불러오는 중…")
 	var r := await fs(HTTPClient.METHOD_GET, "accounts/" + str(ses.uid))
-	if r.ok and r.j.has("fields") and r.j.fields.has("nick"):
+	var has: bool = r.ok and r.j.has("fields") and r.j.fields.has("nick")
+	v = _shell("새 서버 첫 입장" if has else "닉네임 정하기")
+	_srv_label(v)
+	if has:
 		ses.an = r.j.fields.nick.stringValue
 		ses.at = r.j.fields.get("tag", {}).get("stringValue", DTAG)
-		var l := Label.new()
-		l.text = "닉네임 (모든 서버 공통): " + ses.an + "#" + ses.at
-		v.add_child(l)
+		_info(v, [["닉네임 (모든 서버 공통)", str(ses.an) + "#" + str(ses.at)]])
 	else:
 		var hp := hint.split("#")
-		var h := HBoxContainer.new()
-		v.add_child(h)
-		var n := _input_box(v, "n", "이름 (3~16자)", false, hp[0] if hp.size() > 0 else "")
-		n.reparent(h)
-		n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var tg := _input_box(v, "t", "태그 (" + DTAG + ")", false, hp[1] if hp.size() > 1 else "")
-		tg.reparent(h)
-		tg.custom_minimum_size = Vector2(110, 40)
+		_nick_row(v, hp[0] if hp.size() > 0 else "", hp[1] if hp.size() > 1 else "")
 	_err(v, "")
-	_btn(v, "입장  ➜", _do_nick, true)
-	_btn(v, "로그아웃", func(): clear(); show_login(""))
+	_go(v, _do_nick)
+	_link(v, "로그아웃", func(): clear(); show_login(""))
 
 func hide_ui() -> void:
 	g.conn_msg = ""
+	g.ln_on = false
 	if ui_root != null:
 		ui_root.queue_free()
 		ui_root = null
