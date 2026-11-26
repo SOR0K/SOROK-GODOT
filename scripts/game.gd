@@ -2704,10 +2704,14 @@ func _lobby(f: Font) -> void:
 	var u := ui_size()
 	_page_bg(Rect2(Vector2.ZERO, u))
 	ui.clear()
+	var tq := Time.get_ticks_usec()
 	_build_lobby()
+	_pf("l_build_" + lsec, tq)
 	var hov = null if touch_ui() else ui_hit(mouse_ui * us)
 	if _cos_on():
+		tq = Time.get_ticks_usec()
 		_lobby_cos(f, hov)
+		_pf("l_draw_" + lsec, tq)
 	elif lsec == "main":
 		_lobby_main(f, hov)
 	elif lsec == "notes":
@@ -4237,8 +4241,17 @@ func fb() -> Font:
 		FB = v
 	return FB
 
+var _tw_c := {}
 func _tw(s: String, fs: int, bold: bool = false) -> float:
-	return (fb() if bold else ThemeDB.fallback_font).get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var key := "%s|%d|%d" % [s, fs, 1 if bold else 0]
+	var v = _tw_c.get(key)
+	if v != null:
+		return v
+	if _tw_c.size() > 6000:
+		_tw_c.clear()
+	var w: float = (fb() if bold else ThemeDB.fallback_font).get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	_tw_c[key] = w
+	return w
 
 func _cm(n) -> String:
 	var s := str(absi(int(n)))
@@ -7735,7 +7748,18 @@ func hov_obj(w: Vector2):
 			return {"p": (m.p as Vector2) + Vector2(0, -14), "ev": false, "tip": "광산\n남은 광석 " + str(ceili(m.amt)) + " / 700\n채굴 중인 로봇 " + str(n) + "대\n채굴 로봇을 선택하고 광산을 누르면 캐요"}
 	return null
 
+var _wrap_c := {}
 func _wrap(f: Font, line: String, fs: int, mw: float) -> Array:
+	var key := "%s|%d|%d|%d" % [line, fs, int(mw), f.get_instance_id()]
+	if _wrap_c.has(key):
+		return _wrap_c[key]
+	if _wrap_c.size() > 4000:
+		_wrap_c.clear()
+	var r := _wrap0(f, line, fs, mw)
+	_wrap_c[key] = r
+	return r
+
+func _wrap0(f: Font, line: String, fs: int, mw: float) -> Array:
 	if f.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x <= mw:
 		return [line]
 	var out: Array = []
