@@ -1481,7 +1481,7 @@ func hud_rect() -> Rect2:
 		x = 12.0
 	return Rect2(x, u.y - 128.0, w, 118.0)
 
-const CMDS := [["all", "E", "전체", "[E] 모든 로봇 선택"], ["home", "Q", "기지", "[Q / Home] 기지로 화면 이동"], ["info", "I", "정보", "[I] 이번 게임 기록"], ["shop", "Y", "상점", "[Y] 상점 열기 · 닫기"]]
+const CMDS := [["all", "E", "전체", "[E] 모든 로봇 선택"], ["home", "Q", "기지", "[Q / Home] 기지로 화면 이동"], ["shop", "Y", "상점", "[Y] 상점 열기 · 닫기"], ["info", "I", "정보", "[I] 이번 게임 기록"]]
 
 func _build_ui() -> void:
 	ui.clear()
@@ -1496,10 +1496,24 @@ func _build_ui() -> void:
 				_add("retry", Rect2(u.x / 2.0 - 230.0, u.y / 2.0 + 64.0, 220.0, 54.0))
 				_add("llobby", Rect2(u.x / 2.0 + 10.0, u.y / 2.0 + 64.0, 220.0, 54.0))
 		return
+	if paused and pause_set:
+		var G := _pset_geo()
+		var r: Rect2 = G.r
+		var x := r.position.x + 24.0
+		var w := r.size.x - 48.0
+		for i in 3:
+			var k: String = ["vol_s", "vol_b", "uis"][i]
+			_add("gsl", Rect2(x + 92.0 - 11.0, r.position.y + 70.0 + i * 50.0, w - 92.0 - 60.0 + 22.0, 34.0), true, "", k)
+		var by := r.position.y + 70.0 + 150.0 + 10.0
+		_add("gmute", Rect2(x, by, (w - 10.0) / 2.0, 44.0))
+		_add("keys", Rect2(x + (w + 10.0) / 2.0, by, (w - 10.0) / 2.0, 44.0))
+		_add("gbgm", Rect2(x, by + 54.0, w, 44.0))
+		_add("psback", Rect2(x, by + 108.0, w, 46.0))
+		return
 	if paused:
 		var py := u.y / 2.0 - 70.0
 		for i in 4:
-			_add(["resume", "tolobby", "endg", "keys"][i], Rect2(u.x / 2.0 - 130.0, py + i * 62.0, 260.0, 52.0))
+			_add(["resume", "pset", "tolobby", "endg"][i], Rect2(u.x / 2.0 - 130.0, py + i * 62.0, 260.0, 52.0))
 		return
 	if touch_ui():
 		_add("pause", Rect2(12, 12, 44, 44))
@@ -1696,6 +1710,25 @@ func ui_press(it: Dictionary, rclick: bool = false) -> void:
 			new_game()
 		"resume":
 			paused = false
+			pause_set = false
+		"pset":
+			pause_set = true
+		"psback":
+			pause_set = false
+			_apply_sv()
+			sv_save()
+		"gsl":
+			slider_drag = it.arg
+			_slider_set(it.arg, get_viewport().get_mouse_position())
+		"gmute":
+			SV.mute = not SV.mute
+			_apply_sv()
+			sv_save()
+		"gbgm":
+			var O := _bgm_opts()
+			var i := O.find(str(SV.get("bgm", "auto")))
+			SV.bgm = O[(i + 1) % O.size()]
+			sv_save()
 		"tolobby":
 			to_lobby_saved()
 		"endg":
@@ -2198,11 +2231,13 @@ func _hud(f: Font) -> void:
 		_raid_ui(f)
 	if shop_open:
 		_shop(f, hov)
-	if paused:
+	if paused and pause_set:
+		_pset_draw(f, hov)
+	elif paused:
 		draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
 		draw_string(f, Vector2(0, u.y / 2.0 - 100.0), "일시정지", HORIZONTAL_ALIGNMENT_CENTER, u.x, 34, GOLD)
 		for it in ui:
-			var lb: String = {"resume": "계속하기", "tolobby": "저장하고 로비로", "endg": "게임 종료", "keys": "조작법"}.get(it.id, "")
+			var lb: String = {"resume": "계속하기", "pset": "설정", "tolobby": "저장하고 로비로", "endg": "게임 종료"}.get(it.id, "")
 			if it.id == "endg" and quit_arm > t_real:
 				lb = "정말 끝낼까요? 한 번 더"
 			_btn(f, it.r, lb, hov == it, 17, Color("#ff9a8a") if it.id == "endg" else Color.WHITE)
@@ -2659,12 +2694,14 @@ func _lobby(f: Font) -> void:
 		_acp_draw(f, hov)
 	if keys_open:
 		_keys_win(f)
+	if conn_msg != "":
+		_conn_draw(f)
 
 func _logo(f: Font, small: bool = false) -> void:
 	var u := ui_size()
 	_prof_card(f, null if touch_ui() else ui_hit(mouse_ui * us))
 	if TEST:
-		draw_string(fb(), Vector2(0, 22), "테스트 모드 · 재화 무한 · 클라우드 저장 꺼짐  ", HORIZONTAL_ALIGNMENT_RIGHT, u.x, 12, Color("#ff9a5a"))
+		draw_string(fb(), Vector2(0, 22 + _safe_top()), "테스트 모드 · 재화 무한 · 클라우드 저장 꺼짐  ", HORIZONTAL_ALIGNMENT_RIGHT, u.x, 12, Color("#ff9a5a"))
 	var cy := 134.0
 	if small:
 		_spaced(fb(), "SOROK", u.x / 2.0, 54.0, 42, 0.32, Color("#5c4316"))
@@ -2834,7 +2871,7 @@ func _lobby_notes(f: Font, hov) -> void:
 
 func _slider_set(key: String, sp: Vector2) -> void:
 	for it in ui:
-		if it.id == "sl" and it.arg == key:
+		if it.id in ["sl", "gsl"] and it.arg == key:
 			var r: Rect2 = it.r
 			var nm: Array = {"uis": [50, 130, 5], "vol_s": [0, 100, 1], "vol_b": [0, 100, 1]}[key]
 			var k := clampf((sp.x / us - r.position.x - 11.0) / (r.size.x - 22.0), 0.0, 1.0)
@@ -3997,7 +4034,7 @@ func buy_set(i: int) -> void:
 
 # ═════════ 꾸미기 화면: 상점 · 창고 · 배틀패스 · 설정 · 상자 열기 (웹 .lsec 모양 그대로) ═════════
 var shop_tab2 := "box"
-var stF := {"own": "all", "cat": "all", "gr": "all"}
+var stF := {"own": [], "cat": [], "gr": []}
 var hF := "all"
 var set_tab := "a"
 var lob_draw: Array = []
@@ -5151,7 +5188,7 @@ func _rows_store() -> Array:
 	var ch := func(k: String, opts: Array) -> Array:
 		var o: Array = []
 		for q in opts:
-			o.append([q[1], {"a": "sf", "k": k, "v": q[0]}, stF[k] == q[0]])
+			o.append([q[1], {"a": "sf", "k": k, "v": q[0]}, (stF[k] as Array).is_empty() if q[0] == "all" else (stF[k] as Array).has(q[0])])
 		return o
 	R.append({"sfbar": [["보유", ch.call("own", [["all", "전체"], ["yes", "보유"], ["no", "미보유"]])], ["종류", ch.call("cat", [["all", "전체"], ["s", "로봇"], ["b", "기지"], ["t", "테마"]])], ["등급", ch.call("gr", [["all", "전체"], ["ju", "주"], ["kro", "크로"], ["star", "★ 걸작"], ["pass", "패스 전용"], ["base", "일반 기지"]])]]})
 	var cards: Array = []
@@ -5159,11 +5196,11 @@ func _rows_store() -> Array:
 		var c := cat_of(it.id)
 		var o := owns(it.id)
 		var g := _store_gr(it)
-		if stF.own != "all" and (stF.own == "yes") != o:
+		if not (stF.own as Array).is_empty() and not (stF.own as Array).has("yes" if o else "no"):
 			continue
-		if stF.cat != "all" and stF.cat != c:
+		if not (stF.cat as Array).is_empty() and not (stF.cat as Array).has(c):
 			continue
-		if stF.gr != "all" and stF.gr != g:
+		if not (stF.gr as Array).is_empty() and not (stF.gr as Array).has(g):
 			continue
 		var e := equipped(it.id)
 		var cd := {"pv": [c, it.id], "tag": {"s": "로봇", "b": "기지", "t": "테마"}[c] + " · " + {"ju": "주", "kro": "크로", "star": "★ 걸작", "pass": "패스 전용", "base": "일반"}[g], "tc": "star" if g == "star" else ("kro" if g == "kro" else "ju"),
@@ -5225,7 +5262,7 @@ func _rows_set() -> Array:
 	R.append({"row2": [{"l": "조작법 전체 보기" + ("" if touch_ui() else " (Tab)"), "a": "lkeys"}, {"l": "계정 관리", "a": "lacct"}]})
 	R.append({"p": "한 손가락으로 지도 이동 · 두 손가락으로 확대 · 탭 선택·명령 · 같은 종류 두 번 탭 = 모두 선택 · 꾹 누르고 끌어서 묶기" if touch_ui() else "좌클릭 명령 · 좌클릭 드래그나 WASD로 지도 이동 · 우클릭 누른 채 드래그로 로봇 묶기 · 1~5 로봇 종류별 선택 · Ctrl(또는 Shift)+1~5 또는 숫자 두 번 = 그 로봇들이 모인 곳으로 화면 이동 · 6/스페이스 기름 · T 깃발 · Ctrl+휠 확대/축소"})
 	R.append({"h": "데이터"})
-	R.append({"row2": [{"l": "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", "a": "lwipe"}, {"l": "정말? 한 번 더" if wipe_arm == "lwipeall" else "게임 전체 초기화", "a": "lwipeall", "sty": "red"}, {"l": "뒤로", "a": "lback"}]})
+	R.append({"row2": [{"l": "정말? 한 번 더" if wipe_arm == "lwipe" else "청석·스킨 초기화", "a": "lwipe"}, {"l": "정말? 한 번 더" if wipe_arm == "lwipeall" else "게임 전체 초기화", "a": "lwipeall", "sty": "red"}]})
 	return R
 
 # ── 화면 만들기 ──
@@ -5277,16 +5314,16 @@ func _build_cos() -> void:
 	lob_draw = []
 	_cl = []
 	var H := _L(R, x0, y - lob_scroll, iw)
-	var reserve := 54.0 if small else 0.0
-	var vh := minf(H, maxf(120.0, u.y - y - reserve - 24.0))
+	var reserve := 54.0
+	var sbm := 14.0 if touch_ui() else 0.0
+	var vh := minf(H, maxf(80.0, u.y - y - reserve - 24.0 - sbm))
 	cos_vp = Rect2(px + 1.0, y, W - 2.0, vh)
 	lob_max = maxf(0.0, H - vh)
 	var bot := y + vh
-	if small:
-		var be := {"k": "btn", "r": Rect2(x0, bot + 6.0, iw, 42.0), "l": "뒤로", "sty": "def", "en": true, "fs": 13}
-		cos_hdr.append(be)
-		be.it = _add("lback", be.r)
-		bot += 48.0
+	var be := {"k": "btn", "r": Rect2(x0, bot + 6.0, iw, 42.0), "l": "뒤로", "sty": "def", "en": true, "fs": 13}
+	cos_hdr.append(be)
+	be.it = _add("lback", be.r)
+	bot += 48.0
 	cos_pr = Rect2(px, top, W, bot + 16.0 - top)
 	for c in _cl:
 		var rr: Rect2 = (c[1] as Rect2).intersection(cos_vp) if c[4] else c[1]
@@ -5606,18 +5643,19 @@ func _box_geo() -> Dictionary:
 		var w := minf(420.0, iw) if big else cw
 		for i in rw:
 			hh = maxf(hh, _box_card_h(box_res[i], w))
-		var x: float = (iw - (w if big else rw.size() * cw + (rw.size() - 1) * 12.0)) / 2.0 if big else (iw - gw) / 2.0
+		var x: float = (iw - (w if big else rw.size() * cw + (rw.size() - 1) * 12.0)) / 2.0
 		for k in rw.size():
 			pos[rw[k]] = Rect2(x + k * (cw + 12.0), y, w, hh)
 		y += hh + 12.0
 	var gh := maxf(0.0, y - 12.0)
 	var busy := box_busy()
-	var fixed := 18.0 + 76.0 + 12.0 + 20.0 + 12.0 + 12.0 + 38.0 + 30.0 + 18.0
+	var ah := 76.0 * clampf(1.0 - (t_real - box_t0 - 1.0) / 0.3, 0.0, 1.0) + 4.0
+	var fixed := 18.0 + ah + 12.0 + 20.0 + 12.0 + 12.0 + 38.0 + (30.0 if busy else 0.0) + 18.0
 	var gvis := minf(gh, minf(u.y * 0.6, u.y * 0.9 - fixed))
 	var H := fixed + gvis
 	var top := (u.y - H) / 2.0
 	var x0 := (u.x - W) / 2.0
-	return {"pr": Rect2(x0, top, W, H), "iw": iw, "pos": pos, "gh": gh, "gvis": gvis, "gy": top + 18.0 + 76.0 + 12.0 + 20.0 + 12.0, "busy": busy}
+	return {"pr": Rect2(x0, top, W, H), "iw": iw, "pos": pos, "gh": gh, "gvis": gvis, "gy": top + 18.0 + ah + 12.0 + 20.0 + 12.0, "busy": busy, "ah": ah}
 
 func _build_box() -> void:
 	ui.clear()
@@ -5716,7 +5754,7 @@ func _box_overlay(f: Font, hov) -> void:
 		sm = "별 뽑기 " + str(box_res.size()) + "회 · 별 파편 +" + str(tot) + " (보유 " + str(SV.sfrag) + "/30) · 천장 " + str(SV.spity) + "/500"
 	else:
 		sm = "상자 " + str(box_res.size()) + "개 · 파편 " + str(tot) + "개" + (" · 완성 " + str(done) + "개!" if done > 0 else "") + (" · 청석 환급 +" + str(ref) if ref > 0 else "")
-	draw_string(f, Vector2(pr.position.x, pr.position.y + 18.0 + 76.0 + 12.0 + 15.0), sm, HORIZONTAL_ALIGNMENT_CENTER, pr.size.x, 14, Color("#ffd27a"))
+	draw_string(f, Vector2(pr.position.x, pr.position.y + 18.0 + G.ah + 12.0 + 15.0), sm, HORIZONTAL_ALIGNMENT_CENTER, pr.size.x, 14, Color("#ffd27a"))
 	sb_box = {}
 	if box_max > 0.0:
 		var hh := maxf(40.0, G.gvis * G.gvis / (G.gvis + box_max))
@@ -5854,6 +5892,8 @@ func _cash_overlay(f: Font, hov) -> void:
 
 # ═════════ 계정 관리 창 (웹 새 디자인 .acx) · 프로필 카드 · 확률표 · 패치 노트 ═════════
 var acp_open := false
+var conn_msg := ""
+var conn_t := 0.0
 var acp_msg := ""
 var acp_ver = null
 var lob_anchor := {}
@@ -5885,10 +5925,16 @@ func _prof_info() -> Array:
 			dot = Color("#ff9a5a")
 	return [nk, tg, st, dot]
 
+func _safe_top() -> float:
+	if not touch_ui():
+		return 0.0
+	var sa := DisplayServer.get_display_safe_area()
+	return maxf(maxf(0.0, float(sa.position.y)), 26.0) / us
+
 func _prof_rect() -> Rect2:
 	var P := _prof_info()
 	var w := maxf(_tw(str(P[0]) if P[0] != "" else "로그인 안 함", 15, true) + _tw(P[1], 12), _tw(P[2], 12) + 14.0)
-	return Rect2(12, 10, 58.0 + w + 16.0, 50.0)
+	return Rect2(12, 10 + _safe_top(), 58.0 + w + 16.0, 50.0)
 
 func _prof_card(f: Font, hov) -> void:
 	var r := _prof_rect()
@@ -6057,6 +6103,63 @@ func _acp_draw(f: Font, hov) -> void:
 			draw_string(f, it.r.position + Vector2(44.0, 29.0), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e6edf3"))
 		else:
 			_wbtn({"r": it.r, "l": lab, "sty": sty, "en": true, "it": it, "fs": 14 if it.id != "acp_save" else 13}, hov)
+
+func _conn_draw(f: Font) -> void:
+	var u := ui_size()
+	draw_rect(Rect2(Vector2.ZERO, u), Color(0.016, 0.031, 0.047, 0.55))
+	var r := Rect2(u.x / 2.0 - 170.0, u.y / 2.0 - 58.0, 340.0, 116.0)
+	_bglow(r, Color(0, 0, 0, 0.6), 24.0, 14.0)
+	_gbox(r, Color("#121a22"), 180.0, 14.0, Color("#c9a255"))
+	var c := r.position + Vector2(44.0, 50.0)
+	draw_arc(c, 16.0, 0.0, TAU, 32, Color("#2b3640"), 4.0, true)
+	var a0 := t_real * 5.0
+	draw_arc(c, 16.0, a0, a0 + 1.9, 16, Color("#ffd76a"), 4.0, true)
+	draw_string(fb(), r.position + Vector2(78.0, 46.0), conn_msg, HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 90.0, 16, Color("#e6edf3"))
+	draw_string(f, r.position + Vector2(78.0, 70.0), "계정 기록을 불러오고 있어요", HORIZONTAL_ALIGNMENT_LEFT, r.size.x - 90.0, 12, Color("#8a9bad"))
+	if t_real - conn_t > 6.0:
+		draw_string(f, Vector2(r.position.x, r.end.y - 14.0), "오래 걸리면 인터넷 연결을 확인해 주세요", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#ffc46b"))
+
+var pause_set := false
+func _pset_geo() -> Dictionary:
+	var u := ui_size()
+	var W := minf(460.0, u.x - 32.0)
+	var H := 70.0 + 150.0 + 10.0 + 108.0 + 46.0 + 22.0
+	return {"r": Rect2((u.x - W) / 2.0, (u.y - H) / 2.0, W, H)}
+
+func _pset_draw(f: Font, hov) -> void:
+	var u := ui_size()
+	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.6))
+	var r: Rect2 = _pset_geo().r
+	_bglow(r, Color(0, 0, 0, 0.6), 24.0, 14.0)
+	_gbox(r, Color("#121a22"), 180.0, 14.0, Color("#c9a255"))
+	draw_string(fb(), r.position + Vector2(24.0, 42.0), "설정", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#ffd76a"))
+	draw_string(f, r.position + Vector2(80.0, 42.0), "게임 중에 바꿀 수 있는 것들이에요", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8a9bad"))
+	var names := {"vol_s": "효과음", "vol_b": "배경음", "uis": "UI 크기"}
+	for it in ui:
+		var R: Rect2 = it.r
+		match it.id:
+			"gsl":
+				var k: String = it.arg
+				draw_string(f, Vector2(r.position.x + 24.0, R.position.y + 23.0), names[k], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#c9d3dc"))
+				var nm: Array = {"uis": [50, 130], "vol_s": [0, 100], "vol_b": [0, 100]}[k]
+				var v: float = clampf((float(SV[k]) - float(nm[0])) / float(nm[1] - nm[0]), 0.0, 1.0)
+				var tx := R.position.x + 11.0
+				var tw := R.size.x - 22.0
+				var cy := R.position.y + 17.0
+				_gbox(Rect2(tx, cy - 3.0, tw, 6.0), Color("#3a4a58"), 180.0, 3.0)
+				_gbox(Rect2(tx, cy - 3.0, tw * v, 6.0), Color("#e8c36a"), 180.0, 3.0)
+				draw_circle(Vector2(tx + tw * v, cy), 9.0, Color("#ffd76a") if slider_drag == k else Color("#e8c36a"))
+				draw_string(fb(), Vector2(R.end.x + 4.0, R.position.y + 23.0), str(int(SV[k])) + ("%" if k == "uis" else ""), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#ffe9b8"))
+			"gmute":
+				_wbtn({"r": R, "l": "음소거 끄기" if SV.mute else "음소거", "sty": "pf", "en": true, "it": it, "fs": 14}, hov)
+			"keys":
+				_wbtn({"r": R, "l": "조작법 보기", "sty": "pf", "en": true, "it": it, "fs": 14}, hov)
+			"gbgm":
+				_wbtn({"r": R, "l": "배경음: " + _bgm_name(str(SV.get("bgm", "auto"))) + "  ▸", "sty": "pf", "en": true, "it": it, "fs": 14}, hov)
+			"psback":
+				_wbtn({"r": R, "l": "돌아가기", "sty": "pfgo", "en": true, "it": it, "fs": 15}, hov)
+	if int(SV.uis) != roundi(us * 100.0):
+		draw_string(f, Vector2(r.position.x, r.end.y + 22.0), "UI 크기는 돌아가기를 누르면 바뀌어요", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color("#8a9bad"))
 
 func _icon_user(c: Vector2, s: float) -> void:
 	draw_circle(c + Vector2(0, -s * 0.18), s * 0.22, Color("#ffd76a"))
@@ -6235,7 +6338,6 @@ func _rows_notes() -> Array:
 	var R: Array = [{"nhero": true}]
 	for i in PNOTES.size():
 		R.append({"note": PNOTES[i], "latest": i == 0})
-	R.append({"row2": [{"l": "뒤로", "a": "lback"}]})
 	return R
 
 func _L_nhero(x0: float, y: float, W: float) -> float:
@@ -6353,7 +6455,13 @@ func cos_press(a: Dictionary) -> void:
 			sv_save()
 		"set": buy_set(int(a.i))
 		"sf":
-			stF[a.k] = a.v
+			var L: Array = stF[a.k]
+			if a.v == "all":
+				L.clear()
+			elif L.has(a.v):
+				L.erase(a.v)
+			else:
+				L.append(a.v)
 			lob_scroll = 0.0
 		"bpbuy":
 			if bp().prem:
@@ -7544,7 +7652,7 @@ func _shop(f: Font, hov) -> void:
 					"cu_evo":
 						lab = "진화 " + str(EVC[q.ev])
 					"cu_sell":
-						lab = "정말 판매?" if warn else ("판매 " + str(sell_value(q)))
+						lab = "다시 누르면 판매" if warn else ("판매 " + str(sell_value(q)))
 					"cu_see":
 						lab = "보기"
 				draw_string(f, r.position + Vector2(0, 19), lab, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 12, Color.WHITE if on else Color(1, 1, 1, 0.45))
@@ -7563,6 +7671,17 @@ func _unhandled_input(e: InputEvent) -> void:
 		return
 	if acct != null and acct.is_open():
 		return
+	if conn_msg != "":
+		return
+	if scene == "game" and slider_drag != null:
+		if (e is InputEventMouseMotion and e.device != InputEvent.DEVICE_ID_EMULATION) or e is InputEventScreenDrag:
+			_slider_set(slider_drag, e.position)
+			return
+		if (e is InputEventMouseButton and e.device != InputEvent.DEVICE_ID_EMULATION and not e.pressed) or (e is InputEventScreenTouch and not e.pressed):
+			slider_drag = null
+			_apply_sv()
+			sv_save()
+			return
 	if scene == "lobby":
 		_lobby_input(e)
 		return
@@ -7678,6 +7797,10 @@ func _unhandled_input(e: InputEvent) -> void:
 				shop_open = false
 			elif aim != "":
 				aim = ""
+			elif paused and pause_set:
+				pause_set = false
+				_apply_sv()
+				sv_save()
 			elif paused:
 				paused = false
 			elif not selected().is_empty():
@@ -7796,6 +7919,7 @@ func _touch(e: InputEvent) -> void:
 			var m0: Vector2 = pinch.m0
 			var wp0 := c0 + (m0 - vsize() / 2.0) / z0
 			zm = clampf(z0 * a.distance_to(b2) / float(pinch.d0), ZMIN, ZMAX)
+			zm_t = t_real
 			cam.zoom = Vector2(zm, zm)
 			cam.position = wp0 - (mid - vsize() / 2.0) / zm
 			_clamp_cam()
@@ -8457,6 +8581,19 @@ func _selftest() -> void:
 	acp_show()
 	await _shot("00i5_acct")
 	acp_open = false
+	shop_tab2 = "box"
+	open_box(1, false)
+	await _wait(2.0)
+	await _shot("00i6_box1")
+	box_res = []
+	lsec = "store"
+	cos_press({"a": "sf", "k": "cat", "v": "s"})
+	cos_press({"a": "sf", "k": "cat", "v": "t"})
+	await _shot("00i7_store_multi")
+	stF = {"own": [], "cat": [], "gr": []}
+	lsec = "set"
+	set_tab = "a"
+	await _shot("00i8_set_back")
 	cos_press({"a": "bpall"})
 	print("BP ", lmsg, " cs=", SV.cs, " fbox=", SV.fbox)
 	lsec = "main"
@@ -8490,6 +8627,9 @@ func _selftest() -> void:
 	tut = -1
 	paused = true
 	await _shot("01c_pause")
+	pause_set = true
+	await _shot("01d_pause_set")
+	pause_set = false
 	paused = false
 	ore = 5000.0
 	stone = 100

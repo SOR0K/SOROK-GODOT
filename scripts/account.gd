@@ -505,8 +505,10 @@ func _remember(v: VBoxContainer) -> void:
 	v.add_child(c)
 
 func show_msg(t: String) -> void:
-	var v := _shell(t)
+	hide_ui()
 	mode = "msg"
+	g.conn_msg = t
+	g.conn_t = g.t_real
 
 func show_login(e: String) -> void:
 	mode = "login"
@@ -578,6 +580,7 @@ func show_nick(hint: String) -> void:
 	_btn(v, "로그아웃", func(): clear(); show_login(""))
 
 func hide_ui() -> void:
+	g.conn_msg = ""
 	if ui_root != null:
 		ui_root.queue_free()
 		ui_root = null
