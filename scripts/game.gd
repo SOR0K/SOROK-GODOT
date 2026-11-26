@@ -157,6 +157,7 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 	_snd_init()
+	_font_warm()
 	sv_load()
 	new_game()
 	scene = "lobby"
@@ -171,6 +172,14 @@ func _ready() -> void:
 	else:
 		_check_update()
 		intro_start()
+
+# 인트로·런처에 쓰는 큰 글자를 미리 만들어 둬요 (처음 그릴 때 끊기지 않게)
+func _font_warm() -> void:
+	var f := ThemeDB.fallback_font
+	var s := "SOROMAGESK외계기지정복전략플레이0123456789·"
+	for fs in [12, 13, 14, 15, 16, 18, 19, 22, 34, 42, 52, 64, 68, 88, 110, 128, 150]:
+		f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		fb().get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 
 func _after_intro() -> void:
 	if OS.get_cmdline_user_args().has("--selftest"):
@@ -6934,7 +6943,13 @@ var bgm_k := ""
 var vol_s := 70
 var vol_b := 35
 
+var snd_req := {}
 func _snd(k: String) -> AudioStream:
+	if not snd_cache.has(k) and snd_req.has(k):
+		var r = ResourceLoader.load_threaded_get(snd_req[k])
+		snd_req.erase(k)
+		if r is AudioStream:
+			snd_cache[k] = r
 	if not snd_cache.has(k):
 		var s = null
 		if ResourceLoader.exists("res://sounds/" + k + ".ogg"):
@@ -6959,6 +6974,19 @@ func _snd_init() -> void:
 	bgm_p = AudioStreamPlayer.new()
 	add_child(bgm_p)
 	_vol_apply()
+	# 효과음은 미리 불러 둬요 (처음 울릴 때 파일을 읽느라 화면이 끊기지 않게) · 띵은 바로, 나머지는 뒤에서
+	_snd("ding")
+	var d := DirAccess.open("res://sounds")
+	if d != null:
+		for fn in d.get_files():
+			var nm := fn.trim_suffix(".import").trim_suffix(".remap")
+			if not nm.ends_with(".wav") or nm.begins_with("bgm_"):
+				continue
+			var k := nm.get_basename()
+			if snd_cache.has(k) or snd_req.has(k):
+				continue
+			if ResourceLoader.load_threaded_request("res://sounds/" + nm) == OK:
+				snd_req[k] = "res://sounds/" + nm
 
 func _vol_apply() -> void:
 	var sv := linear_to_db(maxf(0.0001, vol_s / 70.0))
@@ -8388,6 +8416,7 @@ func _process(dt: float) -> void:
 		_box_tick()
 		queue_redraw()
 		return
+	var tu := Time.get_ticks_usec()
 	if not won and not lost and not paused:
 		# 앱이 멈췄다 돌아오면 지난 시간만큼 이어서 진행 (웹: 다른 창에 있어도 게임이 계속 진행돼요 · 최대 5분)
 		if dt > 0.1:
@@ -8400,6 +8429,7 @@ func _process(dt: float) -> void:
 		else:
 			update_game(dt)
 		_tut_tick()
+		_pf("update_x%d" % int(Engine.time_scale), tu)
 		save_acc += dt
 		if save_acc > 15.0:
 			save_acc = 0.0
@@ -8558,7 +8588,29 @@ func _cos_cache() -> void:
 	tkro_s = TKRO()
 	tn_cols = ground_tn().map(func(c): return C(c))
 
+var PF := {}
+func _pf(k: String, t0: int) -> void:
+	var d := Time.get_ticks_usec() - t0
+	if not PF.has(k):
+		PF[k] = [0, 0, 0]
+	var a: Array = PF[k]
+	a[0] += d
+	a[1] += 1
+	a[2] = maxi(a[2], d)
+
+func _pf_print() -> void:
+	var ks := PF.keys()
+	ks.sort()
+	for k in ks:
+		var a: Array = PF[k]
+		print("PERF ", k, " avg=", int(a[0] / maxi(1, a[1])), "us max=", a[2], "us n=", a[1])
+
 func _draw() -> void:
+	var t0 := Time.get_ticks_usec()
+	_draw0()
+	_pf("draw_" + scene + ("_" + lsec if scene == "lobby" else ""), t0)
+
+func _draw0() -> void:
 	var f := ThemeDB.fallback_font
 	_cos_cache()
 	if scene == "intro":
@@ -8586,7 +8638,10 @@ func _draw() -> void:
 	var j0 := maxi(0, int(vr.position.y / CELL))
 	var i1 := mini(GN - 1, int(vr.end.x / CELL))
 	var j1 := mini(GN - 1, int(vr.end.y / CELL))
+	var tq := Time.get_ticks_usec()
 	_ground(i0, j0, i1, j1)
+	_pf("g_ground", tq)
+	tq = Time.get_ticks_usec()
 	draw_arc(B, BASE_VIEW, 0.0, TAU, 128, Color(0.37, 0.88, 0.77, 0.2), 2.0)
 	draw_arc(B, WELL, 0.0, TAU, 128, Color(0.43, 0.94, 0.63, 0.18 + 0.08 * sin(t * 2.0)), 2.0)
 	if lost:
@@ -8605,9 +8660,13 @@ func _draw() -> void:
 	for u in ens:
 		if vr.has_point(u.p) and vis2(u.p):
 			_enemy(u, f)
+	_pf("g_world", tq)
+	tq = Time.get_ticks_usec()
 	for u in bots:
 		if vr.has_point(u.p):
 			_unit(u, f)
+	_pf("g_units", tq)
+	tq = Time.get_ticks_usec()
 	for u in bots:
 		if u.sel and u.goal != null:
 			draw_circle(u.goal, 2.5, Color(0.47, 1.0, 0.67, 0.35))
@@ -8622,7 +8681,11 @@ func _draw() -> void:
 		draw_rect(r, Color("#8be28b"), false, 1.0 / zm)
 	_parts()
 	_fx(f)
+	_pf("g_fx", tq)
+	tq = Time.get_ticks_usec()
 	_fog(i0, j0, i1, j1)
+	_pf("g_fog", tq)
+	tq = Time.get_ticks_usec()
 	_flags(f)
 	_tut_world()
 	for d in drones:
@@ -8636,8 +8699,13 @@ func _draw() -> void:
 		var tl := cam.position - vsize() / zm / 2.0
 		amb(thm, t_real, Vector2.ZERO, vsize().x, vsize().y, tl.x * zm, tl.y * zm)
 	_vignette()
+	_pf("g_rest", tq)
+	tq = Time.get_ticks_usec()
 	_minimap()
+	_pf("g_minimap", tq)
+	tq = Time.get_ticks_usec()
 	_hud(f)
+	_pf("g_hud", tq)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _bar(x: float, y: float, w: float, r: float, c: Color, h: float = 3.0) -> void:
@@ -9127,6 +9195,32 @@ func _selftest() -> void:
 	await _wait(2.4)
 	await _shot("10_win_b")
 	print("SND bgm=", _snd("bgm_game") != null, " len=", snappedf(_snd("bgm_game").get_length(), 0.01), " victory=", _snd("victory") != null)
+	# 많이 몰린 상황 (로봇 80대 · 가장 멀리 본 화면)
+	PF.clear()
+	for i in 80:
+		var bu := mk_bot(["c", "r", "h", "m", "s"][i % 5], B + Vector2(rng.randf_range(-500, 500), rng.randf_range(-500, 500)))
+		bots.append(bu)
+	won = false
+	zm = ZMIN
+	cam.zoom = Vector2(zm, zm)
+	cam_to(B)
+	await _wait(4.0)
+	print("BENCH bots=", bots.size(), " ens=", ens.size(), " fps=", Engine.get_frames_per_second())
+	_pf_print()
+	scene = "lobby"
+	lsec = "main"
+	PF.clear()
+	await _wait(1.5)
+	lsec = "shop"
+	shop_tab2 = "box"
+	await _wait(1.5)
+	lsec = "store"
+	await _wait(1.5)
+	lsec = "pass"
+	await _wait(1.5)
+	scene = "client"
+	await _wait(1.5)
+	_pf_print()
 	print("SELFTEST_DONE")
 	get_tree().quit()
 
