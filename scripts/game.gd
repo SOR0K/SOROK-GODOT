@@ -4261,7 +4261,19 @@ func _cm(n) -> String:
 		s = s.substr(0, s.length() - 3)
 	return ("-" if int(n) < 0 else "") + s + o
 
+# 둥근 상자 모서리: 같은 크기·둥글기는 한 번만 계산해 두고 옮겨서 써요
+var _rr_c := {}
 func _rr_pts(r: Rect2, rad) -> PackedVector2Array:
+	var key := Vector4(r.size.x, r.size.y, float(rad[0]) if rad is Array else float(rad), (float(rad[1]) * 1000.0 + float(rad[2]) * 1000000.0 + float(rad[3]) * 1000000000.0) if rad is Array else -1.0)
+	var P = _rr_c.get(key)
+	if P == null:
+		if _rr_c.size() > 3000:
+			_rr_c.clear()
+		P = _rr_pts0(Rect2(Vector2.ZERO, r.size), rad)
+		_rr_c[key] = P
+	return Transform2D(0.0, r.position) * (P as PackedVector2Array)
+
+func _rr_pts0(r: Rect2, rad) -> PackedVector2Array:
 	var R: Array = rad if rad is Array else [rad, rad, rad, rad]
 	var m := minf(r.size.x, r.size.y) / 2.0
 	var P := PackedVector2Array()
@@ -4284,7 +4296,7 @@ func _rr_pts(r: Rect2, rad) -> PackedVector2Array:
 	return Q
 
 func _gt(stops: Array) -> Texture2D:
-	var key := str(stops)
+	var key := stops.hash()
 	if _gtex.has(key):
 		return _gtex[key]
 	var g := Gradient.new()
