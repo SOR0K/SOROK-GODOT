@@ -6508,7 +6508,16 @@ func _client_build() -> Dictionary:
 	_add("cl_play", G.play)
 	return G
 
+func _cl_us() -> float:
+	return 1.6 if touch_mode else 1.0
+
 func _client(f: Font) -> void:
+	var us0 := us
+	us = _cl_us()
+	_client0(f)
+	us = us0
+
+func _client0(f: Font) -> void:
 	_ui_reset()
 	var u := ui_size()
 	ui.clear()
@@ -6521,7 +6530,7 @@ func _client(f: Font) -> void:
 	if ln_on:
 		# 로그인 화면 오른쪽: 큰 SOROK + 부제 (lnHero)
 		var fs2 := int(clampf(art.size.x * 0.085, 48.0, 96.0))
-		_ln_logo(Vector2(art.position.x + 48.0, u.y - 56.0 - 30.0), fs2)
+		_ln_logo(Vector2(art.position.x + 48.0, u.y - 56.0 - 34.0), fs2)
 		draw_string(f, Vector2(art.position.x + 50.0, u.y - 56.0), "외계 기지 정복 전략", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#c9d4dc"))
 		return
 	# 왼쪽 패널
@@ -6587,8 +6596,8 @@ func _client(f: Font) -> void:
 	var pr: Rect2 = G.play
 	var fs: int = G.fs
 	draw_string(fb(), Vector2(hx, pr.position.y - 14.0 - 22.0), "외계 기지 50개를 정복하라 · 시즌 1 은하 원정", HORIZONTAL_ALIGNMENT_LEFT, art.end.x - hx - 20.0, 15, Color("#c9d4dc"))
-	_ln_logo(Vector2(hx, pr.position.y - 14.0 - 22.0 - 24.0), fs)
-	_spaced_l(Vector2(hx, pr.position.y - 14.0 - 22.0 - 24.0 - fs - 10.0), "GAME", 12, 0.2, Color("#8a9bad"), 0.0)
+	_ln_logo(Vector2(hx, pr.position.y - 14.0 - 22.0 - 32.0), fs)
+	_spaced_l(Vector2(hx, pr.position.y - 14.0 - 22.0 - 32.0 - fs - 8.0), "GAME", 12, 0.2, Color("#8a9bad"), 0.0)
 	var busy := booting()
 	var hp: bool = hov != null and hov.id == "cl_play"
 	_bglow(pr, Color(0.91, 0.65, 0.16, 0.4), 18.0, 10.0)
@@ -6629,6 +6638,12 @@ func client_press(id: String) -> void:
 			acp_press(id)
 
 func _client_input(e: InputEvent) -> void:
+	var us0 := us
+	us = _cl_us()
+	_client_input0(e)
+	us = us0
+
+func _client_input0(e: InputEvent) -> void:
 	if e is InputEventKey and e.pressed and not e.echo:
 		if keys_open and (e.keycode == KEY_ESCAPE or e.keycode == KEY_TAB):
 			keys_open = false
