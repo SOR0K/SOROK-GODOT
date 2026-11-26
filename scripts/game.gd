@@ -2620,6 +2620,11 @@ func _lobby_w() -> float:
 
 func _build_lobby() -> void:
 	_build_lobby0()
+	if not _cos_on():
+		if not box_res.is_empty():
+			_build_box()
+		elif cash_sel >= 0:
+			_build_cash()
 	if box_res.is_empty() and cash_sel < 0 and not acp_open:
 		_add("lprof", _prof_rect())
 	if acp_open:
@@ -8582,6 +8587,8 @@ func _selftest() -> void:
 	await _shot("00i5_acct")
 	acp_open = false
 	shop_tab2 = "box"
+	lsec = "shop"
+	box_scroll = 0.0
 	open_box(1, false)
 	await _wait(2.0)
 	await _shot("00i6_box1")
