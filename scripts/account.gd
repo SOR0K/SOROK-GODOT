@@ -388,7 +388,7 @@ func _style(c: Color, b: Color) -> StyleBoxFlat:
 	s.border_color = b
 	s.set_border_width_all(1)
 	s.set_corner_radius_all(8)
-	s.set_content_margin_all(10)
+	s.set_content_margin_all(12)
 	return s
 
 func _shell(title: String) -> VBoxContainer:
@@ -403,14 +403,19 @@ func _shell(title: String) -> VBoxContainer:
 	add_child(root)
 	ui_root = root
 	var bg := ColorRect.new()
-	bg.color = Color("#0b1015")
+	bg.color = Color(0.016, 0.031, 0.047, 0.86)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.add_child(bg)
 	var cc := CenterContainer.new()
 	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.add_child(cc)
 	var pan := PanelContainer.new()
-	pan.add_theme_stylebox_override("panel", _style(Color("#10161c"), Color("#c9a255")))
+	var ps := _style(Color("#121a22"), Color("#c9a255"))
+	ps.set_corner_radius_all(14)
+	ps.set_content_margin_all(26 if g.touch_mode else 22)
+	ps.shadow_color = Color(0, 0, 0, 0.6)
+	ps.shadow_size = 30
+	pan.add_theme_stylebox_override("panel", ps)
 	pan.custom_minimum_size = Vector2(640 if g.touch_mode else 420, 0)
 	cc.add_child(pan)
 	var v := VBoxContainer.new()
@@ -419,8 +424,10 @@ func _shell(title: String) -> VBoxContainer:
 	var logo := Label.new()
 	logo.text = "S O R O K"
 	logo.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	logo.add_theme_font_size_override("font_size", 60 if g.touch_mode else 42)
-	logo.add_theme_color_override("font_color", Color("#f2c86a"))
+	logo.add_theme_font_size_override("font_size", 48 if g.touch_mode else 34)
+	logo.add_theme_color_override("font_color", Color("#e8c36a"))
+	logo.add_theme_color_override("font_shadow_color", Color("#5c4316"))
+	logo.add_theme_constant_override("shadow_offset_y", 3)
 	v.add_child(logo)
 	var sub := Label.new()
 	sub.text = title
@@ -446,9 +453,10 @@ func _btn(v: Container, txt: String, cb: Callable, gold: bool = false) -> Button
 	var b := Button.new()
 	b.text = txt
 	b.custom_minimum_size = Vector2(0, 60 if g.touch_mode else 42)
-	b.add_theme_stylebox_override("normal", _style(Color("#d9b04e") if gold else Color("#1c2834"), Color("#ffd76a") if gold else Color("#c9a255")))
-	b.add_theme_stylebox_override("hover", _style(Color("#e8c060") if gold else Color("#243444"), Color("#ffd76a")))
+	b.add_theme_stylebox_override("normal", _style(Color("#d4ad4c") if gold else Color("#1c2733"), Color("#f3d98e") if gold else Color("#33414d")))
+	b.add_theme_stylebox_override("hover", _style(Color("#e2bc5c") if gold else Color("#24323f"), Color("#f3d98e") if gold else Color("#4fd1b5")))
 	b.add_theme_stylebox_override("pressed", _style(Color("#b8902e") if gold else Color("#141c24"), Color("#ffd76a")))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	if gold:
 		b.add_theme_color_override("font_color", Color("#2a1a02"))
 		b.add_theme_color_override("font_hover_color", Color("#2a1a02"))

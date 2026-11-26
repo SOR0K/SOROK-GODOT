@@ -2584,6 +2584,13 @@ func _lobby_w() -> float:
 	return minf(1000.0, ui_size().x - 40.0)
 
 func _build_lobby() -> void:
+	_build_lobby0()
+	if box_res.is_empty() and cash_sel < 0 and not acp_open:
+		_add("lprof", _prof_rect())
+	if acp_open:
+		_build_acp()
+
+func _build_lobby0() -> void:
 	if _cos_on():
 		_build_cos()
 		if not box_res.is_empty():
@@ -2648,16 +2655,14 @@ func _lobby(f: Font) -> void:
 		_box_overlay(f, hov)
 	elif cash_sel >= 0:
 		_cash_overlay(f, hov)
+	if acp_open:
+		_acp_draw(f, hov)
 	if keys_open:
 		_keys_win(f)
 
 func _logo(f: Font, small: bool = false) -> void:
 	var u := ui_size()
-	if acct != null:
-		var who := "로그인 안 함 · 이 기기에만 저장"
-		if acct.ses != null and str(acct.ses.get("nick", "")) != "":
-			who = str(acct.ses.nick) + "#" + str(acct.ses.get("tag", "SR1")) + " · " + ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨")
-		draw_string(f, Vector2(14, 22), who, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7d8b96"))
+	_prof_card(f, null if touch_ui() else ui_hit(mouse_ui * us))
 	if TEST:
 		draw_string(fb(), Vector2(0, 22), "테스트 모드 · 재화 무한 · 클라우드 저장 꺼짐  ", HORIZONTAL_ALIGNMENT_RIGHT, u.x, 12, Color("#ff9a5a"))
 	var cy := 134.0
@@ -2666,9 +2671,10 @@ func _logo(f: Font, small: bool = false) -> void:
 		_spaced(fb(), "SOROK", u.x / 2.0, 51.0, 42, 0.32, Color("#e8c36a"))
 		cy = 64.0
 	else:
-		_spaced(fb(), "SOROK", u.x / 2.0, 92.0, 64, 0.32, Color("#5c4316"))
-		_spaced(fb(), "SOROK", u.x / 2.0, 87.0, 64, 0.32, Color("#e8c36a"))
-		draw_string(f, Vector2(0, 118), "외 계  기 지  정 복  전 략", HORIZONTAL_ALIGNMENT_CENTER, u.x, 12, Color("#7f8d99"))
+		_spaced(fb(), "SOROK", u.x / 2.0, 86.0, 64, 0.32, Color("#5c4316"))
+		_spaced(fb(), "SOROK", u.x / 2.0, 81.0, 64, 0.32, Color("#e8c36a"))
+		draw_string(f, Vector2(0, 111), "외 계  기 지  정 복  전 략", HORIZONTAL_ALIGNMENT_CENTER, u.x, 12, Color("#7f8d99"))
+		cy = 124.0
 	var chips := [["청석", str(SV.cs), Color("#7fd2ff"), Color("#3a4a58")], ["별석", str(SV.ss), Color("#d2a8ff"), Color("#6a4a9a")]]
 	var cwid: Array = []
 	var ctot := 0.0
@@ -2685,7 +2691,7 @@ func _logo(f: Font, small: bool = false) -> void:
 		draw_string(f, r.position + Vector2(18, 24), chips[i][0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#7f8d99"))
 		draw_string(fb(), r.position + Vector2(26.0 + _tw(chips[i][0], 13), 26), chips[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 21, chips[i][2])
 	if lmsg != "":
-		draw_string(f, Vector2(0, 121.0 if small else 192.0), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 14, Color("#e0a44a"))
+		draw_string(f, Vector2(0, 122.0 if small else 191.0), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 14, Color("#e0a44a"))
 
 var promo_i := 0
 var promo_t := 0.0
@@ -2846,7 +2852,13 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			lsec = "set"
 			set_tab = "a"
 			lob_scroll = 0.0
-		"lnotes": lsec = "notes"
+		"lnotes":
+			lsec = "notes"
+			lob_scroll = 0.0
+		"lprof":
+			acp_show()
+		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset":
+			acp_press(it.id)
 		"pdot":
 			promo_i = int(it.arg)
 			promo_t = t_real
@@ -2906,8 +2918,7 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			sv_save()
 		"lkeys": keys_open = true
 		"lacct":
-			if acct != null:
-				acct.show_panel()
+			acp_show()
 		"sl":
 			slider_drag = it.arg
 			_slider_set(it.arg, sp)
@@ -2942,6 +2953,8 @@ func _lobby_input(e: InputEvent) -> void:
 			keys_open = false
 		elif e.keycode == KEY_TAB:
 			keys_open = true
+		elif e.keycode == KEY_ESCAPE and acp_open:
+			acp_open = false
 		elif e.keycode == KEY_ESCAPE and bgm_open:
 			bgm_open = false
 		elif e.keycode == KEY_ESCAPE and cash_sel >= 0:
@@ -2983,20 +2996,14 @@ func _lobby_input(e: InputEvent) -> void:
 		mouse_ui = e.position / us
 		if slider_drag != null:
 			_slider_set(slider_drag, e.position)
+		elif lob_drag != null and lob_drag.get("mouse", false):
+			_drag_move(e.position, e.relative)
 		return
 	elif e is InputEventScreenDrag:
 		if slider_drag != null:
 			_slider_set(slider_drag, e.position)
 		elif lob_drag != null:
-			if (e.position - lob_drag.p).length() > 12.0:
-				lob_drag.m = true
-			if lob_drag.m:
-				if not box_res.is_empty():
-					box_scroll = clampf(box_scroll - e.relative.y / us, 0.0, box_max)
-				elif lsec == "pass" and pass_tr.has_point(lob_drag.p / us):
-					pass_scroll = clampf(pass_scroll - e.relative.x / us, 0.0, _pass_max())
-				elif _cos_on():
-					lob_scroll = clampf(lob_scroll - e.relative.y / us, 0.0, lob_max)
+			_drag_move(e.position, e.relative)
 		return
 	if pos == null:
 		return
@@ -3006,8 +3013,9 @@ func _lobby_input(e: InputEvent) -> void:
 			if slider_drag == "uis":
 				_apply_sv()
 			slider_drag = null
+			lob_drag = null
 			sv_save()
-		elif touch and lob_drag != null:
+		elif lob_drag != null:
 			var moved: bool = lob_drag.m
 			lob_drag = null
 			if not moved:
@@ -3020,13 +3028,55 @@ func _lobby_input(e: InputEvent) -> void:
 			keys_open = false
 			return
 		var it = ui_hit(pos)
-		if touch:
-			lob_drag = {"p": pos, "m": false}
-			if it != null and it.id == "sl":
-				lobby_press(it, pos)
+		if not acp_open and _sb_start(pos):
+			lob_drag.mouse = not touch
 			return
-		if it != null:
+		lob_drag = {"p": pos, "m": false, "mouse": not touch}
+		if it != null and it.id == "sl":
 			lobby_press(it, pos)
+
+func _sb_start(pos: Vector2) -> bool:
+	var p := pos / us
+	for k in [["box", sb_box], ["lob", sb_lob], ["pass", sb_pass]]:
+		var d: Dictionary = k[1]
+		if d.is_empty():
+			continue
+		if (k[0] == "box") == box_res.is_empty():
+			continue
+		if k[0] == "pass" and lsec != "pass":
+			continue
+		if k[0] == "lob" and not _cos_on():
+			continue
+		if (d.r as Rect2).grow(10.0).has_point(p):
+			lob_drag = {"p": pos, "m": true, "sb": k[0], "s0": {"box": box_scroll, "lob": lob_scroll, "pass": pass_scroll}[k[0]]}
+			return true
+	return false
+
+func _drag_move(pos: Vector2, rel: Vector2) -> void:
+	if lob_drag.has("sb"):
+		var d: Dictionary = {"box": sb_box, "lob": sb_lob, "pass": sb_pass}[lob_drag.sb]
+		if d.is_empty():
+			return
+		var r: Rect2 = d.r
+		var hz: bool = lob_drag.sb == "pass"
+		var span: float = maxf(1.0, (r.size.x if hz else r.size.y) - float(d.th))
+		var dl: float = ((pos.x - lob_drag.p.x) if hz else (pos.y - lob_drag.p.y)) / us
+		var mx: float = {"box": box_max, "lob": lob_max, "pass": _pass_max()}[lob_drag.sb]
+		var v := clampf(float(lob_drag.s0) + dl / span * mx, 0.0, mx)
+		match lob_drag.sb:
+			"box": box_scroll = v
+			"lob": lob_scroll = v
+			"pass": pass_scroll = v
+		return
+	if (pos - lob_drag.p).length() > 12.0:
+		lob_drag.m = true
+	if lob_drag.m:
+		if not box_res.is_empty():
+			box_scroll = clampf(box_scroll - rel.y / us, 0.0, box_max)
+		elif lsec == "pass" and pass_tr.has_point(lob_drag.p / us):
+			pass_scroll = clampf(pass_scroll - rel.x / us, 0.0, _pass_max())
+		elif _cos_on() and not acp_open:
+			lob_scroll = clampf(lob_scroll - rel.y / us, 0.0, lob_max)
 
 const SK := [
 {"id":"j1","g":"ju","n":"봄 벚꽃","c":"#f4a6c0","a":"#fff0f5","pt":"dot","d":"분홍 장갑에 꽃잎 점무늬"},
@@ -4349,6 +4399,10 @@ const BST := {
 	"bpc": {"g": ["#e8c36a", "#b8902f"], "b": "#f3d98e", "r": 2.0, "t": "#1c1406", "s": "#1c1406", "bold": true},
 	"red": {"g": ["#1b232b"], "h": "#222d37", "b": "#a8352a", "r": 2.0, "t": "#ff9a8a", "s": "#8a9bad", "keep": true},
 	"tpv": {"g": ["#16202a"], "b": "#33414d", "r": 2.0, "t": "#dfe6ea", "s": "#8a9bad"},
+	"tpvon": {"g": ["#3a2e14", "#1e180a"], "b": "#ffd76a", "r": 2.0, "t": "#ffe9b8", "s": "#e8c36a", "keep": true, "bold": true},
+	"pf": {"g": ["#1c2733"], "h": "#24323f", "b": "#33414d", "r": 8.0, "t": "#e6edf3", "s": "#8a9bad"},
+	"pfgo": {"g": ["#e8c36a", "#b8902f"], "b": "#f3d98e", "r": 8.0, "t": "#1c1406", "s": "#1c1406", "bold": true},
+	"pfo": {"g": ["#22171a"], "h": "#2c1c20", "b": "#5a2d2d", "r": 8.0, "t": "#ff9a8a", "s": "#8a9bad"},
 	"bxsk": {"g": ["#0e1318"], "b": "#3a4a58", "r": 14.0, "t": "#9fb0bf", "s": "#9fb0bf"},
 	"mini": {"g": ["#1b232b"], "h": "#222d37", "b": "#33414d", "r": 2.0, "t": "#dfe6ea", "s": "#8a9bad"},
 }
@@ -4364,7 +4418,14 @@ func _wbtn(e: Dictionary, hov) -> void:
 	var bc := Color(S.b)
 	if h and not S.get("keep", false):
 		bc = Color("#4fd1b5")
-	_gbox(r, st, 180.0, S.r, bc, 1.0, e.get("dash", false))
+	if (e.get("glow", false) and e.en) or e.sty == "tpvon":
+		var gk := 0.5 + 0.5 * sin(t_real * 4.0)
+		_bglow(r, Color(1.0, 0.84, 0.4, 0.3 + 0.35 * gk), 6.0 + 6.0 * gk, S.r)
+		bc = Color("#ffd76a")
+	_gbox(r, st, 180.0, S.r, bc, 1.0 if not e.get("glow", false) else 2.0, e.get("dash", false))
+	if e.sty == "tpvon":
+		var pk := clampf((bgm_prev_u - t_real) / 15.0, 0.0, 1.0)
+		draw_rect(Rect2(r.position.x + 2.0, r.end.y - 4.0, (r.size.x - 4.0) * pk, 2.0), Color("#ffd76a"))
 	var fs: int = e.get("fs", 13)
 	var bold: bool = e.get("bold", S.get("bold", false))
 	var l: String = e.get("l", "")
@@ -4426,6 +4487,10 @@ func _B(r: Rect2, b: Dictionary, clip: bool = true) -> Dictionary:
 	var e := _E({"k": "btn", "r": r, "l": b.get("l", ""), "sub": b.get("s", ""), "sty": sty, "en": en, "fs": b.get("fs", 13), "ic": b.get("ic", ""), "dash": b.get("dash", false), "inl": b.get("inl", "")})
 	if b.has("bold"):
 		e.bold = b.bold
+	if b.get("on", false):
+		e.sty = "tpvon"
+	if b.get("glow", false):
+		e.glow = true
 	if en and b.has("a"):
 		if b.a is String:
 			_C(b.a, r, b.get("arg"), e, clip)
@@ -4611,6 +4676,22 @@ func _L(R: Array, x0: float, y0: float, W: float) -> float:
 			y += 56.0
 		elif row.has("bph"):
 			y = _L_bph(x0, y, W)
+		elif row.has("jump"):
+			var x := x0
+			for j in row.jump:
+				var b := {"l": j[0], "ic": j[2], "a": {"a": "jump", "k": j[1]}, "sty": "chip", "fs": 13}
+				var w := _bnat(b, 14.0)
+				_B(Rect2(x, y, w, 34.0), b)
+				x += w + 8.0
+			y += 46.0
+		elif row.has("anchor"):
+			lob_anchor[row.anchor] = y - y0
+		elif row.has("pcard"):
+			y = _L_pcard(row.pcard, x0, y, W)
+		elif row.has("nhero"):
+			y = _L_nhero(x0, y, W)
+		elif row.has("note"):
+			y = _L_note(row, x0, y, W)
 		elif row.has("track"):
 			y = _L_track(x0, y, W)
 		first = false
@@ -4772,11 +4853,18 @@ func _L_bph(x0: float, y: float, W: float) -> float:
 	var lvw := _tw("단계", 15) + 4.0 + _tw(str(lv), 46, true) + 4.0 + _tw("/30", 15)
 	var B: Array = []
 	if not P.prem:
-		B.append({"l": "프리미엄 해금", "ic": "crown", "s": "청석 2,000", "a": {"a": "bpbuy"}, "sty": "prem"})
+		B.append({"l": "프리미엄 해금", "ic": "crown", "s": "청석 2,000", "a": {"a": "bpbuy"}, "sty": "prem", "glow": int(SV.cs) >= 2000})
 	if lv < 30:
-		B.append({"l": "1단계 구매", "s": "청석 100", "a": {"a": "bpskip", "n": 1}, "sty": "skip"})
-		B.append({"l": "5단계 구매", "s": "청석 500", "a": {"a": "bpskip", "n": 5}, "sty": "skip"})
-	B.append({"l": "모두 받기", "a": {"a": "bpall"}, "sty": "go", "bold": true})
+		B.append({"l": "1단계 구매", "s": "청석 100", "a": {"a": "bpskip", "n": 1}, "sty": "skip", "glow": int(SV.cs) >= 100})
+		B.append({"l": "5단계 구매", "s": "청석 500", "a": {"a": "bpskip", "n": 5}, "sty": "skip", "glow": int(SV.cs) >= 500})
+	var claim := false
+	for L in range(1, lv + 1):
+		var rr: Dictionary = bpr(L)
+		if rr.f != null and not P.cf.has(L):
+			claim = true
+		if P.prem and rr.p != null and not P.cp.has(L):
+			claim = true
+	B.append({"l": "모두 받기", "a": {"a": "bpall"}, "sty": "go", "bold": true, "glow": claim})
 	var bws := 0.0
 	var bw: Array = []
 	for b in B:
@@ -4850,10 +4938,13 @@ func _L_track(x0: float, y: float, W: float) -> float:
 	_E({"k": "bpr", "r": Rect2(x0, top + 31.0, 74.0, 128.0), "lab": "무료", "tp": "f"})
 	_E({"k": "bpr", "r": Rect2(x0, top + 165.0, 74.0, 128.0), "lab": "프리미엄", "tp": "p"})
 	var mx := _pass_max()
+	sb_pass = {}
 	if mx > 0.0:
 		var tw := W - 74.0
-		var hw := maxf(40.0, tw * tw / (tw + mx))
-		_E({"k": "box", "r": Rect2(x0 + 74.0 + (tw - hw) * pass_scroll / mx, top + 297.0, hw, 8.0), "st": Color("#3a4a58"), "rad": 4.0})
+		var hw := maxf(50.0, tw * tw / (tw + mx))
+		sb_pass = {"r": Rect2(x0 + 74.0, top + 296.0, tw, 10.0), "th": hw}
+		_E({"k": "box", "r": Rect2(x0 + 74.0, top + 296.0, tw, 10.0), "st": Color("#0b1015"), "rad": 5.0})
+		_E({"k": "box", "r": Rect2(x0 + 74.0 + (tw - hw) * pass_scroll / mx, top + 297.0, hw, 8.0), "st": Color("#56687a"), "rad": 4.0})
 	return top + 309.0
 
 func _pass_max() -> float:
@@ -4877,6 +4968,11 @@ func _bpr_stack(e: Dictionary) -> float:
 	return h
 
 # ── 섹션 내용 ──
+func _tpv(id: String) -> Dictionary:
+	if bgm_prev_id == id and t_real < bgm_prev_u:
+		return {"l": "미리듣기 중 · " + str(ceili(bgm_prev_u - t_real)) + "초", "a": {"a": "tprev", "id": id}, "sty": "tpv", "on": true}
+	return {"l": "테마곡 미리듣기", "a": {"a": "tprev", "id": id}, "sty": "tpv"}
+
 func _cpr(id: String) -> int:
 	var it := item(id)
 	var p: int = int(it.get("p", 0))
@@ -4914,7 +5010,7 @@ func _rows_shop() -> Array:
 					var cd := {"pv": [c, it.id], "tag": "★ 걸작", "tc": "star", "n": it.n, "d": it.d, "cls": "star", "btns": []}
 					if c == "t":
 						cd.d2 = "전용 웅장한 테마곡 포함 · 세트 완성 시 레이드 전용 편곡"
-						cd.btns.append({"l": "테마곡 미리듣기", "a": {"a": "tprev", "id": it.id}, "sty": "tpv"})
+						cd.btns.append(_tpv(it.id))
 					if o:
 						cd.btns.append({"l": "장착 중" if e else "장착", "a": {"a": "eq", "id": it.id}, "en": not e})
 					else:
@@ -4964,7 +5060,7 @@ func _rows_shop() -> Array:
 				var cd := {"pv": [cat, it.id], "tag": {"ju": "주", "kro": "크로", "b": "기지"}.get(g, ""), "tc": "kro" if g == "kro" else "ju", "n": it.n, "d": it.d, "cls": "kro" if g == "kro" else "",
 					"frg": ("파편 " + str(fr) + " / " + str(FN[c])) if (fr > 0 and not o) else "", "btns": [bt]}
 				if cat == "t":
-					cd.btns.append({"l": "테마곡 미리듣기", "a": {"a": "tprev", "id": it.id}, "sty": "tpv"})
+					cd.btns.append(_tpv(it.id))
 				return cd
 			var L: Array = list_of(cat).filter(func(q): return q.get("g", "") != "star" and (not q.has("ex") or owns(q.id)))
 			if c == "r":
@@ -5020,36 +5116,6 @@ func _pc(n: float) -> String:
 	if "." in s:
 		s = s.rstrip("0").rstrip(".")
 	return s + "%"
-
-func _rows_prob() -> Array:
-	var JN := 1.0 - 1e-4
-	var cnt := func(L: Array, g: String) -> int: return L.filter(func(q): return q.get("g", "") == g and not q.has("ex")).size()
-	var rj: int = cnt.call(SK, "ju")
-	var rk: int = cnt.call(SK, "kro")
-	var bn: int = BS.filter(func(q): return not q.has("ex") and q.get("g", "") != "star").size()
-	var tj: int = cnt.call(TS, "ju")
-	var tk: int = cnt.call(TS, "kro")
-	var ks: int = SETS.filter(func(S): return item(S.r).g == "kro").size()
-	var ms := star_all().size()
-	var R: Array = []
-	R.append({"p": "모든 확률은 게임 안에서 실제로 쓰이는 값과 같아요. 확률은 매번 독립적으로 적용돼요.", "mb": 14.0})
-	R.append({"h": "소로 상자 · 청석 600", "ic": "gift"})
-	R.append({"tbl": [["결과", "확률", "비고"],
-		["주 등급 로봇 스킨 파편", _pc(0.4 * 0.82 * JN), "1종당 " + _pc(0.4 * 0.82 * JN / rj) + " · " + str(rj) + "종"],
-		["크로 등급 로봇 스킨 파편", _pc(0.4 * 0.18 * JN), "1종당 " + _pc(0.4 * 0.18 * JN / rk) + " · " + str(rk) + "종"],
-		["기지 스킨 파편", _pc(0.25 * JN), "1종당 " + _pc(0.25 * JN / bn) + " · " + str(bn) + "종"],
-		["주 등급 테마 파편", _pc(0.35 * 0.82 * JN), "1종당 " + _pc(0.35 * 0.82 * JN / tj) + " · " + str(tj) + "종"],
-		["크로 등급 테마 파편", _pc(0.35 * 0.18 * JN), "1종당 " + _pc(0.35 * 0.18 * JN / tk) + " · " + str(tk) + "종"],
-		["크로 세트 통째로 (잭팟)", _pc(1e-4), "1세트당 " + _pc(1e-4 / ks) + " · " + str(ks) + "세트"]]})
-	R.append({"tbl": [["파편 개수", "확률", "완성 필요"], ["1개", _pc(0.65), "로봇 6개"], ["2개", _pc(0.25), "기지 5개"], ["3개", _pc(0.10), "테마 4개"]]})
-	R.append({"p": "이미 가진 스킨의 파편은 청석으로 돌려받아요 · 주 15 · 기지 20 · 크로 60 (파편 1개당)"})
-	R.append({"h": "★ 별 뽑기 · 별석 15"})
-	var Q := 1.0 - 1e-5
-	R.append({"tbl": [["결과", "확률", "비고"], ["★ 별 파편 1개", _pc(0.54 * Q), ""], ["★ 별 파편 2개", _pc(0.32 * Q), ""], ["★ 별 파편 3개", _pc(0.11 * Q), ""], ["★ 별 파편 4개", _pc(0.03 * Q), ""], ["★ 걸작 완품", _pc(1e-5), "미보유 걸작 " + str(ms) + "종 중 1개 균등"]]})
-	R.append({"p": "천장: 500번째 뽑기는 걸작 완품 확정 · 완품이 나오면 천장 초기화 · 별 파편 30개로 원하는 걸작 제작 · 걸작을 모두 가졌다면 완품 대신 별 파편 30개"})
-	R.append({"h": "배틀패스", "ic": "scroll"})
-	R.append({"p": "배틀패스 보상은 확률이 아닌 확정 보상이에요. 크로 파편 보상은 아직 없는 크로 로봇·테마 중 1종에 균등하게 들어가요."})
-	return R
 
 func _store_gr(it: Dictionary) -> String:
 	if it.get("g", "") == "star":
@@ -5164,7 +5230,7 @@ func _rows_set() -> Array:
 
 # ── 화면 만들기 ──
 func _cos_on() -> bool:
-	return lsec in ["shop", "store", "pass", "set", "prob"]
+	return lsec in ["shop", "store", "pass", "set", "prob", "notes"]
 
 func _cos_small() -> bool:
 	return lsec in ["shop", "store", "pass"]
@@ -5207,6 +5273,7 @@ func _build_cos() -> void:
 		"store": R = _rows_store()
 		"pass": R = _rows_pass()
 		"set": R = _rows_set()
+		"notes": R = _rows_notes()
 	lob_draw = []
 	_cl = []
 	var H := _L(R, x0, y - lob_scroll, iw)
@@ -5261,10 +5328,15 @@ func _lobby_cos(f: Font, hov) -> void:
 	draw_rect(pr, Color("#2b3640"), false, 1.0)
 	for e in cos_hdr:
 		_draw_e(e, hov)
+	sb_lob = {}
 	if lob_max > 0.0:
 		var k := clampf(lob_scroll / lob_max, 0.0, 1.0)
-		var hh := maxf(30.0, vp.size.y * vp.size.y / (vp.size.y + lob_max))
-		_gbox(Rect2(pr.end.x - 11.0, vp.position.y + (vp.size.y - hh) * k, 7.0, hh), Color("#3a4a58"), 180.0, 4.0)
+		var hh := maxf(40.0, vp.size.y * vp.size.y / (vp.size.y + lob_max))
+		var tr := Rect2(pr.end.x - 14.0, vp.position.y, 10.0, vp.size.y)
+		sb_lob = {"r": tr, "th": hh}
+		_gbox(tr, Color("#0b1015"), 180.0, 5.0)
+		var on: bool = lob_drag != null and lob_drag.get("sb", "") == "lob"
+		_gbox(Rect2(tr.position.x + 1.0, tr.position.y + (tr.size.y - hh) * k, 8.0, hh), Color("#8a9bad") if on else Color("#56687a"), 180.0, 4.0)
 	_logo(f, _cos_small())
 	if bgm_open and lsec == "set":
 		_draw_bgm_list(hov)
@@ -5352,6 +5424,13 @@ func _draw_e(e: Dictionary, hov) -> void:
 			draw_string(fb(), Vector2(r.position.x, r.position.y + 18.0), e.s, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 14, tc)
 		"bpr":
 			_draw_bpr(e, hov)
+		"pvb":
+			draw_preview(e.r, "s", str(SV.eq), t_real)
+		"icn":
+			if e.kind == "user":
+				_icon_user(e.c, e.s)
+			else:
+				_icon(e.kind, e.c, e.s)
 		"hmask":
 			var u := ui_size()
 			var y0: float = e.y0
@@ -5558,7 +5637,7 @@ func _build_box() -> void:
 
 func _box_overlay(f: Font, hov) -> void:
 	var u := ui_size()
-	draw_rect(Rect2(Vector2.ZERO, u), Color(0, 0, 0, 0.72))
+	_dimbg(Rect2(Vector2.ZERO, u))
 	var G := _box_geo()
 	var pr: Rect2 = G.pr
 	var bst := _g2("#18212a", "#0e1318")
@@ -5586,6 +5665,11 @@ func _box_overlay(f: Font, hov) -> void:
 	var col := func(y: float) -> Color: return Color("#18212a").lerp(Color("#0e1318"), clampf((y - pr.position.y) / pr.size.y, 0.0, 1.0))
 	_gbox(tmask, [[0.0, col.call(tmask.position.y)], [1.0, col.call(tmask.end.y)]], 180.0, [10.0, 10.0, 0.0, 0.0])
 	_gbox(bmask, [[0.0, col.call(bmask.position.y)], [1.0, col.call(bmask.end.y)]], 180.0, [0.0, 0.0, 10.0, 10.0])
+	# 창 밖으로 삐져나온 카드 가리기
+	_dimbg(Rect2(0, 0, u.x, pr.position.y))
+	_dimbg(Rect2(0, pr.end.y, u.x, u.y - pr.end.y))
+	_dimbg(Rect2(0, pr.position.y, pr.position.x, pr.size.y))
+	_dimbg(Rect2(pr.end.x, pr.position.y, u.x - pr.end.x, pr.size.y))
 	_gbox(pr, Color(0, 0, 0, 0), 180.0, 12.0, Color("#c9a255"), 2.0)
 	# 흔들리는 상자 → 커지며 사라짐 (웹 bshake)
 	if et < 1.0:
@@ -5633,9 +5717,13 @@ func _box_overlay(f: Font, hov) -> void:
 	else:
 		sm = "상자 " + str(box_res.size()) + "개 · 파편 " + str(tot) + "개" + (" · 완성 " + str(done) + "개!" if done > 0 else "") + (" · 청석 환급 +" + str(ref) if ref > 0 else "")
 	draw_string(f, Vector2(pr.position.x, pr.position.y + 18.0 + 76.0 + 12.0 + 15.0), sm, HORIZONTAL_ALIGNMENT_CENTER, pr.size.x, 14, Color("#ffd27a"))
+	sb_box = {}
 	if box_max > 0.0:
-		var hh := maxf(30.0, G.gvis * G.gvis / (G.gvis + box_max))
-		_gbox(Rect2(pr.end.x - 12.0, gy + (G.gvis - hh) * box_scroll / box_max, 6.0, hh), Color("#3a4a58"), 180.0, 3.0)
+		var hh := maxf(40.0, G.gvis * G.gvis / (G.gvis + box_max))
+		var tr := Rect2(pr.end.x - 15.0, gy, 10.0, G.gvis)
+		sb_box = {"r": tr, "th": hh}
+		_gbox(tr, Color("#0b1015"), 180.0, 5.0)
+		_gbox(Rect2(tr.position.x + 1.0, gy + (G.gvis - hh) * box_scroll / box_max, 8.0, hh), Color("#56687a"), 180.0, 4.0)
 	for it in ui:
 		if it.id == "boxok":
 			_wbtn({"r": it.r, "l": "여는 중..." if G.busy else "확인", "sty": "go", "en": not G.busy, "it": it, "fc": Color("#10161c")}, hov)
@@ -5763,6 +5851,448 @@ func _cash_overlay(f: Font, hov) -> void:
 		elif it.id == "cashok":
 			_wbtn({"r": it.r, "l": "결제하기", "sty": "go", "en": true, "it": it}, hov)
 
+
+# ═════════ 계정 관리 창 (웹 새 디자인 .acx) · 프로필 카드 · 확률표 · 패치 노트 ═════════
+var acp_open := false
+var acp_msg := ""
+var acp_ver = null
+var lob_anchor := {}
+var sb_lob := {}
+var sb_box := {}
+var sb_pass := {}
+
+func _dimbg(r: Rect2) -> void:
+	if r.size.x < 1.0 or r.size.y < 1.0:
+		return
+	_page_bg(r)
+	draw_rect(r, Color(0, 0, 0, 0.6))
+
+# ── 프로필 카드 (로비 왼쪽 위 · 나중에 친구 기능도 여기서) ──
+func _prof_info() -> Array:
+	var nk := ""
+	var tg := ""
+	var st := "이 기기에만 저장 · 눌러서 로그인"
+	var dot := Color("#7f93a6")
+	if acct != null and acct.ses != null and str(acct.ses.get("nick", "")) != "":
+		nk = str(acct.ses.nick)
+		tg = "#" + str(acct.ses.get("tag", "SR1"))
+		var sw: String = {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨")
+		if TEST:
+			sw = "테스트 · 클라우드 꺼짐"
+		st = ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + sw
+		dot = {"ok": Color("#4fd17a"), "sync": Color("#ffd76a")}.get(acct.state, Color("#ff8a6b"))
+		if TEST:
+			dot = Color("#ff9a5a")
+	return [nk, tg, st, dot]
+
+func _prof_rect() -> Rect2:
+	var P := _prof_info()
+	var w := maxf(_tw(str(P[0]) if P[0] != "" else "로그인 안 함", 15, true) + _tw(P[1], 12), _tw(P[2], 12) + 14.0)
+	return Rect2(12, 10, 58.0 + w + 16.0, 50.0)
+
+func _prof_card(f: Font, hov) -> void:
+	var r := _prof_rect()
+	var P := _prof_info()
+	var h: bool = hov != null and hov.id == "lprof"
+	_gbox(r, Color("#1a2430") if not h else Color("#223040"), 180.0, 12.0, Color("#c9a255") if h else Color("#2c3a49"))
+	var c := r.position + Vector2(27, 25)
+	_gbox(Rect2(c - Vector2(17, 17), Vector2(34, 34)), _g2("#ffe08a", "#c9962f"), 135.0, 17.0)
+	var L: String = str(P[0]).substr(0, 1).to_upper() if P[0] != "" else "?"
+	draw_string(fb(), Vector2(c.x - 17, c.y + 6), L, HORIZONTAL_ALIGNMENT_CENTER, 34, 17, Color("#1c1406"))
+	var x := r.position.x + 52.0
+	if P[0] != "":
+		draw_string(fb(), Vector2(x, r.position.y + 22), P[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
+		draw_string(f, Vector2(x + _tw(P[0], 15, true) + 1.0, r.position.y + 22), P[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#8fa3b5"))
+	else:
+		draw_string(fb(), Vector2(x, r.position.y + 22), "로그인 안 함", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#dfe6ea"))
+	draw_circle(Vector2(x + 4.0, r.position.y + 37.0), 4.0, P[3])
+	draw_string(f, Vector2(x + 12.0, r.position.y + 41), P[2], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#aab8c5"))
+
+# ── 계정 관리 창 ──
+func _acp_geo() -> Dictionary:
+	var u := ui_size()
+	var W := minf(460.0, u.x - 32.0)
+	var logged: bool = acct != null and acct.ses != null and str(acct.ses.get("nick", "")) != ""
+	var H := 22.0 + 30.0 + 12.0 + 82.0 + 12.0
+	if logged:
+		H += 66.0 + 12.0
+		if acp_msg != "":
+			H += 24.0
+		H += (48.0 + 8.0) * (2 if acp_ver == false else 1)
+		H += 4.0 + 44.0
+	else:
+		if acp_msg != "":
+			H += 24.0
+		H += 44.0 + 8.0 + 44.0
+	H += 22.0
+	var x := (u.x - W) / 2.0
+	var y := maxf(10.0, (u.y - H) / 2.0)
+	return {"r": Rect2(x, y, W, H), "logged": logged}
+
+func _build_acp() -> void:
+	ui.clear()
+	var G := _acp_geo()
+	var r: Rect2 = G.r
+	_add("acp_bg", Rect2(Vector2.ZERO, ui_size()))
+	var x := r.position.x + 22.0
+	var w := r.size.x - 44.0
+	var y := r.position.y + 22.0 + 30.0 + 12.0 + 82.0 + 12.0
+	if G.logged:
+		_add("acp_save", Rect2(r.end.x - 22.0 - 14.0 - 96.0, y + 16.0, 96.0, 34.0))
+		y += 66.0 + 12.0
+		if acp_msg != "":
+			y += 24.0
+		if acp_ver == false:
+			_add("acp_vsend", Rect2(x, y, w, 48.0))
+			y += 56.0
+		_add("acp_reset", Rect2(x, y, w, 48.0))
+		y += 56.0 + 4.0
+		_add("acp_out", Rect2(x, y, (w - 8.0) / 2.0, 44.0))
+		_add("acp_close", Rect2(x + (w + 8.0) / 2.0, y, (w - 8.0) / 2.0, 44.0))
+	else:
+		if acp_msg != "":
+			y += 24.0
+		_add("acp_login", Rect2(x, y, w, 44.0))
+		_add("acp_close", Rect2(x, y + 52.0, w, 44.0))
+
+func _acp_draw(f: Font, hov) -> void:
+	var u := ui_size()
+	draw_rect(Rect2(Vector2.ZERO, u), Color(0.016, 0.031, 0.047, 0.78))
+	var G := _acp_geo()
+	var r: Rect2 = G.r
+	_bglow(r, Color(0, 0, 0, 0.6), 30.0, 14.0)
+	_gbox(r, Color("#121a22"), 180.0, 14.0, Color("#c9a255"))
+	var x := r.position.x + 22.0
+	var w := r.size.x - 44.0
+	var y := r.position.y + 22.0
+	_icon_user(Vector2(x + 10.0, y + 14.0), 18.0)
+	draw_string(fb(), Vector2(x + 26.0, y + 22.0), "계정 관리", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#ffd76a"))
+	y += 30.0 + 12.0
+	# 프로필 (axh)
+	var hr := Rect2(x, y, w, 82.0)
+	_gbox(hr, Color("#1a2430"), 180.0, 12.0, Color("#2c3a49"))
+	var c := hr.position + Vector2(14.0 + 26.0, 41.0)
+	_gbox(Rect2(c - Vector2(26, 26), Vector2(52, 52)), _g2("#ffe08a", "#c9962f"), 135.0, 26.0)
+	var nk := str(acct.ses.get("nick", "?")) if G.logged else ""
+	draw_string(fb(), Vector2(c.x - 26.0, c.y + 9.0), nk.substr(0, 1).to_upper() if nk != "" else "?", HORIZONTAL_ALIGNMENT_CENTER, 52.0, 24, Color("#1c1406"))
+	var tx := hr.position.x + 14.0 + 52.0 + 14.0
+	if G.logged:
+		draw_string(fb(), Vector2(tx, y + 36.0), nk, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
+		draw_string(fb(), Vector2(tx + _tw(nk, 22, true) + 2.0, y + 36.0), "#" + str(acct.ses.get("tag", "SR1")), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#8fa3b5"))
+		var em := str(acct.ses.get("email", ""))
+		draw_string(f, Vector2(tx, y + 62.0), em, HORIZONTAL_ALIGNMENT_LEFT, hr.end.x - tx - 100.0, 13, Color("#aab8c5"))
+		var pv := "확인 중…"
+		var pb := Color("#2a3542")
+		var pc := Color("#aab8c5")
+		if acp_ver == true:
+			pv = "✓ 인증됨"
+			pb = Color("#1d4a2e")
+			pc = Color("#8ee4a8")
+		elif acp_ver == false:
+			pv = "⚠ 미인증"
+			pb = Color("#5a3a12")
+			pc = Color("#ffc46b")
+		elif acp_ver is String:
+			pv = "확인 실패"
+		var pw := _tw(pv, 12, true) + 16.0
+		var px := minf(tx + _tw(em, 13) + 8.0, hr.end.x - 12.0 - pw)
+		_gbox(Rect2(px, y + 48.0, pw, 20.0), pb, 180.0, 10.0)
+		draw_string(fb(), Vector2(px, y + 62.0), pv, HORIZONTAL_ALIGNMENT_CENTER, pw, 12, pc)
+	else:
+		draw_string(fb(), Vector2(tx, y + 36.0), "로그인 안 함", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
+		draw_string(f, Vector2(tx, y + 62.0), "기록이 이 기기에만 저장돼요", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#aab8c5"))
+	y += 82.0 + 12.0
+	if G.logged:
+		# 서버 · 저장 (axr)
+		var ar := Rect2(x, y, w, 66.0)
+		_gbox(ar, Color("#1a2430"), 180.0, 12.0, Color("#2c3a49"))
+		var cw := (w - 28.0 - 110.0) / 2.0
+		draw_string(f, Vector2(x + 14.0, y + 26.0), "서버", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7f93a6"))
+		draw_string(fb(), Vector2(x + 14.0, y + 48.0), ("모바일" if acct.srv == "m" else "PC") + " 서버", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e6edf3"))
+		draw_string(f, Vector2(x + 14.0 + cw, y + 26.0), "저장", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7f93a6"))
+		var P := _prof_info()
+		draw_circle(Vector2(x + 14.0 + cw + 5.0, y + 43.0), 4.5, P[3])
+		var sw: String = {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨")
+		if TEST:
+			sw = "테스트 모드 (꺼짐)"
+		draw_string(fb(), Vector2(x + 14.0 + cw + 15.0, y + 48.0), sw, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e6edf3"))
+		y += 66.0 + 12.0
+	if acp_msg != "":
+		draw_string(f, Vector2(r.position.x, y + 15.0), acp_msg, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 13, Color("#9fd8a8"))
+		y += 24.0
+	for it in ui:
+		var lab := ""
+		var sty := "pf"
+		var ic := ""
+		var al := 0
+		match it.id:
+			"acp_save":
+				lab = "지금 저장"
+			"acp_vsend":
+				lab = "인증 메일 다시 보내기"
+				ic = "mail"
+				al = 1
+			"acp_reset":
+				lab = "비밀번호 재설정 메일 받기"
+				ic = "key"
+				al = 1
+			"acp_out":
+				lab = "로그아웃"
+				sty = "pfo"
+			"acp_close":
+				lab = "닫기"
+				sty = "pfgo"
+			"acp_login":
+				lab = "로그인 / 회원가입"
+				sty = "pfgo"
+			_:
+				continue
+		if al == 1:
+			var hv: bool = hov == it
+			_gbox(it.r, Color("#24323f") if hv else Color("#1c2733"), 180.0, 8.0, Color("#4fd1b5") if hv else Color("#33414d"))
+			if ic == "mail":
+				_icon_mail(it.r.position + Vector2(24.0, 24.0), 18.0)
+			else:
+				_icon_key(it.r.position + Vector2(24.0, 24.0), 18.0)
+			draw_string(f, it.r.position + Vector2(44.0, 29.0), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e6edf3"))
+		else:
+			_wbtn({"r": it.r, "l": lab, "sty": sty, "en": true, "it": it, "fs": 14 if it.id != "acp_save" else 13}, hov)
+
+func _icon_user(c: Vector2, s: float) -> void:
+	draw_circle(c + Vector2(0, -s * 0.18), s * 0.22, Color("#ffd76a"))
+	draw_colored_polygon(_rr_pts(Rect2(c.x - s * 0.38, c.y + s * 0.08, s * 0.76, s * 0.4), [s * 0.3, s * 0.3, s * 0.06, s * 0.06]), Color("#ffd76a"))
+
+func _icon_mail(c: Vector2, s: float) -> void:
+	var r := Rect2(c.x - s * 0.5, c.y - s * 0.34, s, s * 0.68)
+	draw_rect(r, Color("#e8eef2"))
+	draw_polyline(PackedVector2Array([r.position, c + Vector2(0, s * 0.06), Vector2(r.end.x, r.position.y)]), Color("#3a9ce0"), 2.0)
+
+func _icon_key(c: Vector2, s: float) -> void:
+	draw_circle(c + Vector2(-s * 0.22, 0), s * 0.22, Color("#ffd76a"))
+	draw_circle(c + Vector2(-s * 0.22, 0), s * 0.09, Color("#1c2733"))
+	draw_rect(Rect2(c.x - s * 0.02, c.y - s * 0.06, s * 0.52, s * 0.12), Color("#ffd76a"))
+	draw_rect(Rect2(c.x + s * 0.3, c.y, s * 0.1, s * 0.2), Color("#ffd76a"))
+
+func acp_press(id: String) -> void:
+	match id:
+		"acp_bg":
+			pass
+		"acp_close":
+			acp_open = false
+		"acp_login":
+			acp_open = false
+			if acct != null:
+				acct.show_login("")
+		"acp_out":
+			acp_open = false
+			if acct != null:
+				acct.logout()
+		"acp_save":
+			if TEST:
+				acp_msg = "테스트 모드라 클라우드에 올리지 않아요"
+				return
+			acp_msg = "저장 중…"
+			await acct.push(true)
+			acp_msg = "저장했어요" if acct.state == "ok" else "저장 실패 · 나중에 다시 해 주세요"
+		"acp_vsend":
+			acp_msg = "보내는 중…"
+			var tk: String = await acct.tok()
+			var j: Dictionary = await acct.idt("sendOobCode", {"requestType": "VERIFY_EMAIL", "idToken": tk})
+			acp_msg = acct.err_txt(j.err) if j.has("err") else "인증 메일을 보냈어요 · 메일함을 확인해 주세요"
+		"acp_reset":
+			acp_msg = "보내는 중…"
+			var j2: Dictionary = await acct.idt("sendOobCode", {"requestType": "PASSWORD_RESET", "email": str(acct.ses.get("email", ""))})
+			acp_msg = acct.err_txt(j2.err) if j2.has("err") else "비밀번호 재설정 메일을 보냈어요"
+
+func acp_show() -> void:
+	acp_open = true
+	acp_msg = ""
+	acp_ver = null
+	if acct == null or acct.ses == null:
+		return
+	if acct.ses.get("ev", false):
+		acp_ver = true
+		return
+	var tk: String = await acct.tok()
+	if tk == "":
+		acp_ver = "x"
+		return
+	var j: Dictionary = await acct.idt("lookup", {"idToken": tk})
+	if j.has("err"):
+		acp_ver = "x"
+		return
+	var L: Array = j.get("users", [])
+	acp_ver = L.size() > 0 and bool(L[0].get("emailVerified", false))
+
+# ── 확률표 카드 ──
+func _L_pcard(P: Dictionary, x0: float, y: float, W: float) -> float:
+	var rows: Array = P.rows
+	var acc: Color = P.col
+	var h := 46.0 + rows.size() * 46.0 + 8.0
+	var r := Rect2(x0, y, W, h)
+	_E({"k": "box", "r": r, "st": Color("#10151a"), "rad": 10.0, "bc": Color(acc, 0.55)})
+	_E({"k": "box", "r": Rect2(x0 + 1.0, y + 1.0, W - 2.0, 44.0), "st": [[0.0, Color(acc, 0.22)], [1.0, Color(acc, 0.04)]], "ang": 90.0, "rad": [9.0, 9.0, 0.0, 0.0]})
+	var tx := x0 + 16.0
+	if P.get("ic", "") != "":
+		_E({"k": "t", "p": Vector2(tx, y + 29.0), "s": P.t, "fs": 16, "b": true, "c": Color("#ffe9b8"), "ic": P.ic})
+	else:
+		_E({"k": "t", "p": Vector2(tx, y + 29.0), "s": P.t, "fs": 16, "b": true, "c": Color("#ffe9b8")})
+	if P.get("sub", "") != "":
+		var sw := _tw(P.sub, 13, true) + 20.0
+		_E({"k": "box", "r": Rect2(x0 + W - 14.0 - sw, y + 11.0, sw, 24.0), "st": Color("#0b1015"), "rad": 12.0, "bc": Color(acc, 0.7)})
+		_E({"k": "t", "p": Vector2(x0 + W - 14.0 - sw, y + 28.0), "s": P.sub, "fs": 13, "b": true, "c": acc, "al": 1, "w": sw})
+	var yy := y + 46.0
+	var bx := x0 + W * 0.5
+	var bw := W * 0.5 - 14.0 - 96.0
+	for i in rows.size():
+		var q: Array = rows[i]
+		if i % 2 == 1:
+			_E({"k": "box", "r": Rect2(x0 + 1.0, yy, W - 2.0, 46.0), "st": Color("#141b22")})
+		var nt: String = q[2] if q.size() > 2 else ""
+		_E({"k": "t", "p": Vector2(tx, yy + (19.0 if nt != "" else 28.0)), "s": q[0], "fs": 14, "b": true, "c": q[3] if q.size() > 3 else Color("#dfe6ea"), "w": bx - tx - 10.0})
+		if nt != "":
+			_E({"k": "t", "p": Vector2(tx, yy + 37.0), "s": nt, "fs": 12, "c": Color("#8a9bad"), "w": bx - tx - 10.0})
+		if bw > 40.0:
+			_E({"k": "box", "r": Rect2(bx, yy + 19.0, bw, 8.0), "st": Color("#05080b"), "rad": 4.0})
+			_E({"k": "box", "r": Rect2(bx, yy + 19.0, maxf(4.0, bw * clampf(float(q[1]), 0.0, 1.0)), 8.0), "st": [[0.0, Color(acc, 0.6)], [1.0, acc]], "ang": 90.0, "rad": 4.0})
+		_E({"k": "t", "p": Vector2(x0 + W - 16.0 - 90.0, yy + 30.0), "s": _pc(float(q[1])), "fs": 19, "b": true, "c": Color("#ffd76a"), "al": 2, "w": 90.0})
+		yy += 46.0
+	return y + h + 14.0
+
+func _rows_prob() -> Array:
+	var JN := 1.0 - 1e-4
+	var cnt := func(L: Array, g: String) -> int: return L.filter(func(q): return q.get("g", "") == g and not q.has("ex")).size()
+	var rj: int = cnt.call(SK, "ju")
+	var rk: int = cnt.call(SK, "kro")
+	var bn: int = BS.filter(func(q): return not q.has("ex") and q.get("g", "") != "star").size()
+	var tj: int = cnt.call(TS, "ju")
+	var tk: int = cnt.call(TS, "kro")
+	var ks: int = SETS.filter(func(S): return item(S.r).g == "kro").size()
+	var ms := star_all().size()
+	var gold := Color("#e8c36a")
+	var R: Array = []
+	R.append({"jump": [["소로 상자", "box", "gift"], ["파편 개수", "frag", ""], ["★ 별 뽑기", "star", ""], ["배틀패스", "bp", "scroll"]]})
+	R.append({"p": "모든 확률은 게임 안에서 실제로 쓰이는 값과 같아요 · 뽑을 때마다 따로따로 적용돼요", "mb": 12.0})
+	R.append({"anchor": "box"})
+	R.append({"pcard": {"t": "소로 상자", "ic": "gift", "sub": "청석 600", "col": gold, "rows": [
+		["주 등급 로봇 스킨 파편", 0.4 * 0.82 * JN, "1종당 " + _pc(0.4 * 0.82 * JN / rj) + " · " + str(rj) + "종"],
+		["크로 등급 로봇 스킨 파편", 0.4 * 0.18 * JN, "1종당 " + _pc(0.4 * 0.18 * JN / rk) + " · " + str(rk) + "종", Color("#ffe28a")],
+		["기지 스킨 파편", 0.25 * JN, "1종당 " + _pc(0.25 * JN / bn) + " · " + str(bn) + "종"],
+		["주 등급 테마 파편", 0.35 * 0.82 * JN, "1종당 " + _pc(0.35 * 0.82 * JN / tj) + " · " + str(tj) + "종"],
+		["크로 등급 테마 파편", 0.35 * 0.18 * JN, "1종당 " + _pc(0.35 * 0.18 * JN / tk) + " · " + str(tk) + "종", Color("#ffe28a")],
+		["크로 세트 통째로 (잭팟)", 1e-4, "1세트당 " + _pc(1e-4 / ks) + " · " + str(ks) + "세트", Color("#7affd4")]]}})
+	R.append({"anchor": "frag"})
+	R.append({"pcard": {"t": "한 번에 나오는 파편 개수", "sub": "로봇 6 · 기지 5 · 테마 4개면 완성", "col": Color("#7fd2ff"), "rows": [
+		["파편 1개", 0.65, ""], ["파편 2개", 0.25, ""], ["파편 3개", 0.10, ""]]}})
+	R.append({"p": "이미 가진 스킨의 파편은 청석으로 돌려받아요 · 주 15 · 기지 20 · 크로 60 (파편 1개당)", "mb": 12.0})
+	var Q := 1.0 - 1e-5
+	R.append({"anchor": "star"})
+	R.append({"pcard": {"t": "★ 별 뽑기", "sub": "별석 15", "col": Color("#c08cff"), "rows": [
+		["별 파편 1개", 0.54 * Q, ""], ["별 파편 2개", 0.32 * Q, ""], ["별 파편 3개", 0.11 * Q, ""], ["별 파편 4개", 0.03 * Q, ""],
+		["★ 걸작 완품", 1e-5, "아직 없는 걸작 " + str(ms) + "종 중 1개 · 500번째는 확정", Color("#ffd25a")]]}})
+	R.append({"p": "천장: 500번째 뽑기는 걸작 완품 확정 · 완품이 나오면 천장 초기화 · 별 파편 30개로 원하는 걸작 제작 · 걸작을 모두 가졌다면 완품 대신 별 파편 30개", "mb": 12.0})
+	R.append({"anchor": "bp"})
+	R.append({"h": "배틀패스", "ic": "scroll"})
+	R.append({"p": "배틀패스 보상은 확률이 아닌 확정 보상이에요. 크로 파편 보상은 아직 없는 크로 로봇·테마 중 1종에 균등하게 들어가요."})
+	return R
+
+# ── 패치 노트 ──
+const PNOTES := [
+	["11월 26일 밤", "로비 다듬기", [
+		["new", "user", "왼쪽 위 프로필 카드 · 계정 관리 창을 새로 꾸몄어요"],
+		["new", "scroll", "패치 노트를 보기 쉽게 새로 꾸몄어요"],
+		["up", "chart", "확률표를 한눈에 보기 쉽게 (바로 가기 버튼 · 막대 그래프)"],
+		["up", "note", "테마곡 미리듣기 중이면 버튼이 빛나고 남은 시간이 보여요 · 한 번 더 누르면 멈춰요"],
+		["up", "crown", "청석이 모이면 배틀패스 해금 · 단계 구매 버튼이 금색으로 빛나요"],
+		["up", "", "스크롤 막대를 손가락 · 마우스로 잡고 끌 수 있어요 · PC는 좌클릭 끌기로도 스크롤"],
+		["fix", "gift", "상자 결과 카드가 창 밖으로 삐져나오던 문제"],
+		["fix", "", "환영 문구가 청석 칸에 붙어 보이던 문제"]]],
+	["11월 26일", "상점 · 조작 웹과 똑같이", [
+		["new", "gift", "상점 · 상자 열기 · 창고 · 배틀패스 · 설정을 웹과 똑같은 모양으로"],
+		["new", "scroll", "뽑기 내역 · 충전 탭"],
+		["up", "", "PC 마우스: 좌클릭 = 로봇 선택 · 명령 / 우클릭 = 묶기 · 빈 곳 선택 해제"],
+		["up", "", "앱을 내렸다 다시 켜면 지난 시간만큼 게임이 이어져요 (최대 5분)"],
+		["fix", "crown", "레이드를 막아도 배틀패스 XP가 안 들어오던 문제"],
+		["new", "sparkle", "테스트 모드: 재화 무한 (진짜 계정 기록은 안 건드려요)"]]],
+	["11월 26일", "꾸미기 · 계정 · 앱", [
+		["new", "crown", "로봇 · 기지 · 테마 스킨 · 걸작 · 세트 · 소로 상자 · 별 뽑기 · 배틀패스"],
+		["new", "note", "테마 배경음 27곡 · 레이드 · 걸작 세트 전용 편곡"],
+		["new", "user", "웹과 같은 계정으로 로그인 · 클라우드 저장"],
+		["new", "gem", "PC exe · 안드로이드 apk · 새 버전 알림"],
+		["new", "sparkle", "SOROMA GAMES 인트로 · 테마별 승리 · 기지별 패배 연출"]]],
+	["11월 26일", "게임 안 다듬기", [
+		["new", "", "웹과 같은 전투 AI · 분대 돌격 · 지원 로봇 · 적 카이팅"],
+		["new", "", "마우스 올리면 말풍선 · 휠 · 가장자리 이동 · 깃발 · 조작법 창"],
+		["new", "sparkle", "효과 · 효과음 · 배경음 · 튜토리얼 · 자동 저장 · 이어하기"],
+		["up", "", "로봇끼리 안 겹치게 밀어내기 (고도판에서 새로)"]]],
+	["11월 25일", "고도판 첫 버전", [
+		["new", "", "큰 맵 · 시야 · 길찾기 · 미니맵"],
+		["new", "", "생산 · 채굴 · 적 기지 · 전투 · 정복 · 레이드 · 부활 · 업그레이드 · 진화"],
+		["new", "", "웹 SOROK과 같은 HUD · 상점 · 일시정지"]]],
+]
+
+func _rows_notes() -> Array:
+	var R: Array = [{"nhero": true}]
+	for i in PNOTES.size():
+		R.append({"note": PNOTES[i], "latest": i == 0})
+	R.append({"row2": [{"l": "뒤로", "a": "lback"}]})
+	return R
+
+func _L_nhero(x0: float, y: float, W: float) -> float:
+	var r := Rect2(x0, y, W, 104.0)
+	_E({"k": "box", "r": r, "st": [[0.0, Color("#1a2a3a")], [0.55, Color("#14202c")], [1.0, Color("#2a2040")]], "ang": 110.0, "rad": 14.0, "bc": Color("#3a5068")})
+	_E({"k": "pvb", "r": Rect2(x0 + 14.0, y + 10.0, 140.0, 84.0)})
+	_E({"k": "t", "p": Vector2(x0 + 172.0, y + 44.0), "s": "패치 노트", "fs": 24, "b": true, "c": Color("#ffd76a")})
+	_E({"k": "t", "p": Vector2(x0 + 172.0, y + 72.0), "s": "SOROK 고도판이 어떻게 바뀌어 왔는지 모아 봤어요", "fs": 13, "c": Color("#aab8c5"), "w": W - 172.0 - 150.0})
+	var vs := "버전 " + (app_ver if app_ver != "" else "개발판")
+	var vw := _tw(vs, 12, true) + 22.0
+	_E({"k": "box", "r": Rect2(x0 + W - 16.0 - vw, y + 16.0, vw, 26.0), "st": Color("#0b1015"), "rad": 13.0, "bc": Color("#4fd1b5")})
+	_E({"k": "t", "p": Vector2(x0 + W - 16.0 - vw, y + 34.0), "s": vs, "fs": 12, "b": true, "c": Color("#7affd4"), "al": 1, "w": vw})
+	return y + 104.0 + 16.0
+
+func _L_note(row: Dictionary, x0: float, y: float, W: float) -> float:
+	var N: Array = row.note
+	var latest: bool = row.latest
+	var TG := {"new": ["NEW", Color("#3ae07a"), Color("#123020")], "up": ["개선", Color("#5ab8f0"), Color("#0f2433")], "fix": ["수정", Color("#ffa65a"), Color("#33200f")]}
+	var tx := x0 + 22.0 + 58.0
+	var tw := W - (tx - x0) - 48.0
+	var lines: Array = []
+	for it in N[2]:
+		lines.append([it, _wrap(ThemeDB.fallback_font, it[2], 14, tw)])
+	var h := 58.0
+	for l in lines:
+		h += maxf(30.0, l[1].size() * 20.0 + 10.0)
+	h += 10.0
+	var r := Rect2(x0, y, W, h)
+	var acc := Color("#e8c36a") if latest else Color("#4a5a6a")
+	if latest:
+		_E({"k": "box", "r": r, "st": _g2("#1e1a10", "#10151a"), "rad": 12.0, "bc": acc, "glow": Color(0.91, 0.76, 0.42, 0.25)})
+	else:
+		_E({"k": "box", "r": r, "st": Color("#10151a"), "rad": 12.0, "bc": Color("#2b3640")})
+	_E({"k": "box", "r": Rect2(x0 + 1.0, y + 1.0, 6.0, h - 2.0), "st": acc, "rad": [11.0, 0.0, 0.0, 11.0]})
+	var dw := _tw(N[0], 13, true) + 22.0
+	_E({"k": "box", "r": Rect2(x0 + 22.0, y + 16.0, dw, 26.0), "st": _g2("#e8c36a", "#b8902f") if latest else Color("#1b232b"), "rad": 13.0, "bc": Color("#f3d98e") if latest else Color("#33414d")})
+	_E({"k": "t", "p": Vector2(x0 + 22.0, y + 34.0), "s": N[0], "fs": 13, "b": true, "c": Color("#1c1406") if latest else Color("#dfe6ea"), "al": 1, "w": dw})
+	_E({"k": "t", "p": Vector2(x0 + 22.0 + dw + 12.0, y + 35.0), "s": N[1], "fs": 17, "b": true, "c": Color("#ffe9b8") if latest else Color("#dfe6ea")})
+	if latest:
+		var nx := x0 + 22.0 + dw + 12.0 + _tw(N[1], 17, true) + 10.0
+		_E({"k": "box", "r": Rect2(nx, y + 18.0, 42.0, 22.0), "st": Color("#3a0f14"), "rad": 11.0, "bc": Color("#ff6a7a")})
+		_E({"k": "t", "p": Vector2(nx, y + 33.0), "s": "최신", "fs": 12, "b": true, "c": Color("#ffb0b8"), "al": 1, "w": 42.0})
+	var yy := y + 58.0
+	for l in lines:
+		var it: Array = l[0]
+		var T: Array = TG[it[0]]
+		_E({"k": "box", "r": Rect2(x0 + 22.0, yy + 2.0, 46.0, 20.0), "st": T[2], "rad": 10.0, "bc": T[1]})
+		_E({"k": "t", "p": Vector2(x0 + 22.0, yy + 16.0), "s": T[0], "fs": 11, "b": true, "c": T[1], "al": 1, "w": 46.0})
+		var ly := yy + 17.0
+		for s in l[1]:
+			_E({"k": "t", "p": Vector2(tx, ly), "s": s, "fs": 14, "c": Color("#d6dee5")})
+			ly += 20.0
+		if it[1] != "":
+			_E({"k": "icn", "kind": it[1], "c": Vector2(x0 + W - 26.0, yy + 11.0), "s": 15.0})
+		yy += maxf(30.0, l[1].size() * 20.0 + 10.0)
+	return y + h + 14.0
+
 func cos_press(a: Dictionary) -> void:
 	match a.a:
 		"tab":
@@ -5777,7 +6307,13 @@ func cos_press(a: Dictionary) -> void:
 			lob_scroll = 0.0
 		"cash":
 			cash_sel = int(a.i)
+		"jump":
+			lob_scroll = clampf(float(lob_anchor.get(a.k, 0.0)) - 4.0, 0.0, lob_max)
 		"tprev":
+			if bgm_prev_id == a.id and t_real < bgm_prev_u:
+				bgm_prev_u = 0.0
+				lmsg = "미리듣기를 멈췄어요"
+				return
 			bgm_prev_id = a.id
 			bgm_prev_u = t_real + 15.0
 			lmsg = item(a.id).get("n", "") + " 테마곡 미리듣기 중 (15초)" + (" · 음소거를 풀어야 들려요" if SV.mute else "")
@@ -7903,6 +8439,24 @@ func _selftest() -> void:
 	lsec = "pass"
 	pass_init = true
 	await _shot("00h_pass")
+	lsec = "notes"
+	lob_scroll = 0.0
+	await _shot("00i_notes")
+	lsec = "set"
+	set_tab = "p"
+	lob_scroll = 0.0
+	await _shot("00i2_prob")
+	cos_press({"a": "jump", "k": "star"})
+	await _shot("00i3_prob_star")
+	lsec = "shop"
+	shop_tab2 = "t"
+	lob_scroll = 0.0
+	cos_press({"a": "tprev", "id": str(TS[0].id)})
+	await _shot("00i4_tpv")
+	lsec = "main"
+	acp_show()
+	await _shot("00i5_acct")
+	acp_open = false
 	cos_press({"a": "bpall"})
 	print("BP ", lmsg, " cs=", SV.cs, " fbox=", SV.fbox)
 	lsec = "main"
