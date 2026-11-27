@@ -517,6 +517,26 @@ func claim(it: Dictionary) -> String:
 			SV[k] = int(SV.get(k, 0)) + n
 			got.append({"cs": "청석", "ss": "별석", "fbox": "무료 상자"}[k] + " " + str(n))
 	var sk := str(D.get("skin", ""))
+	if sk.begins_with("rand:"):
+		# 랜덤: 받을 때 아직 안 가진 것 중에서 골라요 (다 가졌으면 청석 300으로)
+		var kinds: Array = ["r", "b", "t"] if sk == "rand:all" else [sk.get_slice(":", 1)]
+		var pool: Array = []
+		for kd in kinds:
+			var list: Array = {"r": g.SK, "b": g.BS, "t": g.TS}[kd]
+			var okey: String = {"r": "own", "b": "bown", "t": "town"}[kd]
+			var have: Array = SV.get(okey, []) if SV.get(okey) is Array else []
+			for q in list:
+				if not q.has("ex") and not have.has(q.id):
+					pool.append([kd, q])
+		if pool.is_empty():
+			SV.cs = int(SV.get("cs", 0)) + 300
+			got.append("청석 300 (스킨을 이미 다 가지고 있어서)")
+			sk = ""
+		else:
+			var pk: Array = pool[randi() % pool.size()]
+			sk = pk[0] + ":" + pk[1].id
+			D = D.duplicate()
+			D.skn = {"r": "로봇", "b": "기지", "t": "테마"}[pk[0]] + " · " + str(pk[1].n) + " 🎲"
 	if sk.contains(":"):
 		var key: String = {"r": "own", "b": "bown", "t": "town"}.get(sk.get_slice(":", 0), "own")
 		var id := sk.get_slice(":", 1)

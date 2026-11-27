@@ -383,8 +383,8 @@ func _draw_player() -> void:
 	var cs := _num(r1, "g_cs", "청석", "💎 청석")
 	var ss := _num(r1, "g_ss", "별석", "✦ 별석")
 	var fb := _num(r1, "g_fb", "상자", "📦 무료 상자")
-	var sk_ids: Array = [""]
-	var sk_names: Array = ["스킨 없음"]
+	var sk_ids: Array = ["", "rand:all", "rand:r", "rand:b", "rand:t"]
+	var sk_names: Array = ["스킨 없음", "🎲 랜덤 스킨 (로봇·기지·테마 중)", "🎲 랜덤 로봇 스킨", "🎲 랜덤 기지 스킨", "🎲 랜덤 테마"]
 	for it in g.SK:
 		sk_ids.append("r:" + it.id)
 		sk_names.append("로봇 · " + it.n)
