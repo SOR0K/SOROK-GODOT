@@ -501,9 +501,37 @@ var nat_dlg = null
 var nat_et = null
 var nat_le: LineEdit = null
 var nat_bad := false
+var nat_ok_b = null
+var nat_no_b = null
+var nat_rt = null
 
 func _nat_ok() -> bool:
 	return not nat_bad and OS.get_name() == "Android" and Engine.has_singleton("AndroidRuntime")
+
+func _jc(c: int) -> int:
+	# 안드로이드 색 (ARGB) → 자바 int
+	return c - 0x100000000 if c >= 0x80000000 else c
+
+func _jnew(path: String, args: Array):
+	var C = JavaClassWrapper.wrap(path)
+	if C == null:
+		return null
+	var full := path.get_slice(".", path.get_slice_count(".") - 1)
+	var short := full.get_slice("$", full.get_slice_count("$") - 1)
+	for nm in [short, full]:
+		var o = C.callv(nm, args)
+		if o != null:
+			return o
+	return null
+
+func _gd(col: int, rad: float, stroke: int = 0, scol: int = 0):
+	var d = _jnew("android.graphics.drawable.GradientDrawable", [])
+	if d != null:
+		d.setColor(_jc(col))
+		d.setCornerRadius(rad)
+		if stroke > 0:
+			d.setStroke(stroke, _jc(scol))
+	return d
 
 func _nat_open(e: LineEdit, hint: String, secret: bool, email: bool) -> void:
 	if nat_open:
@@ -518,39 +546,108 @@ func _nat_open(e: LineEdit, hint: String, secret: bool, email: bool) -> void:
 	nat_t = 0.0
 	nat_dlg = null
 	nat_et = null
+	nat_ok_b = null
+	nat_no_b = null
 	nat_le = e
+	nat_rt = rt
 	var txt := e.text
 	var it := 129 if secret else (33 if email else 1)
+	var title := hint.get_slice(" (", 0)
+	var sub := ""
+	if hint.contains(" ("):
+		sub = hint.get_slice(" (", 1).trim_suffix(")")
 	act.runOnUiThread(rt.createRunnableFromGodotCallable(func():
-		var ET = JavaClassWrapper.wrap("android.widget.EditText")
-		var et = ET.call("EditText", act)
-		if et == null:
+		var dm = act.getResources().getDisplayMetrics()
+		var TV = JavaClassWrapper.wrap("android.util.TypedValue")
+		var dp := func(v: float) -> int: return int(TV.applyDimension(1, v, dm))
+		var TF = JavaClassWrapper.wrap("android.graphics.Typeface")
+		# 화면 전체 창 (런처 왼쪽 판과 같은 밝은 회색)
+		var d = _jnew("android.app.Dialog", [act])
+		if d == null:
 			return
+		d.requestWindowFeature(1)
+		var root = _jnew("android.widget.LinearLayout", [act])
+		root.setOrientation(1)
+		root.setPadding(dp.call(40), dp.call(22), dp.call(40), dp.call(16))
+		root.setBackgroundColor(_jc(0xFFF4F5F7))
+		var brand = _jnew("android.widget.TextView", [act])
+		brand.setText("◆ SOROK CLIENT")
+		brand.setTextSize(12.0)
+		brand.setTextColor(_jc(0xFFC9A255))
+		brand.setTypeface(TF.DEFAULT_BOLD)
+		brand.setLetterSpacing(0.12)
+		root.addView(brand)
+		var tt = _jnew("android.widget.TextView", [act])
+		tt.setText(title)
+		tt.setTextSize(24.0)
+		tt.setTextColor(_jc(0xFF1A1D22))
+		tt.setTypeface(TF.DEFAULT_BOLD)
+		tt.setPadding(0, dp.call(8), 0, dp.call(12))
+		root.addView(tt)
+		# 입력칸 + 버튼 한 줄 (키보드가 올라와도 보이게 위쪽에)
+		var row = _jnew("android.widget.LinearLayout", [act])
+		row.setOrientation(0)
+		row.setGravity(16)
+		var et = _jnew("android.widget.EditText", [act])
 		et.setInputType(it)
 		et.setSingleLine(true)
 		et.setText(txt)
 		et.setSelection(txt.length())
-		et.setHint(hint)
-		var B = JavaClassWrapper.wrap("android.app.AlertDialog$Builder")
-		var b = B.call("Builder", act)
-		if b == null:
-			b = B.call("AlertDialog$Builder", act)
-		if b == null:
-			return
-		b.setTitle(hint)
-		b.setView(et)
-		b.setPositiveButton("확인", null)
-		b.setCancelable(true)
-		var d = b.create()
-		if d == null:
-			return
-		d.setCanceledOnTouchOutside(true)
-		d.show()
+		et.setHint(title)
+		et.setTextSize(17.0)
+		et.setTextColor(_jc(0xFF1A1D22))
+		et.setHintTextColor(_jc(0xFF8A929C))
+		et.setPadding(dp.call(16), 0, dp.call(16), 0)
+		et.setBackground(_gd(0xFFFFFFFF, dp.call(10), dp.call(2), 0xFF1A1D22))
+		et.setImeOptions(6)
+		row.addView(et, _jnew("android.widget.LinearLayout$LayoutParams", [0, dp.call(56), 1.0]))
+		var ok = _jnew("android.widget.ToggleButton", [act])
+		ok.setTextOn("확인")
+		ok.setTextOff("확인")
+		ok.setText("확인")
+		ok.setAllCaps(false)
+		ok.setTextSize(16.0)
+		ok.setTypeface(TF.DEFAULT_BOLD)
+		ok.setTextColor(_jc(0xFFFFFFFF))
+		ok.setBackground(_gd(0xFFD6303F, dp.call(14)))
+		ok.setStateListAnimator(null)
+		var lp = _jnew("android.widget.LinearLayout$LayoutParams", [dp.call(110), dp.call(56)])
+		lp.setMargins(dp.call(10), 0, 0, 0)
+		row.addView(ok, lp)
+		root.addView(row)
+		var bot = _jnew("android.widget.LinearLayout", [act])
+		bot.setOrientation(0)
+		bot.setGravity(16)
+		bot.setPadding(0, dp.call(10), 0, 0)
+		var hs = _jnew("android.widget.TextView", [act])
+		hs.setText(sub)
+		hs.setTextSize(13.0)
+		hs.setTextColor(_jc(0xFF6A7480))
+		bot.addView(hs, _jnew("android.widget.LinearLayout$LayoutParams", [0, -2, 1.0]))
+		var no = _jnew("android.widget.ToggleButton", [act])
+		no.setTextOn("취소")
+		no.setTextOff("취소")
+		no.setText("취소")
+		no.setAllCaps(false)
+		no.setTextSize(14.0)
+		no.setTextColor(_jc(0xFF3A424C))
+		no.setBackground(_gd(0xFFFFFFFF, dp.call(10), dp.call(1), 0xFFDDE1E6))
+		no.setStateListAnimator(null)
+		bot.addView(no, _jnew("android.widget.LinearLayout$LayoutParams", [dp.call(110), dp.call(40)]))
+		root.addView(bot)
+		d.setContentView(root)
+		d.setCancelable(true)
 		var w = d.getWindow()
 		if w != null:
-			w.setSoftInputMode(5)
+			w.setBackgroundDrawable(_gd(0xFFF4F5F7, 0.0))
+			w.addFlags(1024)
+			w.setLayout(-1, -1)
+			w.setSoftInputMode(5 | 16)
+		d.show()
 		et.requestFocus()
 		nat_et = et
+		nat_ok_b = ok
+		nat_no_b = no
 		nat_dlg = d))
 
 func _nat_fail(e: LineEdit) -> void:
@@ -562,6 +659,22 @@ func _nat_fail(e: LineEdit) -> void:
 		e.virtual_keyboard_enabled = true
 		e.grab_focus()
 
+func _nat_close(apply: bool) -> void:
+	nat_open = false
+	if apply and nat_et != null and is_instance_valid(nat_le):
+		var tx = nat_et.getText()
+		if tx != null:
+			nat_le.text = str(tx.toString())
+	var d = nat_dlg
+	if d != null and d.isShowing() and nat_rt != null:
+		var act = nat_rt.getActivity()
+		if act != null:
+			act.runOnUiThread(nat_rt.createRunnableFromGodotCallable(func(): d.dismiss()))
+	nat_dlg = null
+	nat_et = null
+	nat_ok_b = null
+	nat_no_b = null
+
 func _process(dt: float) -> void:
 	if not nat_open:
 		return
@@ -570,22 +683,19 @@ func _process(dt: float) -> void:
 		if nat_t > 3.0:
 			_nat_fail(nat_le)
 		return
-	var showing: bool = nat_dlg.isShowing()
-	if showing:
+	if nat_ok_b != null and nat_ok_b.isChecked():
+		_nat_close(true)
+		return
+	if nat_no_b != null and nat_no_b.isChecked():
+		_nat_close(false)
+		return
+	if nat_dlg.isShowing():
 		nat_seen = true
 		return
 	if not nat_seen and nat_t < 3.0:
 		return
-	nat_open = false
-	var s := ""
-	if nat_et != null:
-		var tx = nat_et.getText()
-		if tx != null:
-			s = str(tx.toString())
-	if is_instance_valid(nat_le):
-		nat_le.text = s
-	nat_dlg = null
-	nat_et = null
+	# 뒤로 가기로 닫으면 취소
+	_nat_close(false)
 
 # 흰 메뉴 버튼 (.lnmenu)
 func _btn(v: Container, txt: String, cb: Callable, gold: bool = false) -> Button:
