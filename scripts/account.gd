@@ -787,6 +787,17 @@ func logout() -> void:
 	show_login("")
 
 # ── 화면 (웹 SOROK CLIENT 모양 · 글자 입력이 필요해서 진짜 UI 노드로 만들어요) ──
+# 화면 안 칸·버튼이 터치를 먹지 않고 스크롤로 넘겨주게
+func _ready() -> void:
+	get_tree().node_added.connect(_on_node)
+
+func _on_node(n: Node) -> void:
+	if not (n is Control) or n is ScrollContainer or n is ColorRect:
+		return
+	var inside := (ui_root != null and ui_root.is_ancestor_of(n)) or (pop_root != null and pop_root.is_ancestor_of(n))
+	if inside and (n as Control).mouse_filter == Control.MOUSE_FILTER_STOP:
+		(n as Control).mouse_filter = Control.MOUSE_FILTER_PASS
+
 func _style(c: Color, b: Color, rad: int = 8, bw: int = 1) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = c

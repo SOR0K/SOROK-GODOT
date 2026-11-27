@@ -30,6 +30,16 @@ func close() -> void:
 		root.queue_free()
 		root = null
 
+# 화면 안 칸·버튼이 터치를 먹지 않고 스크롤로 넘겨주게 (손가락으로 어디든 끌어서 스크롤)
+func _ready() -> void:
+	get_tree().node_added.connect(_on_node)
+
+func _on_node(n: Node) -> void:
+	if root != null and n is Control and not (n is ScrollContainer) and root.is_ancestor_of(n):
+		var c := n as Control
+		if c.mouse_filter == Control.MOUSE_FILTER_STOP:
+			c.mouse_filter = Control.MOUSE_FILTER_PASS
+
 func open() -> void:
 	close()
 	a.hide_ui()
