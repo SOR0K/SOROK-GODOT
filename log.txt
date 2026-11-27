@@ -1,0 +1,133 @@
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+WARNING: Could not set V-Sync mode, as changing V-Sync mode is not supported by the graphics driver.
+     at: set_use_vsync (platform/linuxbsd/x11/gl_manager_x11.cpp:372)
+OpenGL API 4.5 (Core Profile) Mesa 26.0.8-1ubuntu0.3 - Compatibility - Using Device: Mesa - llvmpipe (LLVM 21.1.8, 256 bits)
+libpulse.so.0: cannot open shared object file: No such file or directory
+libpulse.so.0: cannot open shared object file: No such file or directory
+ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0'
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_card_inum returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) [error.core] error evaluating strings
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) [error.core] error evaluating name
+ALSA lib conf.c:5211:(_snd_config_evaluate) [error.core] function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5734:(snd_config_expand) [error.core] Evaluate error: No such file or directory
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM default
+ERROR: Condition "status < 0" is true. Returning: ERR_CANT_OPEN
+   at: init_output_device (drivers/alsa/audio_driver_alsa.cpp:97)
+WARNING: All audio drivers failed, falling back to the dummy driver.
+     at: initialize (servers/audio/audio_server.cpp:258)
+
+OVERSAMPLE_PROP true
+SHOT 00x_intro_a
+SHOT 00x_intro_b
+SHOT 00x_intro_c
+SHOT 00_client
+SHOT 00_client_login
+SHOT 00_client_create
+SHOT 00_client_help
+SHOT 00_client_resend
+SHOT 00_client_forgot
+SHOT 00_client_ban
+SHOT 00_client_renick
+SHOT 00_mail_pop
+SHOT 00_lobby_tb
+SHOT 00_mailbox
+SHOT 00_battle_mode
+SHOT 00_battle_rec
+SHOT 00_battle_friend
+SHOT 00_admin
+SHOT 00_admin_player
+SHOT 00_admin_notice
+SHOT 00_lobby
+SHOT 00b_set
+SHOT 00b1_set_bgm
+SHOT 00b2_prob
+SHOT 00c_shop_box
+SHOT 00d0_box_shake
+SHOT 00d_box_open
+SHOT 00d2_box_done
+SHOT 00d3_star_done
+SHOT 00e_shop_r
+SHOT 00e2_shop_t
+SHOT 00e3_shop_set
+SHOT 00e4_shop_hist
+SHOT 00e5_shop_cash
+SHOT 00e6_cash_ask
+SHOT 00f_shop_star
+SET eq=k5 beq=b1 teq=tk2 cs=997534
+SHOT 00g_store
+SHOT 00h_pass
+SHOT 00i_notes
+SHOT 00i2_prob
+SHOT 00i3_prob_star
+SHOT 00i4_tpv
+SHOT 00i5_acct
+SHOT 00i6_box1
+SHOT 00i7_store_multi
+SHOT 00i8_set_back
+BP 보상 7개 받기 완료! cs=1000404 fbox=2
+SHOT 00i_main_skin
+ACCT pack->apply cs 1000404->1000404 eq=k5 own=1 bp=6200
+WEBDATA cs=1234 eq=k3 teq= bp={ "cf": [1, 3], "xp": 2300, &"season": 1, &"prem": false, "cp": [] } vol=70/40 uis=100
+SHOT 00ia_after_web
+SHOT 00j_login
+ACCT net INVALID_LOGIN_CREDENTIALS -> 이메일 또는 비밀번호가 틀렸어요
+SHOT 00k_signup
+SHOT 01_start
+SHOT 01b_tut_shop
+SHOT 01c_pause
+SHOT 01d_pause_set
+SHOT 02_units
+SHOT 02b_shop
+SHOT 02c_shop_up
+SHOT 02e_shop_item
+SHOT 02f_shop_ctl
+SHOT 02g_info
+SHOT 02d_one
+SHOT 03_scouted
+SHOT 03b_tip_out
+SHOT 03c_tip_mine
+SHOT 03d_tip_base
+SHOT 03e_flags
+SHOT 03f_keys
+SQUAD n=0 msg=8대 업그레이드 완료!
+SHOT 04a_gather
+SQUAD2 ph=[] msg=8대 업그레이드 완료!
+SHOT 04_battle
+SHOT 05_after
+STAT t=77 ore=1000104 stone=99999 cap=0 bots=9 dead=1 ens=708 kills=4 mine0=560
+SHOT 06_raid
+STAT2 t=138 basehp=1500 bots=9 ens=712 kills=9 lost=9
+SHOT 06b_raid_ui
+SAVELOAD bots 9->9 ens 712->712 out0 708->708 has=true
+SHOT 07_boom
+SHOT 08_defeat
+SHOT 09_win_a
+SHOT 10_win_b
+SND bgm=true len=8.32 victory=true
+BENCH bots=88 ens=2 fps=28.0
+PERF draw_game avg=4384us max=8582us n=111
+PERF g_fog avg=3us max=7us n=111
+PERF g_fx avg=84us max=323us n=111
+PERF g_ground avg=1us max=5us n=111
+PERF g_hud avg=1159us max=5598us n=111
+PERF g_minimap avg=953us max=1363us n=111
+PERF g_rest avg=72us max=224us n=111
+PERF g_units avg=1281us max=1848us n=111
+PERF g_world avg=766us max=1380us n=111
+PERF update_x1 avg=2572us max=10468us n=111
+PERF draw_client avg=1182us max=14304us n=79
+PERF draw_lobby_main avg=2915us max=35605us n=76
+PERF draw_lobby_pass avg=6143us max=39802us n=45
+PERF draw_lobby_shop avg=3222us max=40798us n=69
+PERF draw_lobby_store avg=6978us max=33603us n=41
+PERF l_build_main avg=158us max=344us n=76
+PERF l_build_pass avg=571us max=7099us n=45
+PERF l_build_shop avg=401us max=720us n=69
+PERF l_build_store avg=2045us max=3908us n=41
+PERF l_draw_pass avg=5095us max=32210us n=45
+PERF l_draw_shop avg=2359us max=39913us n=69
+PERF l_draw_store avg=4434us max=29235us n=41
+SELFTEST_DONE
+WARNING: 26 ObjectDB instances were leaked at exit (run with `--verbose` for details).
+   at: cleanup (core/object/object.cpp:2536)
