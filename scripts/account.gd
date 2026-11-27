@@ -423,7 +423,7 @@ func show_ban() -> void:
 	var u := int(ban_info.get("until", 0))
 	_info(v, [["사유", str(ban_info.get("why", "운영 정책 위반"))],
 		["기간", "영구 정지" if u >= PERMA else when(u) + " 까지"],
-		["문의", "잘못된 정지라고 생각되면 " + (OP_MAIL if OP_MAIL != "" else "운영자") + " 로 닉네임#태그와 함께 알려 주세요"]])
+		["문의", "문의 사항이 있으시면 닉네임#태그와 함께 " + (OP_MAIL if OP_MAIL != "" else "운영자") + "으로 문의 부탁드립니다."]])
 	_btn(v, "로그아웃", logout)
 
 # ── 운영자 우편 · 공지 (로그인할 때 확인) ──
@@ -739,6 +739,21 @@ func _input_box(v: Container, key: String, ph: String, secret: bool = false, val
 	var e := LineEdit.new()
 	e.placeholder_text = ph
 	e.secret = secret
+	if secret:
+		var eb := Button.new()
+		eb.text = "보기"
+		eb.flat = true
+		eb.focus_mode = Control.FOCUS_NONE
+		eb.add_theme_font_size_override("font_size", _fs(12.5))
+		for k in ["font_color", "font_hover_color", "font_pressed_color"]:
+			eb.add_theme_color_override(k, Color("#6a7480"))
+		eb.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+		eb.offset_left = -_fs(58)
+		eb.offset_right = -_fs(6)
+		eb.pressed.connect(func():
+			e.secret = not e.secret
+			eb.text = "보기" if e.secret else "숨김")
+		e.add_child(eb)
 	e.text = val
 	e.custom_minimum_size = Vector2(0, _fs(46))
 	var n := _style(Color("#e8ebef"), Color("#e8ebef"), 6, 2)
@@ -786,6 +801,8 @@ var nat_le: LineEdit = null
 var nat_bad := false
 var nat_ok_b = null
 var nat_no_b = null
+var nat_eye_b = null
+var nat_eye_on := false
 var nat_rt = null
 
 func _nat_ok() -> bool:
@@ -831,6 +848,7 @@ func _nat_open(e: LineEdit, hint: String, secret: bool, email: bool) -> void:
 	nat_et = null
 	nat_ok_b = null
 	nat_no_b = null
+	nat_eye_b = null
 	nat_le = e
 	nat_rt = rt
 	var txt := e.text
@@ -879,8 +897,8 @@ func _nat_open(e: LineEdit, hint: String, secret: bool, email: bool) -> void:
 		row.setOrientation(0)
 		row.setGravity(16)
 		var et = _jnew("android.widget.EditText", [act])
-		et.setInputType(it)
 		et.setSingleLine(true)
+		et.setInputType(it)
 		et.setText(txt)
 		et.setSelection(txt.length())
 		et.setHint(title + " 입력")
@@ -891,6 +909,21 @@ func _nat_open(e: LineEdit, hint: String, secret: bool, email: bool) -> void:
 		et.setBackground(_gd(0xFF3A3F47, dp.call(22)))
 		et.setImeOptions(6)
 		row.addView(et, _jnew("android.widget.LinearLayout$LayoutParams", [0, dp.call(50), 1.0]))
+		var eye = null
+		if secret:
+			# 비밀번호 보기 / 숨김
+			eye = _jnew("android.widget.ToggleButton", [act])
+			eye.setTextOff("보기")
+			eye.setTextOn("숨김")
+			eye.setChecked(false)
+			eye.setAllCaps(false)
+			eye.setTextSize(14.0)
+			eye.setTextColor(_jc(0xFFF1F4F7))
+			eye.setBackground(_gd(0xFF3A3F47, dp.call(22)))
+			eye.setStateListAnimator(null)
+			var ep = _jnew("android.widget.LinearLayout$LayoutParams", [dp.call(72), dp.call(50)])
+			ep.setMargins(dp.call(8), 0, 0, 0)
+			row.addView(eye, ep)
 		var ok = _jnew("android.widget.ToggleButton", [act])
 		ok.setTextOn("확인")
 		ok.setTextOff("확인")
@@ -927,6 +960,8 @@ func _nat_open(e: LineEdit, hint: String, secret: bool, email: bool) -> void:
 		nat_et = et
 		nat_ok_b = ok
 		nat_no_b = no
+		nat_eye_b = eye
+		nat_eye_on = false
 		nat_dlg = d))
 
 func _nat_fail(e: LineEdit) -> void:
@@ -953,6 +988,7 @@ func _nat_close(apply: bool) -> void:
 	nat_et = null
 	nat_ok_b = null
 	nat_no_b = null
+	nat_eye_b = null
 
 func _process(dt: float) -> void:
 	if not nat_open:
@@ -962,6 +998,18 @@ func _process(dt: float) -> void:
 		if nat_t > 3.0:
 			_nat_fail(nat_le)
 		return
+	if nat_eye_b != null and nat_rt != null:
+		var on: bool = nat_eye_b.isChecked()
+		if on != nat_eye_on:
+			nat_eye_on = on
+			var et = nat_et
+			var act = nat_rt.getActivity()
+			if et != null and act != null:
+				act.runOnUiThread(nat_rt.createRunnableFromGodotCallable(func():
+					et.setInputType(145 if on else 129)
+					var tx = et.getText()
+					if tx != null:
+						et.setSelection(tx.length())))
 	if nat_ok_b != null and nat_ok_b.isChecked():
 		_nat_close(true)
 		return
