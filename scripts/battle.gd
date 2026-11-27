@@ -190,7 +190,9 @@ func _mode_card(p: Control, icon: String, title: String, desc: String, tag: Stri
 	v.get_parent().size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.get_parent().custom_minimum_size = Vector2(0, _fs(190))
 	var h := _row(v)
-	_lab(h, icon, 30, INK)
+	var il := _lab(h, icon, 30, INK)
+	il.autowrap_mode = TextServer.AUTOWRAP_OFF
+	il.custom_minimum_size = Vector2(_fs(44), 0)
 	var tv := VBoxContainer.new()
 	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(tv)
