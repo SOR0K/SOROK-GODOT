@@ -169,6 +169,10 @@ func _ready() -> void:
 	acct.g = self
 	acct.srv = "m" if touch_mode else "pc"
 	add_child(acct)
+	adm = preload("res://scripts/admin.gd").new()
+	adm.a = acct
+	adm.g = self
+	add_child(adm)
 	get_tree().set_auto_accept_quit(false)
 	if OS.get_cmdline_user_args().has("--selftest"):
 		print("OVERSAMPLE_PROP ", "oversampling_override" in get_viewport())
@@ -2295,6 +2299,7 @@ var lmsg := ""
 const SV_BASE := {"cs": 0, "ss": 0, "vol_s": 70, "vol_b": 35, "mute": false, "uis": 100, "tut_done": false}
 var SV := SV_BASE.duplicate(true)
 var acct = null
+var adm = null
 var save_acc := 0.0
 var slider_drag = null
 var wipe_arm := ""
@@ -6150,7 +6155,7 @@ func _acp_draw(f: Font, hov) -> void:
 				ic = "key"
 				al = 1
 			"acp_admin":
-				lab = "닉네임으로 이메일 찾기 (운영자)"
+				lab = "운영자 화면 열기"
 				ic = "mail"
 				al = 1
 			"acp_out":
@@ -6287,7 +6292,7 @@ func acp_press(id: String) -> void:
 			acp_msg = acct.err_txt(j.err) if j.has("err") else "인증 메일을 보냈어요 · 메일함을 확인해 주세요"
 		"acp_admin":
 			acp_open = false
-			acct.show_admin()
+			adm.open()
 		"acp_reset":
 			acp_msg = "보내는 중…"
 			var j2: Dictionary = await acct.idt("sendOobCode", {"requestType": "PASSWORD_RESET", "email": str(acct.ses.get("email", ""))})
@@ -6718,7 +6723,11 @@ func client_press(id: String) -> void:
 				if acct.ses == null:
 					acct.show_login("로그인하면 플레이할 수 있어요")
 					return
-				if acct.mode == "verify" or acct.mode == "nick":
+				if acct.mode in ["verify", "nick", "renick", "ban"]:
+					return
+				# 운영자 계정은 게임 대신 운영자 화면
+				if acct.is_admin():
+					adm.open()
 					return
 			scene = "lobby"
 			lsec = "main"
@@ -8073,7 +8082,7 @@ func _shop(f: Font, hov) -> void:
 
 # ═════════ 입력 ═════════
 func _unhandled_input(e: InputEvent) -> void:
-	if scene == "intro":
+	if scene == "intro" or scene == "admin":
 		return
 	if acct != null and acct.is_open():
 		return
@@ -8348,6 +8357,8 @@ func booting() -> bool:
 
 # 안드로이드 뒤로 가기 버튼: 열린 창부터 하나씩 닫고, 로비 첫 화면에선 두 번 눌러 종료
 func go_back() -> void:
+	if adm != null and adm.is_open():
+		return
 	if acct != null and acct.is_open():
 		if acct.mode == "panel":
 			acct.hide_ui()
@@ -9131,6 +9142,31 @@ func _selftest() -> void:
 	acct.show_forgot()
 	await _wait(0.3)
 	await _shot("00_client_forgot")
+	acct.ban_info = {"why": "핵 사용 (테스트)", "until": acct.now_ms() + 3 * 86400000}
+	acct.show_ban()
+	await _wait(0.3)
+	await _shot("00_client_ban")
+	acct.show_renick()
+	await _wait(0.3)
+	await _shot("00_client_renick")
+	acct.hide_ui()
+	acct.popup("📮 운영자 우편이 도착했어요", "🎁 청석 500, 스킨 로봇 · 봄 벚꽃\n   버그 보상이에요. 불편을 드려 죄송해요")
+	await _wait(0.3)
+	await _shot("00_mail_pop")
+	acct.pop_root.queue_free()
+	acct.pop_root = null
+	adm.open()
+	await _wait(0.3)
+	await _shot("00_admin")
+	adm.cur = {"uid": "TESTUID", "nick": "YASR", "tag": "1712", "email": "test@gmail.com", "t": acct.now_ms(), "S": {"pc": {"cs": 1234, "ss": 56, "fbox": 2, "bp": {"xp": 2300}, "own": ["j1", "k3"], "bown": ["b1"], "town": [], "tutDone": true, "_t": acct.now_ms(), "_game": true}}, "ban": {}, "tester": true, "mail": []}
+	adm._draw_player()
+	await _wait(0.4)
+	await _shot("00_admin_player")
+	adm.show_tab("notice")
+	await _wait(0.4)
+	await _shot("00_admin_notice")
+	adm.close()
+	adm.cur = {}
 	acct.hide_ui()
 	scene = "lobby"
 	await _wait(0.6)

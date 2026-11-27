@@ -303,6 +303,8 @@ func verified():
 	return false
 
 func enter(nick_hint: String = "") -> void:
+	if await _ban_check():
+		return
 	var r := await fs(HTTPClient.METHOD_GET, "servers/" + srv + "/users/" + str(ses.uid))
 	if r.st == 404:
 		show_nick(nick_hint)
@@ -327,6 +329,7 @@ func enter(nick_hint: String = "") -> void:
 	g.lmsg = str(ses.nick) + "#" + str(ses.tag) + " 님 환영해요"
 	ensure_acct()
 	_book()
+	_after_enter()
 
 func _boot_bg() -> void:
 	await enter()
@@ -342,6 +345,268 @@ func _book() -> void:
 	await fs(HTTPClient.METHOD_PATCH, "book/" + str(ses.uid), {"fields": {
 		"email": {"stringValue": str(ses.email)}, "nick": {"stringValue": nk}, "tag": {"stringValue": tg},
 		"nl": {"stringValue": nk.to_lower()}, "tl": {"stringValue": tg.to_lower()}, "t": {"integerValue": str(now_ms())}}})
+
+# ── Firestore 값 ↔ 고도 값 ──
+func fv(v) -> Dictionary:
+	if v is bool:
+		return {"booleanValue": v}
+	if v is int:
+		return {"integerValue": str(v)}
+	if v is float:
+		return {"doubleValue": v}
+	if v is Array:
+		return {"arrayValue": {"values": v.map(func(x): return fv(x))}}
+	if v == null:
+		return {"nullValue": null}
+	return {"stringValue": str(v)}
+
+func dv(x):
+	if not (x is Dictionary):
+		return null
+	if x.has("stringValue"):
+		return str(x.stringValue)
+	if x.has("integerValue"):
+		return int(x.integerValue)
+	if x.has("doubleValue"):
+		return float(x.doubleValue)
+	if x.has("booleanValue"):
+		return x.booleanValue == true
+	if x.has("arrayValue"):
+		return (x.arrayValue.get("values", []) as Array).map(func(y): return dv(y))
+	return null
+
+func dfields(doc: Dictionary) -> Dictionary:
+	var o := {}
+	var f: Dictionary = doc.get("fields", {})
+	for k in f:
+		o[k] = dv(f[k])
+	return o
+
+func mk(d: Dictionary) -> Dictionary:
+	var f := {}
+	for k in d:
+		f[k] = fv(d[k])
+	return {"fields": f}
+
+func dpath(doc: Dictionary) -> String:
+	var nm := str(doc.get("name", ""))
+	var i := nm.find("/documents/")
+	return nm.substr(i + 11) if i >= 0 else nm
+
+func when(ms: int) -> String:
+	if ms <= 0:
+		return "-"
+	var d := Time.get_datetime_dict_from_unix_time(int(ms / 1000) + 9 * 3600)
+	return "%d.%02d.%02d %02d:%02d" % [d.year, d.month, d.day, d.hour, d.minute]
+
+# ── 정지 ──
+const PERMA := 9999999999999
+var ban_info := {}
+func _ban_check() -> bool:
+	var r := await fs(HTTPClient.METHOD_GET, "bans/" + str(ses.uid))
+	if not r.ok:
+		ban_info = {}
+		return false
+	var D := dfields(r.j)
+	if int(D.get("until", 0)) <= now_ms():
+		ban_info = {}
+		return false
+	ban_info = D
+	state = "ban"
+	show_ban()
+	return true
+
+func show_ban() -> void:
+	mode = "ban"
+	g.scene = "client"
+	var v := _shell("정지된 계정이에요")
+	var u := int(ban_info.get("until", 0))
+	_info(v, [["사유", str(ban_info.get("why", "운영 정책 위반"))],
+		["기간", "영구 정지" if u >= PERMA else when(u) + " 까지"],
+		["문의", "잘못된 정지라고 생각되면 " + (OP_MAIL if OP_MAIL != "" else "운영자") + " 로 닉네임#태그와 함께 알려 주세요"]])
+	_btn(v, "로그아웃", logout)
+
+# ── 운영자 우편 · 공지 (로그인할 때 확인) ──
+func _after_enter() -> void:
+	if ses != null and ses.get("rn", false):
+		show_renick()
+		return
+	await _check_mail()
+	await _check_notice()
+
+func _check_mail() -> void:
+	var r := await fs(HTTPClient.METHOD_GET, "mail/" + str(ses.uid) + "/items")
+	if not r.ok:
+		return
+	var docs: Array = r.j.get("documents", [])
+	if docs.is_empty():
+		return
+	var SV: Dictionary = g.SV
+	var lines: Array = []
+	var renick := false
+	for doc in docs:
+		var D := dfields(doc)
+		var del := await fs(HTTPClient.METHOD_DELETE, dpath(doc))
+		if not del.ok:
+			continue
+		var ty := str(D.get("ty", "grant"))
+		var m := str(D.get("msg", ""))
+		match ty:
+			"grant":
+				var got: Array = []
+				for k in ["cs", "ss", "fbox"]:
+					var n := int(D.get(k, 0))
+					if n != 0:
+						SV[k] = int(SV.get(k, 0)) + n
+						got.append({"cs": "청석", "ss": "별석", "fbox": "무료 상자"}[k] + " " + str(n))
+				var sk := str(D.get("skin", ""))
+				if sk.contains(":"):
+					var key: String = {"r": "own", "b": "bown", "t": "town"}.get(sk.get_slice(":", 0), "own")
+					var id := sk.get_slice(":", 1)
+					if not (SV.get(key) is Array):
+						SV[key] = []
+					if not (SV[key] as Array).has(id):
+						SV[key].append(id)
+					got.append("스킨 " + str(D.get("skn", id)))
+				lines.append("🎁 " + ", ".join(got) + (("\n   " + m) if m != "" else ""))
+			"set":
+				for k in ["cs", "ss"]:
+					if D.has(k) and int(D[k]) >= 0:
+						SV[k] = int(D[k])
+				lines.append("🔧 운영자가 재화를 조정했어요 (청석 " + str(SV.get("cs", 0)) + " · 별석 " + str(SV.get("ss", 0)) + ")" + (("\n   " + m) if m != "" else ""))
+			"reset":
+				var keep_k := ["vol_s", "vol_b", "mute", "uis", "tut_done"]
+				var nv: Dictionary = g.SV_BASE.duplicate(true)
+				for k in keep_k:
+					if SV.has(k):
+						nv[k] = SV[k]
+				g.SV = nv
+				SV = nv
+				g.del_save()
+				lines.append("♻ 운영자 요청으로 진행이 초기화됐어요" + (("\n   " + m) if m != "" else ""))
+			"renick":
+				renick = true
+				lines.append("✏ 운영자 요청으로 닉네임을 새로 정해야 해요" + (("\n   " + m) if m != "" else ""))
+			_:
+				if m != "":
+					lines.append("📮 " + m)
+		var lid := str(D.get("lid", ""))
+		if lid != "":
+			fs(HTTPClient.METHOD_PATCH, "maillog/" + lid, mk({"got": true, "gt": now_ms()}), "updateMask.fieldPaths=got&updateMask.fieldPaths=gt")
+	g._sv_defaults()
+	g._apply_sv()
+	g.sv_save(true)
+	push(true)
+	if renick:
+		ses.rn = true
+		keep()
+	if not lines.is_empty():
+		await popup("📮 운영자 우편이 도착했어요", "\n\n".join(lines))
+	if renick:
+		show_renick()
+
+const NSEEN_P := "user://notice_seen.txt"
+func _check_notice() -> void:
+	var r := await fs(HTTPClient.METHOD_GET, "notice/main")
+	if not r.ok:
+		return
+	var D := dfields(r.j)
+	if not D.get("on", false):
+		return
+	var id := str(D.get("id", ""))
+	var seen := FileAccess.get_file_as_string(NSEEN_P) if FileAccess.file_exists(NSEEN_P) else ""
+	if id == "" or seen == id:
+		return
+	await popup("📢 " + str(D.get("title", "공지")), str(D.get("body", "")))
+	var f := FileAccess.open(NSEEN_P, FileAccess.WRITE)
+	if f != null:
+		f.store_string(id)
+
+# 가운데 카드 팝업 (확인을 누를 때까지 기다려요)
+signal pop_done
+var pop_root: Control = null
+func popup(title: String, body: String) -> void:
+	if pop_root != null:
+		pop_root.queue_free()
+	var root := Control.new()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var th := Theme.new()
+	th.default_font_size = _fs(15)
+	root.theme = th
+	add_child(root)
+	pop_root = root
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.03, 0.05, 0.72)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(dim)
+	var cc := CenterContainer.new()
+	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(cc)
+	var p := PanelContainer.new()
+	var st := _style(Color("#f4f5f7"), Color("#c9a255"), 14, 2)
+	st.content_margin_left = _fs(26)
+	st.content_margin_right = _fs(26)
+	st.content_margin_top = _fs(22)
+	st.content_margin_bottom = _fs(20)
+	p.add_theme_stylebox_override("panel", st)
+	p.custom_minimum_size = Vector2(minf(_fs(520), g.get_viewport().get_visible_rect().size.x - 40.0), 0)
+	cc.add_child(p)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", _fs(12))
+	p.add_child(v)
+	_label(v, "◆ SOROK", 12, Color("#c9a255"), true)
+	_label(v, title, 20, Color("#1a1d22"), true)
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.custom_minimum_size = Vector2(0, minf(_fs(260), g.get_viewport().get_visible_rect().size.y * 0.5))
+	v.add_child(sc)
+	var bl := _label(sc, body, 14, Color("#3a424c"))
+	bl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_btn(v, "확인", func():
+		if pop_root != null:
+			pop_root.queue_free()
+			pop_root = null
+		pop_done.emit(), true)
+	await pop_done
+
+# ── 운영자 요청 닉네임 변경 ──
+func show_renick() -> void:
+	mode = "renick"
+	g.scene = "client"
+	var v := _shell("닉네임을 바꿔 주세요")
+	_label(v, "운영자 요청으로 닉네임을 새로 정해야 게임을 할 수 있어요", 13, Color("#5a6470"))
+	_nick_row(v, "", "")
+	_err(v, "")
+	_go(v, _do_renick)
+
+func _do_renick() -> void:
+	var n := _v("n")
+	var tg := _v("t") if _v("t") != "" else DTAG
+	if not name_ok(n):
+		say("이름은 3~16자예요 (#, /, ?, % 는 쓸 수 없어요)")
+		return
+	if not tag_ok(tg):
+		say("태그는 3~5자예요 (띄어쓰기 없이)")
+		return
+	say("확인 중…")
+	var old := rkey(str(ses.get("an", ses.get("nick", ""))), str(ses.get("at", ses.get("tag", DTAG))))
+	var cr := await claim_nick(n, tg)
+	if cr == "taken":
+		say("이미 있는 이름#태그예요. 다른 걸로 해 주세요")
+		return
+	if cr.begins_with("fail"):
+		say("닉네임 변경 실패 (" + cr.substr(5) + ")")
+		return
+	if old != rkey(n, tg):
+		fs(HTTPClient.METHOD_DELETE, "nicks/" + old.uri_encode())
+	ses.nick = n
+	ses.tag = tg
+	ses.erase("rn")
+	keep()
+	await push(true)
+	_book()
+	hide_ui()
+	g.lmsg = n + "#" + tg + " 님으로 바뀌었어요"
 
 func is_admin() -> bool:
 	return ses != null and ADMIN_UIDS.has(str(ses.get("uid", "")))
@@ -786,6 +1051,7 @@ func _enter_key() -> void:
 		"findpw": _do_reset()
 		"resend": _do_resend()
 		"admin": _do_admin_find()
+		"renick": _do_renick()
 
 # 밑줄 탭 (.lntabs)
 func _tabs(v: Container, cur: String) -> void:
@@ -1248,6 +1514,7 @@ func _do_nick() -> void:
 	hide_ui()
 	g.lmsg = n + "#" + tg + " 님 환영해요"
 	_book()
+	_after_enter()
 
 func _offline() -> void:
 	clear()
