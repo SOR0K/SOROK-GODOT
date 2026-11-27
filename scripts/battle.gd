@@ -218,8 +218,8 @@ func _mode_tab() -> void:
 	nb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var c := _mode_card(r, "⚔", "경쟁전", "점수가 걸린 모드예요 · 같은 조건의 판에서 기록을 겨루고, 랭킹에 올라가요", "○ 준비 중 · 점수 기준을 정하면 열려요", false)
 	_b(c, "준비 중", func(): note("경쟁전은 점수 기준을 정한 뒤에 열려요"), "off")
-	var p := _mode_card(r, "🔒", "사설", "친구끼리 방을 만들어 원하는 규칙으로 같이 해요 · 점수에는 들어가지 않아요", "○ 준비 중 · 멀티플레이와 함께 열려요", false)
-	_b(p, "준비 중", func(): note("사설 방은 멀티플레이 업데이트 때 열려요"), "off")
+	var p := _mode_card(r, "🔒", "사용자 설정 게임", "친구끼리 방을 만들어 원하는 규칙으로 같이 해요 · 점수에는 들어가지 않아요", "○ 준비 중 · 멀티플레이와 함께 열려요", false)
+	_b(p, "준비 중", func(): note("사용자 설정 게임은 멀티플레이 업데이트 때 열려요"), "off")
 	# 좁은 화면이면 세로로
 	var vs: Vector2 = g.get_viewport().get_visible_rect().size
 	if vs.x < _fs(900):
@@ -254,8 +254,11 @@ func _rec_tab() -> void:
 	var hc := _card(body)
 	var hr := _row(hc)
 	var nick := str(a.ses.get("nick", "?")) if a.ses != null else "?"
-	_lab(hr, nick, 24, INK, true)
-	_lab(hr, "#" + (str(a.ses.get("tag", "")) if a.ses != null else ""), 16, SUB)
+	var nl := _lab(hr, nick, 24, INK, true)
+	nl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var tl := _lab(hr, "#" + (str(a.ses.get("tag", "")) if a.ses != null else ""), 16, SUB)
+	tl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	tl.size_flags_vertical = Control.SIZE_SHRINK_END
 	_lab(hc, a.srv_name() + " 기록 · 일반전 기준 (판이 끝났을 때 쌓여요)", 12.5, SUB)
 	var r1 := _row(body)
 	_tile(r1, "플레이", str(pl) + "판", INK)
