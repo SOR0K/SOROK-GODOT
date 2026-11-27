@@ -2701,11 +2701,11 @@ func _build_lobby0() -> void:
 	if lsec == "main":
 		var cw := W * 0.55
 		var cr := Rect2(x0, 205.0, cw, 312.0)
-		if has_save():
-			_add("lcont", Rect2(cr.position.x + 20.0, cr.end.y - 72.0, (cw - 50.0) / 2.0, 54.0))
-			_add("lnew", Rect2(cr.position.x + 30.0 + (cw - 50.0) / 2.0, cr.end.y - 72.0, (cw - 50.0) / 2.0, 54.0))
-		else:
-			_add("lnew", Rect2(cr.position.x + 20.0, cr.end.y - 72.0, cw - 40.0, 54.0))
+		# 게임 모드 고르기 + 플레이
+		var mw := (cw - 40.0 - 16.0) / 3.0
+		for i in 3:
+			_add("lmode", Rect2(cr.position.x + 20.0 + i * (mw + 8.0), cr.end.y - 132.0, mw, 44.0), true, "", i)
+		_add("lplay", Rect2(cr.position.x + 20.0, cr.end.y - 76.0, cw - 40.0, 58.0))
 		var tx := x0 + cw + 12.0
 		var tw := (W - cw - 24.0) / 2.0
 		var names := ["lshop", "lstore", "lpass", "lbattle"]
@@ -2877,6 +2877,18 @@ func _tb_icon(k: String, c: Vector2, s: float) -> void:
 			draw_colored_polygon(PackedVector2Array([P[0], P[1], P[2], P[3]]), Color("#e8a62a"))
 			draw_polyline(PackedVector2Array([c + Vector2(-s * 0.16, 0), c + Vector2(-s * 0.03, s * 0.14), c + Vector2(s * 0.2, -s * 0.14)]), Color("#3a2a06"), maxf(1.5, s * 0.1), true)
 
+var lmode := 0     # 로비에서 고른 게임 모드 (0 일반전 · 1 경쟁전 · 2 사용자 설정)
+func _ask_cont() -> void:
+	var v: VBoxContainer = acct._overlay("일반전", 460)
+	acct._label(v, "하던 판이 있어요 · 어떻게 할까요?", 14, Color("#3a424c"))
+	acct._btn(v, "▶ 이어하기", func():
+		acct.close_overlay()
+		start_game(true), true)
+	acct._btn(v, "새 게임 (하던 판은 사라져요)", func():
+		acct.close_overlay()
+		start_game(false))
+	acct._btn(v, "취소", acct.close_overlay)
+
 var promo_i := 0
 var promo_t := 0.0
 func promos() -> Array:
@@ -2948,10 +2960,10 @@ func _lobby_main(f: Font, hov) -> void:
 	draw_polygon(PackedVector2Array([Vector2(cr.position.x, cr.position.y + 150), Vector2(cr.end.x, cr.position.y + 150), cr.end, Vector2(cr.position.x, cr.end.y)]),
 		PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0, 0, 0, 0.9), Color(0, 0, 0, 0.9)]))
 	draw_rect(cr, Color("#e0b85a"), false, 2.0)
-	draw_string(f, cr.position + Vector2(20, 200), "출격 준비 완료", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#ffe6a6"))
+	draw_string(f, cr.position + Vector2(20, 142), "출격 준비 완료", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#ffe6a6"))
 	if app_ver != "":
 		draw_string(f, Vector2(0, ui_size().y - 10.0), "버전 " + app_ver, HORIZONTAL_ALIGNMENT_RIGHT, ui_size().x - 12.0, 11, Color("#5a6672"))
-	draw_string(f, cr.position + Vector2(20, 226), "난이도 어려움 · 로봇 " + skn.get("n", "기본") + " · 기지 " + bsk.get("n", "기본") + " · 테마 " + thm.get("n", "기본"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#c9d4dc"))
+	draw_string(f, cr.position + Vector2(20, 166), "난이도 어려움 · 로봇 " + skn.get("n", "기본") + " · 기지 " + bsk.get("n", "기본") + " · 테마 " + thm.get("n", "기본"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#c9d4dc"))
 	var tot := SK.size() + BS.size() + TS.size()
 	var own: int = SV.own.size() + SV.bown.size() + SV.town.size()
 	var tiles := {"lshop": ["상점", "소로 상자 · ★ 걸작 · 세트", Color("#c9a255")], "lstore": ["창고", "보유 스킨 " + str(own) + " / " + str(tot) + (" · 무료 상자 " + str(SV.fbox) if SV.fbox > 0 else ""), Color("#2f8a78")],
@@ -2961,6 +2973,27 @@ func _lobby_main(f: Font, hov) -> void:
 	for it in ui:
 		var r: Rect2 = it.r
 		match it.id:
+			"lmode":
+				var mi: int = int(it.arg)
+				var on := mi == lmode
+				var open_ := mi == 0
+				var sb0 := StyleBoxFlat.new()
+				sb0.set_corner_radius_all(8)
+				sb0.set_border_width_all(2 if on else 1)
+				sb0.bg_color = Color("#2a2410") if on else (Color("#1a2430") if hov == it else Color(0.06, 0.08, 0.1, 0.85))
+				sb0.border_color = Color("#ffd76a") if on else Color(1, 1, 1, 0.16)
+				sb0.draw(get_canvas_item(), r)
+				var mn: String = ["일반전", "경쟁전", "사용자 설정"][mi]
+				draw_string(fb(), Vector2(r.position.x, r.position.y + (21.0 if not open_ else 28.0)), mn, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 15, Color("#ffd76a") if on else (Color.WHITE if open_ else Color("#8a98a5")))
+				if not open_:
+					draw_string(f, Vector2(r.position.x, r.position.y + 37.0), "준비 중", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 10, Color("#6a7885"))
+			"lplay":
+				var gold := StyleBoxFlat.new()
+				var ok_ := lmode == 0
+				gold.bg_color = (Color("#e8c060") if hov == it else Color("#d9b04e")) if ok_ else Color("#3a3f45")
+				gold.set_corner_radius_all(8)
+				gold.draw(get_canvas_item(), r)
+				draw_string(fb(), Vector2(r.position.x, r.position.y + 38.0), "플레이" if ok_ else "준비 중", HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 21, Color("#2a1a02") if ok_ else Color("#8a98a5"))
 			"lnew":
 				var gold := StyleBoxFlat.new()
 				gold.bg_color = Color("#e8c060") if hov == it else Color("#d9b04e")
@@ -2994,10 +3027,6 @@ func _lobby_main(f: Font, hov) -> void:
 					sb.draw(get_canvas_item(), r)
 					draw_circle(Vector2(r.end.x - 26.0, r.position.y + 26.0), 34.0, Color(tl[2], 0.45))
 					if it.id == "lbattle":
-						var sc0 := Vector2(r.end.x - 34.0, r.position.y + 34.0)
-						for sgn in [-1.0, 1.0]:
-							draw_line(sc0 + Vector2(-11.0 * sgn, -11.0), sc0 + Vector2(9.0 * sgn, 9.0), Color("#e6edf3"), 3.0)
-							draw_line(sc0 + Vector2(5.0 * sgn, 11.0), sc0 + Vector2(11.0 * sgn, 5.0), Color("#ffd76a"), 3.0)
 						if bat != null and bat.fr_in.size() > 0:
 							_badge(Vector2(r.end.x - 14.0, r.position.y + 14.0), str(bat.fr_in.size()))
 					if it.id == "lmail":
@@ -3040,7 +3069,7 @@ func _slider_set(key: String, sp: Vector2) -> void:
 				_apply_sv()
 			return
 
-const BOOT_OK := ["lshop", "lstore", "lpass", "lset", "lnotes", "lback", "pdot", "lprof", "tb_set", "tb_acct", "tb_notice", "acp_bg", "acp_close", "bgmsel", "bgmx", "lkeys", "sl"]
+const BOOT_OK := ["lmode", "lshop", "lstore", "lpass", "lset", "lnotes", "lback", "pdot", "lprof", "tb_set", "tb_acct", "tb_notice", "acp_bg", "acp_close", "bgmsel", "bgmx", "lkeys", "sl"]
 func lobby_press(it: Dictionary, sp: Vector2) -> void:
 	if booting() and not (it.id in BOOT_OK) and not (it.id == "cb" and it.arg is Dictionary and str(it.arg.get("a", "")) in ["tab", "settab", "hf", "sf", "jump", "tprev"]):
 		lmsg = "계정 기록을 불러오는 중이에요 · 잠깐만 기다려 주세요"
@@ -3050,6 +3079,17 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 	match it.id:
 		"lnew": start_game(false)
 		"lcont": start_game(true)
+		"lmode":
+			lmode = int(it.arg)
+			if lmode != 0:
+				lmsg = ["", "경쟁전은 점수 기준을 정한 뒤에 열려요", "사용자 설정 게임은 멀티플레이 업데이트 때 열려요"][lmode]
+		"lplay":
+			if lmode != 0:
+				lmsg = "이 모드는 아직 준비 중이에요 · 일반전을 골라 주세요"
+			elif has_save():
+				_ask_cont()
+			else:
+				start_game(false)
 		"lset":
 			lsec = "set"
 			set_tab = "a"
