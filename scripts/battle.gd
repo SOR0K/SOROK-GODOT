@@ -68,7 +68,7 @@ func open(t: String = "mode") -> void:
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", _fs(8))
 	col.add_child(top)
-	var brand := _lab(top, "⚔ 대전", 20, GOLD, true)
+	var brand := _lab(top, "대전", 20, GOLD, true)
 	brand.autowrap_mode = TextServer.AUTOWRAP_OFF
 	tabs_box = HBoxContainer.new()
 	tabs_box.add_theme_constant_override("separation", _fs(4))
@@ -167,7 +167,7 @@ func show_tab(t: String) -> void:
 	for c in tabs_box.get_children():
 		c.queue_free()
 	var fn := fr_in.size()
-	for it in [["mode", "🎮 게임 모드"], ["rec", "📊 내 기록"], ["rank", "🏆 랭킹"], ["friend", "👥 친구" + (" (" + str(fn) + ")" if fn > 0 else "")]]:
+	for it in [["mode", "게임 모드"], ["rec", "내 기록"], ["rank", "랭킹"], ["friend", "친구" + (" (" + str(fn) + ")" if fn > 0 else "")]]:
 		var k: String = it[0]
 		_b(tabs_box, it[1], func(): show_tab(k), "on" if k == t else "w")
 	a.fields = {}
@@ -185,28 +185,24 @@ func show_tab(t: String) -> void:
 			_friend_tab()
 
 # ═════════ 게임 모드 ═════════
-func _mode_card(p: Control, icon: String, title: String, desc: String, tag: String, open_: bool) -> VBoxContainer:
+func _mode_card(p: Control, title: String, sub: String, open_: bool) -> VBoxContainer:
 	var v := _card(p, "", Color("#c9a255") if open_ else LINE)
 	v.get_parent().size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	v.get_parent().custom_minimum_size = Vector2(0, _fs(190))
-	var h := _row(v)
-	var il := _lab(h, icon, 30, INK)
-	il.autowrap_mode = TextServer.AUTOWRAP_OFF
-	il.custom_minimum_size = Vector2(_fs(44), 0)
-	var tv := VBoxContainer.new()
-	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	h.add_child(tv)
-	_lab(tv, title, 19, GOLD if open_ else INK, true)
-	_lab(tv, tag, 12, GREEN if open_ else SUB, true)
-	var d := _lab(v, desc, 13, SUB)
+	v.add_theme_constant_override("separation", _fs(4))
+	_lab(v, title, 20, GOLD if open_ else INK, true)
+	var d := _lab(v, sub, 12.5, SUB)
 	d.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, _fs(10))
+	v.add_child(gap)
 	return v
 
 func _mode_tab() -> void:
 	var r := _row(body)
 	r.add_theme_constant_override("separation", _fs(12))
-	var n := _mode_card(r, "🛡", "일반전", "혼자서 외계 기지 50개를 정복해요 · 지금 하던 게임 그대로예요 · 점수에는 들어가지 않아요", "● 지금 플레이 가능", true)
+	var n := _mode_card(r, "일반전", "혼자 · 외계 기지 50개 정복", true)
 	var br := _row(n)
+	br.add_theme_constant_override("separation", _fs(8))
 	if g.has_save():
 		var cb := _b(br, "이어하기", func():
 			close()
@@ -216,9 +212,9 @@ func _mode_tab() -> void:
 		close()
 		g.start_game(false), "g")
 	nb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var c := _mode_card(r, "⚔", "경쟁전", "점수가 걸린 모드예요 · 같은 조건의 판에서 기록을 겨루고, 랭킹에 올라가요", "○ 준비 중 · 점수 기준을 정하면 열려요", false)
+	var c := _mode_card(r, "경쟁전", "점수 · 랭킹", false)
 	_b(c, "준비 중", func(): note("경쟁전은 점수 기준을 정한 뒤에 열려요"), "off")
-	var p := _mode_card(r, "🔒", "사용자 설정 게임", "친구끼리 방을 만들어 원하는 규칙으로 같이 해요 · 점수에는 들어가지 않아요", "○ 준비 중 · 멀티플레이와 함께 열려요", false)
+	var p := _mode_card(r, "사용자 설정 게임", "친구와 원하는 규칙으로", false)
 	_b(p, "준비 중", func(): note("사용자 설정 게임은 멀티플레이 업데이트 때 열려요"), "off")
 	# 좁은 화면이면 세로로
 	var vs: Vector2 = g.get_viewport().get_visible_rect().size
