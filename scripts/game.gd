@@ -2957,8 +2957,9 @@ func _lobby_main(f: Font, hov) -> void:
 		else:
 			art_bot_s(self, b[0], C(skn.c), C(skn.a), t_real, skn.pt)
 	_ui_reset()
-	draw_polygon(PackedVector2Array([Vector2(cr.position.x, cr.position.y + 150), Vector2(cr.end.x, cr.position.y + 150), cr.end, Vector2(cr.position.x, cr.end.y)]),
-		PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0, 0, 0, 0.9), Color(0, 0, 0, 0.9)]))
+	draw_polygon(PackedVector2Array([Vector2(cr.position.x, cr.position.y + 70), Vector2(cr.end.x, cr.position.y + 70), Vector2(cr.end.x, cr.position.y + 160), Vector2(cr.position.x, cr.position.y + 160)]),
+		PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0, 0, 0, 0.82), Color(0, 0, 0, 0.82)]))
+	draw_rect(Rect2(cr.position.x, cr.position.y + 160, cr.size.x, cr.size.y - 160), Color(0, 0, 0, 0.82))
 	draw_rect(cr, Color("#e0b85a"), false, 2.0)
 	draw_string(f, cr.position + Vector2(20, 142), "출격 준비 완료", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#ffe6a6"))
 	if app_ver != "":
