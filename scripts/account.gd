@@ -471,7 +471,15 @@ func _input_box(v: Container, key: String, ph: String, secret: bool = false, val
 	# 휴대폰 키보드의 추천 단어(자동완성)가 글자를 지웠다 다시 넣으면서 꼬이지 않게, 추천 없는 입력 방식으로
 	e.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD if secret else LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
 	e.context_menu_enabled = not g.touch_mode
-	if g.touch_mode:
+	if _nat_ok():
+		# 안드로이드: 칸을 누르면 안드로이드 기본 입력 창을 띄워요 (게임 칸에 직접 치면 키보드와 어긋나 글자가 꼬여서)
+		e.virtual_keyboard_enabled = false
+		e.focus_mode = Control.FOCUS_NONE
+		e.gui_input.connect(func(ev):
+			var up: bool = (ev is InputEventScreenTouch and not ev.pressed) or (ev is InputEventMouseButton and ev.button_index == MOUSE_BUTTON_LEFT and not ev.pressed)
+			if up and e.focus_mode == Control.FOCUS_NONE:
+				_nat_open(e, ph, secret, key == "em"))
+	elif g.touch_mode:
 		# 휴대폰 키보드는 커서가 항상 맨 끝이라고 알고 있어요 → 칸 중간을 눌러도 커서를 맨 끝으로 (글자가 엉뚱한 곳에 들어가지 않게)
 		e.selecting_enabled = false
 		e.middle_mouse_paste_enabled = false
@@ -484,6 +492,100 @@ func _input_box(v: Container, key: String, ph: String, secret: bool = false, val
 	fields[key] = e
 	e.text_submitted.connect(func(_t): _enter_key())
 	return e
+
+# ── 안드로이드 기본 입력 창 ──
+var nat_open := false
+var nat_seen := false
+var nat_t := 0.0
+var nat_dlg = null
+var nat_et = null
+var nat_le: LineEdit = null
+var nat_bad := false
+
+func _nat_ok() -> bool:
+	return not nat_bad and OS.get_name() == "Android" and Engine.has_singleton("AndroidRuntime")
+
+func _nat_open(e: LineEdit, hint: String, secret: bool, email: bool) -> void:
+	if nat_open:
+		return
+	var rt = Engine.get_singleton("AndroidRuntime")
+	var act = rt.getActivity() if rt != null else null
+	if act == null:
+		_nat_fail(e)
+		return
+	nat_open = true
+	nat_seen = false
+	nat_t = 0.0
+	nat_dlg = null
+	nat_et = null
+	nat_le = e
+	var txt := e.text
+	var it := 129 if secret else (33 if email else 1)
+	act.runOnUiThread(rt.createRunnableFromGodotCallable(func():
+		var ET = JavaClassWrapper.wrap("android.widget.EditText")
+		var et = ET.call("EditText", act)
+		if et == null:
+			return
+		et.setInputType(it)
+		et.setSingleLine(true)
+		et.setText(txt)
+		et.setSelection(txt.length())
+		et.setHint(hint)
+		var B = JavaClassWrapper.wrap("android.app.AlertDialog$Builder")
+		var b = B.call("Builder", act)
+		if b == null:
+			b = B.call("AlertDialog$Builder", act)
+		if b == null:
+			return
+		b.setTitle(hint)
+		b.setView(et)
+		b.setPositiveButton("확인", null)
+		b.setCancelable(true)
+		var d = b.create()
+		if d == null:
+			return
+		d.setCanceledOnTouchOutside(true)
+		d.show()
+		var w = d.getWindow()
+		if w != null:
+			w.setSoftInputMode(5)
+		et.requestFocus()
+		nat_et = et
+		nat_dlg = d))
+
+func _nat_fail(e: LineEdit) -> void:
+	# 기본 입력 창을 못 띄우면 예전처럼 게임 칸에 직접 입력
+	nat_bad = true
+	nat_open = false
+	if is_instance_valid(e):
+		e.focus_mode = Control.FOCUS_ALL
+		e.virtual_keyboard_enabled = true
+		e.grab_focus()
+
+func _process(dt: float) -> void:
+	if not nat_open:
+		return
+	nat_t += dt
+	if nat_dlg == null:
+		if nat_t > 3.0:
+			_nat_fail(nat_le)
+		return
+	var showing: bool = nat_dlg.isShowing()
+	if showing:
+		nat_seen = true
+		return
+	if not nat_seen and nat_t < 3.0:
+		return
+	nat_open = false
+	var s := ""
+	if nat_et != null:
+		var tx = nat_et.getText()
+		if tx != null:
+			s = str(tx.toString())
+	if is_instance_valid(nat_le):
+		nat_le.text = s
+	nat_dlg = null
+	nat_et = null
 
 # 흰 메뉴 버튼 (.lnmenu)
 func _btn(v: Container, txt: String, cb: Callable, gold: bool = false) -> Button:
