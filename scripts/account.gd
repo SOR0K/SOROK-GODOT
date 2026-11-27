@@ -7,7 +7,7 @@ const DTAG := "SR1"
 const SES_P := "user://fb.dat"
 # 운영자 계정 UID (이 계정으로 로그인하면 "닉네임으로 이메일 찾기"가 보여요) · 운영자 문의 메일
 const ADMIN_UIDS: Array = []
-const OP_MAIL := ""
+const OP_MAIL := "soromagames@gmail.com"
 var g: Node = null
 var ses = null            # {uid, it, rt, exp, email, nick, tag, ut, h, ev, an, at}
 var srv := "pc"
