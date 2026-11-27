@@ -2934,7 +2934,7 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			lob_scroll = 0.0
 		"lprof":
 			acp_show()
-		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset":
+		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset", "acp_admin":
 			acp_press(it.id)
 		"pdot":
 			promo_i = int(it.arg)
@@ -6026,6 +6026,8 @@ func _acp_geo() -> Dictionary:
 		if acp_msg != "":
 			H += 24.0
 		H += (48.0 + 8.0) * (2 if acp_ver == false else 1)
+		if acct.is_admin():
+			H += 48.0 + 8.0
 		H += 4.0 + 44.0
 	else:
 		if acp_msg != "":
@@ -6053,7 +6055,11 @@ func _build_acp() -> void:
 			_add("acp_vsend", Rect2(x, y, w, 48.0))
 			y += 56.0
 		_add("acp_reset", Rect2(x, y, w, 48.0))
-		y += 56.0 + 4.0
+		y += 56.0
+		if acct.is_admin():
+			_add("acp_admin", Rect2(x, y, w, 48.0))
+			y += 56.0
+		y += 4.0
 		_add("acp_out", Rect2(x, y, (w - 8.0) / 2.0, 44.0))
 		_add("acp_close", Rect2(x + (w + 8.0) / 2.0, y, (w - 8.0) / 2.0, 44.0))
 	else:
@@ -6142,6 +6148,10 @@ func _acp_draw(f: Font, hov) -> void:
 			"acp_reset":
 				lab = "비밀번호 재설정 메일 받기"
 				ic = "key"
+				al = 1
+			"acp_admin":
+				lab = "닉네임으로 이메일 찾기 (운영자)"
+				ic = "mail"
 				al = 1
 			"acp_out":
 				lab = "로그아웃"
@@ -6275,6 +6285,9 @@ func acp_press(id: String) -> void:
 			var tk: String = await acct.tok()
 			var j: Dictionary = await acct.idt("sendOobCode", {"requestType": "VERIFY_EMAIL", "idToken": tk})
 			acp_msg = acct.err_txt(j.err) if j.has("err") else "인증 메일을 보냈어요 · 메일함을 확인해 주세요"
+		"acp_admin":
+			acp_open = false
+			acct.show_admin()
 		"acp_reset":
 			acp_msg = "보내는 중…"
 			var j2: Dictionary = await acct.idt("sendOobCode", {"requestType": "PASSWORD_RESET", "email": str(acct.ses.get("email", ""))})
@@ -6531,9 +6544,12 @@ func _ln_logo(p: Vector2, fs: int) -> void:
 	var w := 0.0
 	for ch in "SOROK":
 		w += _tw(ch, fs, true) + fs * 0.14
-	for i in 4:
-		var k := (i + 1) / 4.0
-		_spaced_l(p + Vector2(0, fs * 0.05), "SOROK", fs, 0.14, Color(1.0, 0.75, 0.24, 0.09 * (1.0 - k * 0.5)), k * fs * 0.12)
+	# 웹 text-shadow처럼 글자 뒤에 부드럽게 퍼지는 빛 (글자를 밀어 겹치지 않고 두꺼운 테두리를 옅게 여러 겹)
+	for q in [[0.62, 0.035], [0.44, 0.05], [0.28, 0.07], [0.14, 0.10]]:
+		var x := p.x
+		for ch in "SOROK":
+			draw_string_outline(fb(), Vector2(x, p.y + fs * 0.04), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, int(fs * q[0]), Color(1.0, 0.75, 0.24, q[1]))
+			x += _tw(ch, fs, true) + fs * 0.14
 	_spaced_l(p, "SOROK", fs, 0.14, Color("#ffd76a"), 0.0)
 
 func _spaced_l(p: Vector2, s: String, fs: int, ls: float, col: Color, grow: float) -> void:
@@ -6718,7 +6734,7 @@ func client_press(id: String) -> void:
 				acct.logout()
 			else:
 				acct.show_login("")
-		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset":
+		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset", "acp_admin":
 			acp_press(id)
 
 func _client_input(e: InputEvent) -> void:

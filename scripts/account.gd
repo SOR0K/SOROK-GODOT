@@ -5,6 +5,9 @@ const FBK := "AIzaSyASPfEvwyTI9HtXAQzXa3pydetYTBr7fjQ"
 const FBDB := "https://firestore.googleapis.com/v1/projects/sorok-77548/databases/(default)/documents"
 const DTAG := "SR1"
 const SES_P := "user://fb.dat"
+# 운영자 계정 UID (이 계정으로 로그인하면 "닉네임으로 이메일 찾기"가 보여요) · 운영자 문의 메일
+const ADMIN_UIDS: Array = []
+const OP_MAIL := ""
 var g: Node = null
 var ses = null            # {uid, it, rt, exp, email, nick, tag, ut, h, ev, an, at}
 var srv := "pc"
@@ -61,9 +64,10 @@ func http(method: int, url: String, headers: PackedStringArray, body: String = "
 	var code: int = res[1]
 	var txt: String = (res[3] as PackedByteArray).get_string_from_utf8()
 	var j = JSON.parse_string(txt) if txt != "" else {}
+	var arr: Array = j if j is Array else []
 	if not (j is Dictionary):
 		j = {}
-	return {"ok": res[0] == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300, "st": code, "j": j, "net": res[0] != HTTPRequest.RESULT_SUCCESS}
+	return {"ok": res[0] == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300, "st": code, "j": j, "a": arr, "net": res[0] != HTTPRequest.RESULT_SUCCESS}
 
 func idt(path: String, body: Dictionary) -> Dictionary:
 	var r := await http(HTTPClient.METHOD_POST, "https://identitytoolkit.googleapis.com/v1/accounts:" + path + "?key=" + FBK,
@@ -322,11 +326,25 @@ func enter(nick_hint: String = "") -> void:
 	hide_ui()
 	g.lmsg = str(ses.nick) + "#" + str(ses.tag) + " 님 환영해요"
 	ensure_acct()
+	_book()
 
 func _boot_bg() -> void:
 	await enter()
 	if state == "boot":
 		state = "off"
+
+# 운영자 수첩: 닉네임#태그 ↔ 이메일 (Firestore 규칙으로 본인만 쓰고 운영자만 읽어요)
+func _book() -> void:
+	if ses == null or str(ses.get("nick", "")) == "" or str(ses.get("email", "")) == "":
+		return
+	var nk := str(ses.get("an", ses.nick)) if str(ses.get("an", "")) != "" else str(ses.nick)
+	var tg := str(ses.get("at", ses.get("tag", DTAG))) if str(ses.get("at", "")) != "" else str(ses.get("tag", DTAG))
+	await fs(HTTPClient.METHOD_PATCH, "book/" + str(ses.uid), {"fields": {
+		"email": {"stringValue": str(ses.email)}, "nick": {"stringValue": nk}, "tag": {"stringValue": tg},
+		"nl": {"stringValue": nk.to_lower()}, "tl": {"stringValue": tg.to_lower()}, "t": {"integerValue": str(now_ms())}}})
+
+func is_admin() -> bool:
+	return ses != null and ADMIN_UIDS.has(str(ses.get("uid", "")))
 
 func ensure_acct() -> void:
 	if ses == null or str(ses.get("nick", "")) == "":
@@ -765,6 +783,9 @@ func _enter_key() -> void:
 		"login": _do_login()
 		"create": _do_create()
 		"nick": _do_nick()
+		"findpw": _do_reset()
+		"resend": _do_resend()
+		"admin": _do_admin_find()
 
 # 밑줄 탭 (.lntabs)
 func _tabs(v: Container, cur: String) -> void:
@@ -906,7 +927,119 @@ func show_login(e: String) -> void:
 	_remember(v)
 	_err(v, e)
 	_go(v, _do_login)
-	_link(v, "비밀번호 재설정 메일 받기", _do_reset)
+	_link(v, "로그인할 수 없나요?", func(): show_help())
+
+# ── 로그인할 수 없나요? ──
+var help_em := ""
+func _keep_em() -> void:
+	if fields.has("em") and is_instance_valid(fields.em) and fields.em.text.strip_edges() != "":
+		help_em = fields.em.text.strip_edges()
+
+func show_help() -> void:
+	_keep_em()
+	mode = "help"
+	g.scene = "client"
+	var v := _shell("로그인할 수 없나요?")
+	_label(v, "어떤 문제인지 골라 주세요", 13, Color("#5a6470"))
+	_btn(v, "🔑  비밀번호를 잊었어요", func(): show_find_pw())
+	_btn(v, "✉  인증 메일을 다시 받고 싶어요", func(): show_resend())
+	_btn(v, "❓  가입한 이메일이 기억 안 나요", func(): show_forgot())
+	_link(v, "← 로그인으로 돌아가기", func(): show_login(""))
+
+func show_find_pw() -> void:
+	mode = "findpw"
+	g.scene = "client"
+	var v := _shell("비밀번호 찾기")
+	_label(v, "가입한 이메일로 비밀번호 재설정 메일을 보내드려요", 13, Color("#5a6470"))
+	_input_box(v, "em", "이메일", false, help_em)
+	_err(v, "")
+	_go(v, _do_reset)
+	_link(v, "← 돌아가기", func(): show_help())
+
+func show_resend() -> void:
+	mode = "resend"
+	g.scene = "client"
+	var v := _shell("인증 메일 다시 받기")
+	_label(v, "가입한 이메일과 비밀번호를 넣으면 인증 메일을 다시 보내드려요", 13, Color("#5a6470"))
+	_input_box(v, "em", "이메일", false, help_em)
+	_input_box(v, "pw", "비밀번호", true)
+	_err(v, "")
+	_go(v, _do_resend)
+	_link(v, "← 돌아가기", func(): show_help())
+
+func show_forgot() -> void:
+	mode = "forgot"
+	g.scene = "client"
+	var v := _shell("가입한 이메일 찾기")
+	var items := [["메일함에서 찾아보기", "메일함(스팸함 포함)에서 \"SOROK\" 또는 \"인증\"으로 검색해 보세요. 가입할 때 받은 인증 메일이 있는 주소가 가입한 이메일이에요"],
+		["자주 쓰는 이메일로 해 보기", "자주 쓰는 이메일로 [비밀번호를 잊었어요]를 해 보세요. 가입된 주소면 재설정 메일이 가요"]]
+	if OP_MAIL != "":
+		items.append(["그래도 모르겠다면", OP_MAIL + " 로 게임 닉네임#태그를 보내 주세요. 가입한 이메일을 일부 가려서 알려드려요 (예: so***@gmail.com)"])
+	_info(v, items)
+	_link(v, "← 돌아가기", func(): show_help())
+
+func _do_resend() -> void:
+	var em := _v("em")
+	var pw := _v("pw")
+	if em == "" or pw == "":
+		say("이메일과 비밀번호를 입력해 주세요")
+		return
+	say("확인 중…")
+	var j := await idt("signInWithPassword", {"email": em, "password": pw, "returnSecureToken": true})
+	if j.has("err"):
+		say(err_txt(j.err))
+		return
+	var lk := await idt("lookup", {"idToken": str(j.get("idToken", ""))})
+	var users: Array = lk.get("users", [])
+	if not users.is_empty() and users[0].get("emailVerified", false):
+		say("이미 인증된 계정이에요. 바로 로그인하세요")
+		return
+	var s2 := await idt("sendOobCode", {"requestType": "VERIFY_EMAIL", "idToken": str(j.get("idToken", ""))})
+	say(err_txt(s2.err) if s2.has("err") else "인증 메일을 보냈어요. 메일함(스팸함 포함)을 확인해 주세요")
+
+# ── 운영자: 닉네임으로 이메일 찾기 ──
+func show_admin() -> void:
+	if not is_admin():
+		return
+	mode = "admin"
+	g.scene = "client"
+	var v := _shell("닉네임으로 이메일 찾기")
+	_label(v, "운영자 전용 · 문의한 사람의 닉네임#태그를 넣어 주세요", 13, Color("#5a6470"))
+	_nick_row(v, "", "")
+	_err(v, "")
+	_go(v, _do_admin_find)
+	_link(v, "닫기", func(): hide_ui())
+
+func _mask(em: String) -> String:
+	var at := em.find("@")
+	if at <= 0:
+		return em
+	var id := em.substr(0, at)
+	return id.substr(0, mini(2, id.length())) + "***" + em.substr(at)
+
+func _do_admin_find() -> void:
+	var n := _v("n")
+	var t := _v("t")
+	if n == "":
+		say("닉네임을 입력해 주세요")
+		return
+	say("찾는 중…")
+	var F: Array = [{"fieldFilter": {"field": {"fieldPath": "nl"}, "op": "EQUAL", "value": {"stringValue": n.to_lower()}}}]
+	if t != "":
+		F.append({"fieldFilter": {"field": {"fieldPath": "tl"}, "op": "EQUAL", "value": {"stringValue": t.to_lower()}}})
+	var q := {"structuredQuery": {"from": [{"collectionId": "book"}], "where": F[0] if F.size() == 1 else {"compositeFilter": {"op": "AND", "filters": F}}, "limit": 10}}
+	var tk := await tok()
+	var r := await http(HTTPClient.METHOD_POST, FBDB + ":runQuery", PackedStringArray(["Authorization: Bearer " + tk, "Content-Type: application/json"]), JSON.stringify(q))
+	if not r.ok:
+		say("찾기 실패 (" + str(r.st) + ") · Firestore 규칙에 운영자 읽기가 열려 있는지 확인해 주세요")
+		return
+	var out: Array = []
+	for it in r.a:
+		if it is Dictionary and it.has("document"):
+			var f: Dictionary = it.document.get("fields", {})
+			var em := str(f.get("email", {}).get("stringValue", ""))
+			out.append(str(f.get("nick", {}).get("stringValue", "")) + "#" + str(f.get("tag", {}).get("stringValue", "")) + "  →  " + em + "\n   답장용: " + _mask(em))
+	say("\n".join(out) if not out.is_empty() else "못 찾았어요 · 이 기능을 넣은 뒤 한 번도 로그인하지 않은 사람이면 Firebase 콘솔에서 찾아 주세요")
 
 func show_create() -> void:
 	mode = "create"
@@ -1114,6 +1247,7 @@ func _do_nick() -> void:
 	ses.h = ""
 	hide_ui()
 	g.lmsg = n + "#" + tg + " 님 환영해요"
+	_book()
 
 func _offline() -> void:
 	clear()
