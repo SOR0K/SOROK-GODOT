@@ -171,6 +171,7 @@ func _ready() -> void:
 	add_child(acct)
 	get_tree().set_auto_accept_quit(false)
 	if OS.get_cmdline_user_args().has("--selftest"):
+		print("OVERSAMPLE_PROP ", "oversampling_override" in get_viewport())
 		_selftest()
 	else:
 		_check_update()
