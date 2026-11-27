@@ -468,6 +468,9 @@ func _input_box(v: Container, key: String, ph: String, secret: bool = false, val
 	e.add_theme_color_override("font_placeholder_color", Color("#8a929c"))
 	e.add_theme_color_override("caret_color", Color("#1a1d22"))
 	e.add_theme_font_size_override("font_size", _fs(15))
+	# 휴대폰 키보드의 추천 단어(자동완성)가 글자를 지웠다 다시 넣으면서 꼬이지 않게, 추천 없는 입력 방식으로
+	e.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD if secret else LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
+	e.context_menu_enabled = not g.touch_mode
 	v.add_child(e)
 	fields[key] = e
 	e.text_submitted.connect(func(_t): _enter_key())
