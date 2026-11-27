@@ -471,6 +471,15 @@ func _input_box(v: Container, key: String, ph: String, secret: bool = false, val
 	# 휴대폰 키보드의 추천 단어(자동완성)가 글자를 지웠다 다시 넣으면서 꼬이지 않게, 추천 없는 입력 방식으로
 	e.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_PASSWORD if secret else LineEdit.KEYBOARD_TYPE_EMAIL_ADDRESS
 	e.context_menu_enabled = not g.touch_mode
+	if g.touch_mode:
+		# 휴대폰 키보드는 커서가 항상 맨 끝이라고 알고 있어요 → 칸 중간을 눌러도 커서를 맨 끝으로 (글자가 엉뚱한 곳에 들어가지 않게)
+		e.selecting_enabled = false
+		e.middle_mouse_paste_enabled = false
+		var to_end := func(): e.caret_column = e.text.length()
+		e.focus_entered.connect(func(): to_end.call_deferred())
+		e.gui_input.connect(func(ev):
+			if ev is InputEventScreenTouch or ev is InputEventScreenDrag or ev is InputEventMouseButton or ev is InputEventMouseMotion:
+				to_end.call_deferred())
 	v.add_child(e)
 	fields[key] = e
 	e.text_submitted.connect(func(_t): _enter_key())
