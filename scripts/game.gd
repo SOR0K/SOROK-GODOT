@@ -2656,6 +2656,9 @@ func _build_lobby() -> void:
 			_build_cash()
 	if box_res.is_empty() and cash_sel < 0 and not acp_open:
 		_add("lprof", _prof_rect())
+		if not _cos_on() and lsec == "main":
+			for t in _tb_list():
+				_add(t[0], t[1])
 	if acp_open:
 		_build_acp()
 
@@ -2680,7 +2683,7 @@ func _build_lobby0() -> void:
 			_add("lnew", Rect2(cr.position.x + 20.0, cr.end.y - 72.0, cw - 40.0, 54.0))
 		var tx := x0 + cw + 12.0
 		var tw := (W - cw - 24.0) / 2.0
-		var names := ["lshop", "lstore", "lpass", "lset"]
+		var names := ["lshop", "lstore", "lpass", "lmail"]
 		for i in 4:
 			_add(names[i], Rect2(tx + (i % 2) * (tw + 12.0), 205.0 + int(i / 2) * 162.0, tw, 150.0))
 		_add("lnotes", Rect2(x0, 529.0, cw, 42.0))
@@ -2739,9 +2742,14 @@ func _lobby(f: Font) -> void:
 
 func _logo(f: Font, small: bool = false) -> void:
 	var u := ui_size()
-	_prof_card(f, null if touch_ui() else ui_hit(mouse_ui * us))
+	var hv0 = null if touch_ui() else ui_hit(mouse_ui * us)
+	_prof_card(f, hv0)
+	var tby := 22 + _safe_top()
+	if not _cos_on() and lsec == "main" and not acp_open:
+		_tb_draw(hv0)
+		tby += 54.0
 	if TEST:
-		draw_string(fb(), Vector2(0, 22 + _safe_top()), "테스트 모드 · 재화 무한 · 클라우드 저장 꺼짐  ", HORIZONTAL_ALIGNMENT_RIGHT, u.x, 12, Color("#ff9a5a"))
+		draw_string(fb(), Vector2(0, tby), "테스트 모드 · 재화 무한 · 클라우드 저장 꺼짐  ", HORIZONTAL_ALIGNMENT_RIGHT, u.x, 12, Color("#ff9a5a"))
 	var cy := 134.0
 	if small:
 		_spaced(fb(), "SOROK", u.x / 2.0, 54.0, 42, 0.32, Color("#5c4316"))
@@ -2769,6 +2777,80 @@ func _logo(f: Font, small: bool = false) -> void:
 		draw_string(fb(), r.position + Vector2(26.0 + _tw(chips[i][0], 13), 26), chips[i][1], HORIZONTAL_ALIGNMENT_LEFT, -1, 21, chips[i][2])
 	if lmsg != "":
 		draw_string(f, Vector2(0, 122.0 if small else 191.0), lmsg, HORIZONTAL_ALIGNMENT_CENTER, u.x, 14, Color("#e0a44a"))
+
+# ── 오른쪽 위 아이콘 줄: (운영자) · 우편함 · 공지 · 설정 · 계정 ──
+func _mail_n() -> int:
+	return acct.mails.size() if acct != null else 0
+
+func _tb_list() -> Array:
+	var ids: Array = ["tb_mail", "tb_notice", "tb_set", "tb_acct"]
+	if acct != null and acct.is_admin():
+		ids.push_front("tb_admin")
+	var u := ui_size()
+	var S := 46.0
+	var x := u.x - 14.0 - S
+	var y := 10.0 + _safe_top()
+	var out: Array = []
+	for i in range(ids.size() - 1, -1, -1):
+		out.push_front([ids[i], Rect2(x, y, S, S)])
+		x -= S + 8.0
+	return out
+
+func _badge(c: Vector2, t: String) -> void:
+	var w := maxf(18.0, _tw(t, 11, true) + 10.0)
+	_gbox(Rect2(c - Vector2(w / 2.0, 9), Vector2(w, 18)), Color("#e0403a"), 180.0, 9.0, Color("#0e1419"), 2.0)
+	draw_string(fb(), Vector2(c.x - w / 2.0, c.y + 4.5), t, HORIZONTAL_ALIGNMENT_CENTER, w, 11, Color.WHITE)
+
+func _tb_draw(hov) -> void:
+	var tips := {"tb_admin": "운영자", "tb_mail": "우편함", "tb_notice": "공지", "tb_set": "설정", "tb_acct": "계정"}
+	for t in _tb_list():
+		var r: Rect2 = t[1]
+		var h: bool = hov != null and hov.id == t[0]
+		var adm_: bool = t[0] == "tb_admin"
+		_gbox(r, Color("#2a2410") if adm_ else (Color("#223040") if h else Color("#1a2430")), 180.0, 12.0, Color("#c9a255") if (h or adm_) else Color("#2c3a49"))
+		_tb_icon(t[0], r.get_center() + Vector2(0, -3), 22.0)
+		draw_string(f_(), Vector2(r.position.x, r.end.y - 4.0), tips[t[0]], HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 9, Color("#ffd76a") if adm_ else Color("#9fb3c2"))
+		if t[0] == "tb_mail" and _mail_n() > 0:
+			_badge(Vector2(r.end.x - 4.0, r.position.y + 4.0), str(_mail_n()))
+		if t[0] == "tb_notice" and acct != null and acct.notice_new:
+			draw_circle(Vector2(r.end.x - 6.0, r.position.y + 6.0), 6.0, Color("#0e1419"))
+			draw_circle(Vector2(r.end.x - 6.0, r.position.y + 6.0), 4.5, Color("#e0403a"))
+
+func f_() -> Font:
+	return ThemeDB.fallback_font
+
+func _tb_icon(k: String, c: Vector2, s: float) -> void:
+	var W := Color("#e6edf3")
+	match k:
+		"tb_mail":
+			var r := Rect2(c.x - s * 0.48, c.y - s * 0.32, s * 0.96, s * 0.64)
+			_gbox(r, Color("#e8eef2"), 180.0, s * 0.08)
+			draw_polyline(PackedVector2Array([r.position + Vector2(2, 2), Vector2(c.x, c.y + s * 0.06), Vector2(r.end.x - 2, r.position.y + 2)]), Color("#5a6a7a"), maxf(1.5, s * 0.08), true)
+			draw_rect(Rect2(c.x - s * 0.48, c.y - s * 0.32, s * 0.96, s * 0.1), Color("#e05a4a"))
+		"tb_notice":
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-s * 0.36, -s * 0.14), c + Vector2(s * 0.28, -s * 0.42), c + Vector2(s * 0.28, s * 0.42), c + Vector2(-s * 0.36, s * 0.14)]), Color("#ffc83a"))
+			draw_rect(Rect2(c.x - s * 0.5, c.y - s * 0.16, s * 0.18, s * 0.32), Color("#e8a62a"))
+			draw_rect(Rect2(c.x - s * 0.3, c.y + s * 0.12, s * 0.14, s * 0.34), Color("#c98a1a"))
+			draw_arc(c + Vector2(s * 0.3, 0), s * 0.2, -0.9, 0.9, 8, W, 1.5, true)
+		"tb_set":
+			for i in 8:
+				var a := TAU * i / 8.0
+				var d := Vector2(cos(a), sin(a))
+				draw_line(c + d * s * 0.22, c + d * s * 0.46, Color("#b8c6d2"), s * 0.18)
+			draw_circle(c, s * 0.32, Color("#b8c6d2"))
+			draw_circle(c, s * 0.13, Color("#1a2430"))
+		"tb_acct":
+			draw_circle(c + Vector2(0, -s * 0.16), s * 0.2, Color("#ffd76a"))
+			var P0 := PackedVector2Array()
+			for i in 13:
+				var a := PI + PI * i / 12.0
+				P0.append(c + Vector2(0, s * 0.46) + Vector2(cos(a) * s * 0.38, sin(a) * s * 0.34))
+			draw_colored_polygon(P0, Color("#ffd76a"))
+		"tb_admin":
+			var P := PackedVector2Array([c + Vector2(0, -s * 0.48), c + Vector2(s * 0.42, -s * 0.3), c + Vector2(s * 0.36, s * 0.12), c + Vector2(0, s * 0.5), c + Vector2(-s * 0.36, s * 0.12), c + Vector2(-s * 0.42, -s * 0.3)])
+			draw_colored_polygon(P, Color("#ffc83a"))
+			draw_colored_polygon(PackedVector2Array([P[0], P[1], P[2], P[3]]), Color("#e8a62a"))
+			draw_polyline(PackedVector2Array([c + Vector2(-s * 0.16, 0), c + Vector2(-s * 0.03, s * 0.14), c + Vector2(s * 0.2, -s * 0.14)]), Color("#3a2a06"), maxf(1.5, s * 0.1), true)
 
 var promo_i := 0
 var promo_t := 0.0
@@ -2848,7 +2930,8 @@ func _lobby_main(f: Font, hov) -> void:
 	var tot := SK.size() + BS.size() + TS.size()
 	var own: int = SV.own.size() + SV.bown.size() + SV.town.size()
 	var tiles := {"lshop": ["상점", "소로 상자 · ★ 걸작 · 세트", Color("#c9a255")], "lstore": ["창고", "보유 스킨 " + str(own) + " / " + str(tot) + (" · 무료 상자 " + str(SV.fbox) if SV.fbox > 0 else ""), Color("#2f8a78")],
-		"lpass": ["배틀패스", SEASON.n + " · " + str(bp_lv()) + " / 30단계" + (" · 프리미엄" if bp().prem else ""), Color("#7a5aa8")], "lset": ["설정", "조작 · 소리 · 데이터", Color("#3a5a8a")]}
+		"lpass": ["배틀패스", SEASON.n + " · " + str(bp_lv()) + " / 30단계" + (" · 프리미엄" if bp().prem else ""), Color("#7a5aa8")], "lset": ["설정", "조작 · 소리 · 데이터", Color("#3a5a8a")],
+		"lmail": ["우편함", ("안 받은 우편 " + str(_mail_n()) + "개 · 눌러서 받기") if _mail_n() > 0 else "운영자 보상 · 알림", Color("#c0503c")]}
 	for it in ui:
 		var r: Rect2 = it.r
 		match it.id:
@@ -2884,6 +2967,10 @@ func _lobby_main(f: Font, hov) -> void:
 					sb.set_corner_radius_all(10)
 					sb.draw(get_canvas_item(), r)
 					draw_circle(Vector2(r.end.x - 26.0, r.position.y + 26.0), 34.0, Color(tl[2], 0.45))
+					if it.id == "lmail":
+						_tb_icon("tb_mail", Vector2(r.end.x - 34.0, r.position.y + 34.0), 26.0)
+						if _mail_n() > 0:
+							_badge(Vector2(r.end.x - 14.0, r.position.y + 14.0), str(_mail_n()))
 					draw_string(f, Vector2(r.position.x + 14.0, r.end.y - 42.0), tl[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color.WHITE)
 					draw_string(f, Vector2(r.position.x + 14.0, r.end.y - 20.0), tl[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#9fb3c2"))
 
@@ -2920,7 +3007,7 @@ func _slider_set(key: String, sp: Vector2) -> void:
 				_apply_sv()
 			return
 
-const BOOT_OK := ["lshop", "lstore", "lpass", "lset", "lnotes", "lback", "pdot", "lprof", "acp_bg", "acp_close", "bgmsel", "bgmx", "lkeys", "sl"]
+const BOOT_OK := ["lshop", "lstore", "lpass", "lset", "lnotes", "lback", "pdot", "lprof", "tb_set", "tb_acct", "tb_notice", "acp_bg", "acp_close", "bgmsel", "bgmx", "lkeys", "sl"]
 func lobby_press(it: Dictionary, sp: Vector2) -> void:
 	if booting() and not (it.id in BOOT_OK) and not (it.id == "cb" and it.arg is Dictionary and str(it.arg.get("a", "")) in ["tab", "settab", "hf", "sf", "jump", "tprev"]):
 		lmsg = "계정 기록을 불러오는 중이에요 · 잠깐만 기다려 주세요"
@@ -2937,8 +3024,18 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 		"lnotes":
 			lsec = "notes"
 			lob_scroll = 0.0
-		"lprof":
+		"lprof", "tb_acct":
 			acp_show()
+		"tb_mail", "lmail":
+			acct.open_mailbox()
+		"tb_notice":
+			acct.show_notice()
+		"tb_set":
+			lsec = "set"
+			set_tab = "a"
+			lob_scroll = 0.0
+		"tb_admin":
+			adm.open()
 		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset", "acp_admin":
 			acp_press(it.id)
 		"pdot":
@@ -8084,7 +8181,7 @@ func _shop(f: Font, hov) -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if scene == "intro" or scene == "admin":
 		return
-	if acct != null and acct.is_open():
+	if acct != null and (acct.is_open() or acct.is_overlay()):
 		return
 	if conn_msg != "":
 		return
@@ -8357,6 +8454,9 @@ func booting() -> bool:
 
 # 안드로이드 뒤로 가기 버튼: 열린 창부터 하나씩 닫고, 로비 첫 화면에선 두 번 눌러 종료
 func go_back() -> void:
+	if acct != null and acct.is_overlay():
+		acct.close_overlay()
+		return
 	if adm != null and adm.is_open():
 		return
 	if acct != null and acct.is_open():
@@ -9153,8 +9253,20 @@ func _selftest() -> void:
 	acct.popup("📮 운영자 우편이 도착했어요", "🎁 청석 500, 스킨 로봇 · 봄 벚꽃\n   버그 보상이에요. 불편을 드려 죄송해요")
 	await _wait(0.3)
 	await _shot("00_mail_pop")
-	acct.pop_root.queue_free()
-	acct.pop_root = null
+	acct.close_overlay()
+	acct.mails = [{"p": "x", "d": {"sum": "청석 500, 로봇 · 봄 벚꽃", "msg": "버그 보상이에요. 불편을 드려 죄송해요", "t": acct.now_ms()}}, {"p": "y", "d": {"sum": "무료 상자 3", "msg": "", "t": acct.now_ms() - 86400000}}]
+	acct.notice_new = true
+	scene = "lobby"
+	lsec = "main"
+	await _wait(0.4)
+	await _shot("00_lobby_tb")
+	acct.show_mailbox()
+	await _wait(0.3)
+	await _shot("00_mailbox")
+	acct.close_overlay()
+	acct.mails = []
+	acct.notice_new = false
+	scene = "client"
 	adm.open()
 	await _wait(0.3)
 	await _shot("00_admin")

@@ -434,100 +434,132 @@ func _after_enter() -> void:
 	await _check_mail()
 	await _check_notice()
 
+var mails: Array = []       # 안 받은 보상 우편 [{p: 경로, d: 내용}]
+var notice := {}            # 지금 올라간 공지
+var notice_new := false     # 아직 안 본 공지
+
 func _check_mail() -> void:
+	await refresh_mail(true)
+
+# 우편 목록 불러오기 · 운영자 명령(값 맞추기·초기화·닉네임 변경)은 바로 적용, 보상은 우편함에서 직접 받아요
+func refresh_mail(run_cmds: bool = false) -> void:
+	if ses == null:
+		return
 	var r := await fs(HTTPClient.METHOD_GET, "mail/" + str(ses.uid) + "/items")
 	if not r.ok:
 		return
 	var docs: Array = r.j.get("documents", [])
-	if docs.is_empty():
-		return
-	var SV: Dictionary = g.SV
+	var L: Array = []
 	var lines: Array = []
 	var renick := false
 	for doc in docs:
 		var D := dfields(doc)
+		var ty := str(D.get("ty", "grant"))
+		if ty == "grant" or not run_cmds:
+			if ty == "grant":
+				L.append({"p": dpath(doc), "d": D})
+			continue
 		var del := await fs(HTTPClient.METHOD_DELETE, dpath(doc))
 		if not del.ok:
 			continue
-		var ty := str(D.get("ty", "grant"))
 		var m := str(D.get("msg", ""))
+		var SV: Dictionary = g.SV
 		match ty:
-			"grant":
-				var got: Array = []
-				for k in ["cs", "ss", "fbox"]:
-					var n := int(D.get(k, 0))
-					if n != 0:
-						SV[k] = int(SV.get(k, 0)) + n
-						got.append({"cs": "청석", "ss": "별석", "fbox": "무료 상자"}[k] + " " + str(n))
-				var sk := str(D.get("skin", ""))
-				if sk.contains(":"):
-					var key: String = {"r": "own", "b": "bown", "t": "town"}.get(sk.get_slice(":", 0), "own")
-					var id := sk.get_slice(":", 1)
-					if not (SV.get(key) is Array):
-						SV[key] = []
-					if not (SV[key] as Array).has(id):
-						SV[key].append(id)
-					got.append("스킨 " + str(D.get("skn", id)))
-				lines.append("🎁 " + ", ".join(got) + (("\n   " + m) if m != "" else ""))
 			"set":
 				for k in ["cs", "ss"]:
 					if D.has(k) and int(D[k]) >= 0:
 						SV[k] = int(D[k])
 				lines.append("🔧 운영자가 재화를 조정했어요 (청석 " + str(SV.get("cs", 0)) + " · 별석 " + str(SV.get("ss", 0)) + ")" + (("\n   " + m) if m != "" else ""))
 			"reset":
-				var keep_k := ["vol_s", "vol_b", "mute", "uis", "tut_done"]
 				var nv: Dictionary = g.SV_BASE.duplicate(true)
-				for k in keep_k:
+				for k in ["vol_s", "vol_b", "mute", "uis", "tut_done"]:
 					if SV.has(k):
 						nv[k] = SV[k]
 				g.SV = nv
-				SV = nv
 				g.del_save()
 				lines.append("♻ 운영자 요청으로 진행이 초기화됐어요" + (("\n   " + m) if m != "" else ""))
 			"renick":
 				renick = true
 				lines.append("✏ 운영자 요청으로 닉네임을 새로 정해야 해요" + (("\n   " + m) if m != "" else ""))
-			_:
-				if m != "":
-					lines.append("📮 " + m)
-		var lid := str(D.get("lid", ""))
-		if lid != "":
-			fs(HTTPClient.METHOD_PATCH, "maillog/" + lid, mk({"got": true, "gt": now_ms()}), "updateMask.fieldPaths=got&updateMask.fieldPaths=gt")
+		_mail_got(D)
+	L.sort_custom(func(x, y): return int(x.d.get("t", 0)) > int(y.d.get("t", 0)))
+	mails = L
+	if not lines.is_empty():
+		_sv_commit()
+		await popup("📮 운영자 알림", "\n\n".join(lines))
+	if renick:
+		ses.rn = true
+		keep()
+		show_renick()
+
+func _mail_got(D: Dictionary) -> void:
+	var lid := str(D.get("lid", ""))
+	if lid != "":
+		fs(HTTPClient.METHOD_PATCH, "maillog/" + lid, mk({"got": true, "gt": now_ms()}), "updateMask.fieldPaths=got&updateMask.fieldPaths=gt")
+
+func _sv_commit() -> void:
 	g._sv_defaults()
 	g._apply_sv()
 	g.sv_save(true)
 	push(true)
-	if renick:
-		ses.rn = true
-		keep()
-	if not lines.is_empty():
-		await popup("📮 운영자 우편이 도착했어요", "\n\n".join(lines))
-	if renick:
-		show_renick()
+
+# 보상 하나 받기 → 받은 내용 글
+func claim(it: Dictionary) -> String:
+	var del := await fs(HTTPClient.METHOD_DELETE, str(it.p))
+	if not del.ok:
+		return ""
+	var D: Dictionary = it.d
+	var SV: Dictionary = g.SV
+	var got: Array = []
+	for k in ["cs", "ss", "fbox"]:
+		var n := int(D.get(k, 0))
+		if n != 0:
+			SV[k] = int(SV.get(k, 0)) + n
+			got.append({"cs": "청석", "ss": "별석", "fbox": "무료 상자"}[k] + " " + str(n))
+	var sk := str(D.get("skin", ""))
+	if sk.contains(":"):
+		var key: String = {"r": "own", "b": "bown", "t": "town"}.get(sk.get_slice(":", 0), "own")
+		var id := sk.get_slice(":", 1)
+		if not (SV.get(key) is Array):
+			SV[key] = []
+		if not (SV[key] as Array).has(id):
+			SV[key].append(id)
+		got.append(str(D.get("skn", "스킨")))
+	_mail_got(D)
+	mails.erase(it)
+	return ", ".join(got)
 
 const NSEEN_P := "user://notice_seen.txt"
+func _seen_id() -> String:
+	return FileAccess.get_file_as_string(NSEEN_P) if FileAccess.file_exists(NSEEN_P) else ""
+
 func _check_notice() -> void:
 	var r := await fs(HTTPClient.METHOD_GET, "notice/main")
 	if not r.ok:
 		return
 	var D := dfields(r.j)
-	if not D.get("on", false):
+	notice = D if D.get("on", false) else {}
+	var id := str(notice.get("id", ""))
+	notice_new = id != "" and _seen_id() != id
+	if notice_new:
+		show_notice()
+
+func show_notice() -> void:
+	if notice.is_empty():
+		popup("📢 공지", "지금 올라간 공지가 없어요")
 		return
-	var id := str(D.get("id", ""))
-	var seen := FileAccess.get_file_as_string(NSEEN_P) if FileAccess.file_exists(NSEEN_P) else ""
-	if id == "" or seen == id:
-		return
-	await popup("📢 " + str(D.get("title", "공지")), str(D.get("body", "")))
+	var id := str(notice.get("id", ""))
+	notice_new = false
 	var f := FileAccess.open(NSEEN_P, FileAccess.WRITE)
 	if f != null:
 		f.store_string(id)
+	popup("📢 " + str(notice.get("title", "공지")), str(notice.get("body", "")) + "\n\n" + when(int(notice.get("t", 0))))
 
-# 가운데 카드 팝업 (확인을 누를 때까지 기다려요)
+# ── 가운데 카드 창 (공지 · 우편함 · 알림) ──
 signal pop_done
 var pop_root: Control = null
-func popup(title: String, body: String) -> void:
-	if pop_root != null:
-		pop_root.queue_free()
+func _overlay(title: String, w: float = 520.0) -> VBoxContainer:
+	close_overlay()
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var th := Theme.new()
@@ -549,25 +581,104 @@ func popup(title: String, body: String) -> void:
 	st.content_margin_top = _fs(22)
 	st.content_margin_bottom = _fs(20)
 	p.add_theme_stylebox_override("panel", st)
-	p.custom_minimum_size = Vector2(minf(_fs(520), g.get_viewport().get_visible_rect().size.x - 40.0), 0)
+	var vs: Vector2 = g.get_viewport().get_visible_rect().size
+	p.custom_minimum_size = Vector2(minf(_fs(w), vs.x - 40.0), 0)
 	cc.add_child(p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", _fs(12))
 	p.add_child(v)
 	_label(v, "◆ SOROK", 12, Color("#c9a255"), true)
 	_label(v, title, 20, Color("#1a1d22"), true)
+	return v
+
+func _scroll(v: Container, h: float) -> VBoxContainer:
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	sc.custom_minimum_size = Vector2(0, minf(_fs(260), g.get_viewport().get_visible_rect().size.y * 0.5))
+	var vs: Vector2 = g.get_viewport().get_visible_rect().size
+	sc.custom_minimum_size = Vector2(0, minf(_fs(h), vs.y * 0.5))
 	v.add_child(sc)
-	var bl := _label(sc, body, 14, Color("#3a424c"))
+	var b := VBoxContainer.new()
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_theme_constant_override("separation", _fs(8))
+	sc.add_child(b)
+	return b
+
+func close_overlay() -> void:
+	if pop_root != null:
+		pop_root.queue_free()
+		pop_root = null
+	pop_done.emit()
+
+func is_overlay() -> bool:
+	return pop_root != null
+
+func popup(title: String, body: String) -> void:
+	var v := _overlay(title)
+	var b := _scroll(v, 260)
+	var bl := _label(b, body, 14, Color("#3a424c"))
 	bl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_btn(v, "확인", func():
-		if pop_root != null:
-			pop_root.queue_free()
-			pop_root = null
-		pop_done.emit(), true)
+	_btn(v, "확인", close_overlay, true)
 	await pop_done
+
+# ── 우편함 ──
+func show_mailbox(note: String = "") -> void:
+	var v := _overlay("📮 우편함", 600)
+	if note != "":
+		_label(v, note, 13.5, Color("#2f8a5a"), true)
+	var b := _scroll(v, 300)
+	if mails.is_empty():
+		_label(b, "받을 우편이 없어요", 14, Color("#6a7480"))
+	for it in mails:
+		var D: Dictionary = it.d
+		var p := PanelContainer.new()
+		var s := _style(Color.WHITE, Color("#e3e6ea"), 10)
+		s.content_margin_top = _fs(10)
+		s.content_margin_bottom = _fs(10)
+		p.add_theme_stylebox_override("panel", s)
+		b.add_child(p)
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", _fs(10))
+		p.add_child(h)
+		var tv := VBoxContainer.new()
+		tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tv.add_theme_constant_override("separation", 2)
+		h.add_child(tv)
+		_label(tv, "🎁 " + str(D.get("sum", "운영자 보상")), 14, Color("#1a1d22"), true)
+		var m := str(D.get("msg", ""))
+		if m != "":
+			_label(tv, m, 12.5, Color("#3a424c"))
+		_label(tv, "운영자 · " + when(int(D.get("t", 0))), 11.5, Color("#8a929c"))
+		var cb := _btn(h, "받기", func(): _claim_one(it), true)
+		cb.custom_minimum_size = Vector2(_fs(84), _fs(40))
+		cb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", _fs(8))
+	v.add_child(row)
+	if not mails.is_empty():
+		var ab := _btn(row, "모두 받기 (" + str(mails.size()) + ")", _claim_all, true)
+		ab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var xb := _btn(row, "닫기", close_overlay)
+	xb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+func open_mailbox() -> void:
+	show_mailbox("불러오는 중…")
+	await refresh_mail(false)
+	if pop_root != null:
+		show_mailbox()
+
+func _claim_one(it: Dictionary) -> void:
+	var t := await claim(it)
+	_sv_commit()
+	show_mailbox(("받았어요: " + t) if t != "" else "받기 실패 · 잠시 후 다시 해 주세요")
+
+func _claim_all() -> void:
+	var got: Array = []
+	for it in mails.duplicate():
+		var t := await claim(it)
+		if t != "":
+			got.append(t)
+	_sv_commit()
+	show_mailbox(("모두 받았어요: " + ", ".join(got)) if not got.is_empty() else "받기 실패 · 잠시 후 다시 해 주세요")
 
 # ── 운영자 요청 닉네임 변경 ──
 func show_renick() -> void:
@@ -853,6 +964,8 @@ func _nat_open(e: LineEdit, hint: String, secret: bool, email: bool) -> void:
 	nat_rt = rt
 	var txt := e.text
 	var it := 129 if secret else (33 if email else 1)
+	if e.get_meta("num", false):
+		it = 2
 	var scr_w: int = DisplayServer.window_get_size().x
 	var title := hint.get_slice(" (", 0)
 	var sub := ""

@@ -70,8 +70,8 @@ func open() -> void:
 	_b(top, "로그아웃", func():
 		close()
 		a.logout(), "w")
-	note_l = _lab(col, "", 13, GREEN)
-	note_l.visible = false
+	note_l = _lab(col, " ", 13, GREEN)
+	note_l.custom_minimum_size = Vector2(0, _fs(20))
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -130,6 +130,26 @@ func _in(p: Control, key: String, ph: String, val: String = "", w: float = 0.0) 
 		e.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return e
 
+# 이름표가 위에 붙은 숫자 칸
+func _num(p: Control, key: String, ph: String, title: String) -> LineEdit:
+	var v := VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_theme_constant_override("separation", _fs(4))
+	p.add_child(v)
+	_lab(v, title, 12.5, SUB, true)
+	var e := _in(v, key, ph)
+	e.set_meta("num", true)
+	e.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER
+	e.text_changed.connect(func(t: String):
+		var o := ""
+		for ch in t:
+			if ch >= "0" and ch <= "9":
+				o += ch
+		if o != t:
+			e.text = o
+			e.caret_column = o.length())
+	return e
+
 func _row(p: Control) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", _fs(8))
@@ -158,14 +178,34 @@ func _opt(p: Control, items: Array) -> OptionButton:
 		o.add_item(str(it))
 	o.custom_minimum_size = Vector2(0, _fs(40))
 	o.add_theme_font_size_override("font_size", _fs(13.5))
+	var n: StyleBoxFlat = a._style(Color("#e8ebef"), Color("#e8ebef"), 6, 2)
+	n.content_margin_left = _fs(14)
+	n.content_margin_right = _fs(14)
+	var h: StyleBoxFlat = n.duplicate()
+	h.bg_color = Color.WHITE
+	h.border_color = INK
+	for k in ["normal", "disabled"]:
+		o.add_theme_stylebox_override(k, n)
+	for k in ["hover", "pressed", "focus", "hover_pressed"]:
+		o.add_theme_stylebox_override(k, h)
+	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_hover_pressed_color"]:
+		o.add_theme_color_override(k, INK)
+	o.add_theme_color_override("arrow_color", SUB)
+	var pm := o.get_popup()
+	pm.add_theme_font_size_override("font_size", _fs(14))
+	var pbg: StyleBoxFlat = a._style(Color.WHITE, Color("#d5dae0"), 8, 1)
+	pm.add_theme_stylebox_override("panel", pbg)
+	pm.add_theme_color_override("font_color", INK)
+	pm.add_theme_color_override("font_hover_color", INK)
+	var ph: StyleBoxFlat = a._style(Color("#eef0f3"), Color("#eef0f3"), 6, 0)
+	pm.add_theme_stylebox_override("hover", ph)
 	p.add_child(o)
 	return o
 
 func note(t: String, bad: bool = false) -> void:
 	if note_l == null:
 		return
-	note_l.text = t
-	note_l.visible = t != ""
+	note_l.text = t if t != "" else " "
 	note_l.add_theme_color_override("font_color", RED if bad else GREEN)
 
 func _clear() -> void:
@@ -330,9 +370,9 @@ func _draw_player() -> void:
 	var rc := _card(res_box, "🎁 보상 보내기")
 	_lab(rc, "다음에 게임을 켤 때 우편으로 받아요", 12.5, SUB)
 	var r1 := _row(rc)
-	var cs := _in(r1, "g_cs", "청석", "", 0)
-	var ss := _in(r1, "g_ss", "별석", "", 0)
-	var fb := _in(r1, "g_fb", "무료 상자", "", 0)
+	var cs := _num(r1, "g_cs", "청석", "💎 청석")
+	var ss := _num(r1, "g_ss", "별석", "✦ 별석")
+	var fb := _num(r1, "g_fb", "상자", "📦 무료 상자")
 	var sk_ids: Array = [""]
 	var sk_names: Array = ["스킨 없음"]
 	for it in g.SK:
@@ -344,10 +384,10 @@ func _draw_player() -> void:
 	for it in g.TS:
 		sk_ids.append("t:" + it.id)
 		sk_names.append("테마 · " + it.n)
-	var r2 := _row(rc)
-	var so := _opt(r2, sk_names)
-	so.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var gm := _in(rc, "g_msg", "메시지 (예: 버그 보상이에요. 불편을 드려 죄송해요)")
+	_lab(rc, "🎨 스킨 (고르지 않아도 돼요)", 12.5, SUB, true)
+	var so := _opt(rc, sk_names)
+	_lab(rc, "✉ 메시지 (플레이어 우편함에 보여요)", 12.5, SUB, true)
+	var gm := _in(rc, "g_msg", "예: 버그 보상이에요. 불편을 드려 죄송해요")
 	_b(rc, "보상 보내기", func():
 		var d := {"ty": "grant", "cs": cs.text.to_int(), "ss": ss.text.to_int(), "fbox": fb.text.to_int(), "msg": gm.text.strip_edges()}
 		var si: String = sk_ids[so.selected]
@@ -367,8 +407,8 @@ func _draw_player() -> void:
 	var ec := _card(res_box, "🔧 직접 수정")
 	_lab(ec, "모두 다음에 게임을 켤 때 적용돼요 · 위험한 버튼은 두 번 눌러야 해요", 12.5, SUB)
 	var r3 := _row(ec)
-	var vcs := _in(r3, "s_cs", "청석을 이 값으로", "", 0)
-	var vss := _in(r3, "s_ss", "별석을 이 값으로", "", 0)
+	var vcs := _num(r3, "s_cs", "비워 두면 그대로", "💎 청석을 이 값으로")
+	var vss := _num(r3, "s_ss", "비워 두면 그대로", "✦ 별석을 이 값으로")
 	_b(r3, "값 맞추기", func():
 		var d := {"ty": "set", "cs": vcs.text.to_int() if vcs.text.strip_edges() != "" else -1, "ss": vss.text.to_int() if vss.text.strip_edges() != "" else -1, "msg": ""}
 		if d.cs < 0 and d.ss < 0:
@@ -470,7 +510,21 @@ func _unban() -> void:
 func _notice_tab() -> void:
 	var c := _card(body, "📢 로비 공지")
 	_lab(c, "올리면 플레이어가 다음에 게임을 켤 때 한 번 떠요 · 줄을 바꾸려면 // 를 쓰세요", 12.5, SUB)
-	var now_l := _lab(c, "불러오는 중…", 13, SUB)
+	var pv := PanelContainer.new()
+	var pst: StyleBoxFlat = a._style(Color("#f4f5f7"), GOLD, 12, 2)
+	pst.content_margin_left = _fs(20)
+	pst.content_margin_right = _fs(20)
+	pst.content_margin_top = _fs(14)
+	pst.content_margin_bottom = _fs(14)
+	pv.add_theme_stylebox_override("panel", pst)
+	c.add_child(pv)
+	var pvv := VBoxContainer.new()
+	pvv.add_theme_constant_override("separation", _fs(6))
+	pv.add_child(pvv)
+	var st_l := _lab(pvv, "불러오는 중…", 12, SUB, true)
+	var pt_l := _lab(pvv, "", 18, INK, true)
+	var pb_l := _lab(pvv, "", 13.5, Color("#3a424c"))
+	_lab(c, "✏ 새로 쓰기 · 고치기", 13.5, INK, true)
 	var ti := _in(c, "n_ti", "제목 (예: 12월 1일 점검 안내)")
 	var bo := _in(c, "n_bo", "내용")
 	var r := _row(c)
@@ -488,30 +542,39 @@ func _notice_tab() -> void:
 		if x.ok:
 			show_tab("notice"), "w")
 	var r0: Dictionary = await a.fs(HTTPClient.METHOD_GET, "notice/main")
-	if not is_instance_valid(now_l):
+	if not is_instance_valid(st_l):
 		return
 	if r0.ok:
 		var D: Dictionary = a.dfields(r0.j)
-		now_l.text = ("지금 올라가 있어요: " if D.get("on", false) else "내려가 있어요: ") + str(D.get("title", "")) + "  (" + a.when(int(D.get("t", 0))) + ")\n" + str(D.get("body", ""))
-		now_l.add_theme_color_override("font_color", GREEN if D.get("on", false) else SUB)
+		var on: bool = D.get("on", false)
+		st_l.text = ("● 지금 플레이어에게 보이는 공지 · " if on else "○ 내려간 공지 (플레이어에게 안 보여요) · ") + a.when(int(D.get("t", 0)))
+		st_l.add_theme_color_override("font_color", GREEN if on else SUB)
+		pt_l.text = "📢 " + str(D.get("title", ""))
+		pb_l.text = str(D.get("body", ""))
+		pv.modulate = Color(1, 1, 1, 1.0 if on else 0.55)
 		ti.text = str(D.get("title", ""))
 		bo.text = str(D.get("body", "")).replace("\n", "//")
 	else:
-		now_l.text = "아직 올린 공지가 없어요"
+		st_l.text = "아직 올린 공지가 없어요"
+		pt_l.visible = false
+		pb_l.visible = false
 
 # ═════════ 목록 ═════════
 var list_box: VBoxContainer = null
+var list_tabs: HBoxContainer = null
 func _list_tab() -> void:
-	var r := _row(body)
-	_b(r, "최근 접속", func(): _list("recent"), "k")
-	_b(r, "테스터", func(): _list("testers"), "w")
-	_b(r, "정지 중", func(): _list("bans"), "w")
+	list_tabs = _row(body)
 	list_box = VBoxContainer.new()
 	list_box.add_theme_constant_override("separation", _fs(6))
 	body.add_child(list_box)
 	_list("recent")
 
 func _list(k: String) -> void:
+	for c in list_tabs.get_children():
+		c.queue_free()
+	for it in [["recent", "최근 접속"], ["testers", "테스터"], ["bans", "정지 중"]]:
+		var kk: String = it[0]
+		_b(list_tabs, it[1], func(): _list(kk), "on" if kk == k else "w")
 	for c in list_box.get_children():
 		c.queue_free()
 	note("불러오는 중…")
