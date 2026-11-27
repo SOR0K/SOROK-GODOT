@@ -635,21 +635,18 @@ func show_login(e: String) -> void:
 	g.scene = "client"
 	var v := _shell("")
 	_tabs(v, "login")
-	_srv_label(v)
 	_input_box(v, "em", "이메일")
 	_input_box(v, "pw", "비밀번호", true)
 	_remember(v)
 	_err(v, e)
 	_go(v, _do_login)
 	_link(v, "비밀번호 재설정 메일 받기", _do_reset)
-	_link(v, "로그인 없이 하기 (이 기기에만 저장)", _offline)
 
 func show_create() -> void:
 	mode = "create"
 	g.scene = "client"
 	var v := _shell("")
 	_tabs(v, "create")
-	_srv_label(v)
 	_input_box(v, "em", "이메일")
 	_input_box(v, "pw", "비밀번호 (6~32자)", true)
 	_input_box(v, "pw2", "비밀번호 확인", true)
@@ -688,7 +685,6 @@ func show_nick(hint: String) -> void:
 	var r := await fs(HTTPClient.METHOD_GET, "accounts/" + str(ses.uid))
 	var has: bool = r.ok and r.j.has("fields") and r.j.fields.has("nick")
 	v = _shell("새 서버 첫 입장" if has else "닉네임 정하기")
-	_srv_label(v)
 	if has:
 		ses.an = r.j.fields.nick.stringValue
 		ses.at = r.j.fields.get("tag", {}).get("stringValue", DTAG)

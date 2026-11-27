@@ -6605,7 +6605,7 @@ func _client0(f: Font) -> void:
 	else:
 		draw_string(fb(), Vector2(tx, cr.position.y + 25.0), "로그인 안 함", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#1a1d22"))
 	draw_string(f, Vector2(tx, cr.position.y + 46.0), "청석 " + _cm(SV.cs) + " · 별석 " + str(SV.ss), HORIZONTAL_ALIGNMENT_LEFT, cr.end.x - tx - 8.0, 12, Color("#6a7480"))
-	var st := "이 기기에만 저장"
+	var st := "로그인해 주세요"
 	if logged:
 		st = ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + ("불러오는 중…" if booting() else {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨"))
 		if TEST:
@@ -6668,6 +6668,13 @@ func client_press(id: String) -> void:
 		"cl_play":
 			if booting():
 				return
+			# 로그인해야 플레이 (게스트 없음)
+			if acct != null and not OS.get_cmdline_user_args().has("--selftest"):
+				if acct.ses == null:
+					acct.show_login("로그인하면 플레이할 수 있어요")
+					return
+				if acct.mode == "verify" or acct.mode == "nick":
+					return
 			scene = "lobby"
 			lsec = "main"
 			intro_out = t_real
