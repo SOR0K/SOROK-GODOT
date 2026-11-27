@@ -138,7 +138,7 @@ func apply_cloud(d: String) -> void:
 	var w = JSON.parse_string(str(raw.get("sorok_v1", "{}")))
 	raw_sv = _ijson(w) if w is Dictionary else {}
 	var SV: Dictionary = g.SV
-	for k in ["cs", "own", "bown", "town", "frag", "fbox", "ss", "sfrag", "spity", "bp", "hist", "bgm"]:
+	for k in ["cs", "own", "bown", "town", "frag", "fbox", "ss", "sfrag", "spity", "bp", "hist", "bgm", "st"]:
 		if raw_sv.has(k):
 			SV[k] = raw_sv[k]
 		else:
@@ -173,7 +173,7 @@ func apply_cloud(d: String) -> void:
 func pack() -> String:
 	var SV: Dictionary = g.SV
 	var w := raw_sv.duplicate(true)
-	for k in ["cs", "own", "bown", "town", "frag", "fbox", "ss", "sfrag", "spity", "bp", "hist"]:
+	for k in ["cs", "own", "bown", "town", "frag", "fbox", "ss", "sfrag", "spity", "bp", "hist", "st"]:
 		if SV.has(k):
 			w[k] = SV[k]
 	for k in ["eq", "beq", "teq"]:
@@ -261,6 +261,7 @@ func boot() -> bool:
 	load_ses()
 	if ses == null:
 		return false
+	_apply_srv()
 	# 전에 들어왔던 계정이면 기다리지 않고 로비부터 보여 주고, 기록은 뒤에서 불러와요
 	if str(ses.get("nick", "")) != "" and ses.get("ev", false):
 		state = "boot"
@@ -329,6 +330,8 @@ func enter(nick_hint: String = "") -> void:
 	g.lmsg = str(ses.nick) + "#" + str(ses.tag) + " 님 환영해요"
 	ensure_acct()
 	_book()
+	pub_push()
+	_tester_check()
 	_after_enter()
 
 func _boot_bg() -> void:
@@ -428,6 +431,8 @@ func show_ban() -> void:
 
 # ── 운영자 우편 · 공지 (로그인할 때 확인) ──
 func _after_enter() -> void:
+	if g.bat != null:
+		g.bat.load_friends()
 	if ses != null and ses.get("rn", false):
 		show_renick()
 		return
@@ -739,6 +744,60 @@ func _do_renick() -> void:
 	hide_ui()
 	g.lmsg = n + "#" + tg + " 님으로 바뀌었어요"
 
+# ── 서버 (테스터는 테스트 서버를 고를 수 있어요) ──
+var base_srv := ""
+var is_tester := false
+func srv_name() -> String:
+	return {"pc": "PC 서버", "m": "모바일 서버", "pcT": "PC 테스트 서버", "mT": "모바일 테스트 서버"}.get(srv, srv)
+
+func _apply_srv() -> void:
+	if base_srv == "":
+		base_srv = srv.trim_suffix("T")
+	srv = base_srv + ("T" if ses != null and ses.get("ts", false) else "")
+
+func _tester_check() -> void:
+	var r := await fs(HTTPClient.METHOD_GET, "testers/" + str(ses.uid))
+	is_tester = r.ok
+	if not is_tester and ses.get("ts", false):
+		ses.ts = false
+		keep()
+		_apply_srv()
+
+func show_srv_pick() -> void:
+	mode = "srvpick"
+	g.scene = "client"
+	var v := _shell("어느 서버로 들어갈까요?")
+	_label(v, "테스터 계정이에요 · 정식 서버와 테스트 서버는 기록이 따로예요", 13, Color("#5a6470"))
+	_btn(v, ("모바일" if base_srv == "m" else "PC") + " 정식 서버", func(): _pick_srv(false), true)
+	_btn(v, "🧪 " + ("모바일" if base_srv == "m" else "PC") + " 테스트 서버", func(): _pick_srv(true), true)
+
+func _pick_srv(test: bool) -> void:
+	ses.ts = test
+	keep()
+	_apply_srv()
+	show_msg("서버에 연결하는 중…")
+	await enter()
+
+# 계정 관리에서 서버 바꾸기 (테스터)
+func switch_srv() -> void:
+	if g.scene == "game":
+		g.save_game()
+	await push(true)
+	ses.ts = not ses.get("ts", false)
+	keep()
+	_apply_srv()
+	raw = {}
+	raw_sv = {}
+	await enter()
+
+# ── 공개 프로필 (친구·랭킹에서 보는 기록) ──
+func pub_push() -> void:
+	if ses == null or str(ses.get("nick", "")) == "":
+		return
+	var S: Dictionary = g.SV.get("st", {}) if g.SV.get("st") is Dictionary else {}
+	await fs(HTTPClient.METHOD_PATCH, "pub/" + str(ses.uid), mk({"nick": str(ses.nick), "tag": str(ses.get("tag", DTAG)), "srv": srv,
+		"pl": int(S.get("pl", 0)), "w": int(S.get("w", 0)), "l": int(S.get("l", 0)), "best": int(S.get("best", 0)), "cap": int(S.get("cap", 0)), "t": now_ms()}))
+
 func is_admin() -> bool:
 	return ses != null and ADMIN_UIDS.has(str(ses.get("uid", "")))
 
@@ -810,6 +869,7 @@ func logout() -> void:
 # 화면 안 칸·버튼이 터치를 먹지 않고 스크롤로 넘겨주게
 func _ready() -> void:
 	get_tree().node_added.connect(_on_node)
+	base_srv = srv.trim_suffix("T")
 
 func _on_node(n: Node) -> void:
 	if not (n is Control) or n is ScrollContainer or n is ColorRect:
@@ -1286,7 +1346,7 @@ func _tabs(v: Container, cur: String) -> void:
 		h.add_child(b)
 
 func _srv_label(v: Container) -> void:
-	_label(v, ("모바일" if srv == "m" else "PC") + " 서버 · 웹 SOROK과 같은 계정", 12, Color("#3a7bd5"), true)
+	_label(v, srv_name() + " · 웹 SOROK과 같은 계정", 12, Color("#3a7bd5"), true)
 
 func _remember(v: Container) -> void:
 	var c := CheckBox.new()
@@ -1518,7 +1578,7 @@ func show_info() -> void:
 	_tabs(v, "info")
 	_label(v, "정보", 22, Color("#1a1d22"), true)
 	_info(v, [["계정", "이메일 + 비밀번호. 하나의 계정으로 PC·모바일 모두 로그인"],
-		["서버", "PC 서버와 모바일 서버는 청석·스킨·저장·닉네임이 완전히 따로. 지금 접속: " + ("모바일" if srv == "m" else "PC") + " 서버"],
+		["서버", "PC 서버와 모바일 서버는 청석·스킨·저장·닉네임이 완전히 따로. 지금 접속: " + srv_name() + ""],
 		["저장", "진행 데이터는 서버에 자동 저장 (약 30초마다 + 게임 저장 시). 다른 기기에서도 이어 하기 가능"],
 		["비밀번호 분실", "로그인 탭의 [비밀번호 재설정 메일 받기]"],
 		["닉네임", "이름#태그 (예: YASR#SR1). 모든 서버 공통 · 이름 3~16자, 태그 3~5자"],
@@ -1603,6 +1663,12 @@ func _do_login() -> void:
 	if not vok:
 		show_verify()
 		return
+	await _tester_check()
+	if is_tester:
+		show_srv_pick()
+		return
+	ses.ts = false
+	_apply_srv()
 	await enter()
 
 func _do_create() -> void:
@@ -1724,7 +1790,7 @@ func show_panel() -> void:
 		_btn(v, "로그인 / 회원가입", func(): show_login(""), true)
 		_btn(v, "닫기", hide_ui)
 		return
-	l.text = str(ses.get("nick", "?")) + "#" + str(ses.get("tag", DTAG)) + "\n" + str(ses.get("email", "")) + ("  ✓ 인증됨" if ses.get("ev", false) else "") + "\n서버: " + ("모바일" if srv == "m" else "PC") + " 서버 · 저장: " + {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(state, "연결됨")
+	l.text = str(ses.get("nick", "?")) + "#" + str(ses.get("tag", DTAG)) + "\n" + str(ses.get("email", "")) + ("  ✓ 인증됨" if ses.get("ev", false) else "") + "\n서버: " + srv_name() + " · 저장: " + {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(state, "연결됨")
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(l)
 	_err(v, "")

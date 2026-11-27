@@ -173,6 +173,10 @@ func _ready() -> void:
 	adm.a = acct
 	adm.g = self
 	add_child(adm)
+	bat = preload("res://scripts/battle.gd").new()
+	bat.a = acct
+	bat.g = self
+	add_child(bat)
 	get_tree().set_auto_accept_quit(false)
 	if OS.get_cmdline_user_args().has("--selftest"):
 		print("OVERSAMPLE_PROP ", "oversampling_override" in get_viewport())
@@ -2300,6 +2304,7 @@ const SV_BASE := {"cs": 0, "ss": 0, "vol_s": 70, "vol_b": 35, "mute": false, "ui
 var SV := SV_BASE.duplicate(true)
 var acct = null
 var adm = null
+var bat = null
 var save_acc := 0.0
 var slider_drag = null
 var wipe_arm := ""
@@ -2446,6 +2451,25 @@ func start_game(cont: bool, with_tut: bool = false) -> void:
 	save_acc = 0.0
 	lmsg = ""
 
+# ── 내 기록 (대전 화면) ──
+func _rec_stats(t0: float) -> void:
+	if not (won or lost):
+		return
+	if not (SV.get("st") is Dictionary):
+		SV.st = {}
+	var S: Dictionary = SV.st
+	S.pl = int(S.get("pl", 0)) + 1
+	S.cap = int(S.get("cap", 0)) + captured()
+	if won:
+		S.w = int(S.get("w", 0)) + 1
+		var sec := int(t0)
+		if int(S.get("best", 0)) <= 0 or sec < int(S.best):
+			S.best = sec
+	else:
+		S.l = int(S.get("l", 0)) + 1
+	if acct != null:
+		acct.pub_push()
+
 func cs_gain() -> int:
 	var g := int(float(SS.earn) * 0.04)
 	for o in outs:
@@ -2455,6 +2479,7 @@ func cs_gain() -> int:
 
 func end_game(retry: bool = false) -> void:
 	var t0 := t
+	_rec_stats(t0)
 	var ok := t0 >= 600.0 or won
 	var g := cs_gain() if ok else 0
 	SV.cs = int(SV.cs) + g
@@ -2683,7 +2708,7 @@ func _build_lobby0() -> void:
 			_add("lnew", Rect2(cr.position.x + 20.0, cr.end.y - 72.0, cw - 40.0, 54.0))
 		var tx := x0 + cw + 12.0
 		var tw := (W - cw - 24.0) / 2.0
-		var names := ["lshop", "lstore", "lpass", "lmail"]
+		var names := ["lshop", "lstore", "lpass", "lbattle"]
 		for i in 4:
 			_add(names[i], Rect2(tx + (i % 2) * (tw + 12.0), 205.0 + int(i / 2) * 162.0, tw, 150.0))
 		_add("lnotes", Rect2(x0, 529.0, cw, 42.0))
@@ -2931,6 +2956,7 @@ func _lobby_main(f: Font, hov) -> void:
 	var own: int = SV.own.size() + SV.bown.size() + SV.town.size()
 	var tiles := {"lshop": ["상점", "소로 상자 · ★ 걸작 · 세트", Color("#c9a255")], "lstore": ["창고", "보유 스킨 " + str(own) + " / " + str(tot) + (" · 무료 상자 " + str(SV.fbox) if SV.fbox > 0 else ""), Color("#2f8a78")],
 		"lpass": ["배틀패스", SEASON.n + " · " + str(bp_lv()) + " / 30단계" + (" · 프리미엄" if bp().prem else ""), Color("#7a5aa8")], "lset": ["설정", "조작 · 소리 · 데이터", Color("#3a5a8a")],
+		"lbattle": ["대전", "게임 모드 · 내 기록 · 랭킹 · 친구" + ((" · 친구 신청 " + str(bat.fr_in.size())) if bat != null and bat.fr_in.size() > 0 else ""), Color("#d0603a")],
 		"lmail": ["우편함", ("안 받은 우편 " + str(_mail_n()) + "개 · 눌러서 받기") if _mail_n() > 0 else "운영자 보상 · 알림", Color("#c0503c")]}
 	for it in ui:
 		var r: Rect2 = it.r
@@ -2967,6 +2993,13 @@ func _lobby_main(f: Font, hov) -> void:
 					sb.set_corner_radius_all(10)
 					sb.draw(get_canvas_item(), r)
 					draw_circle(Vector2(r.end.x - 26.0, r.position.y + 26.0), 34.0, Color(tl[2], 0.45))
+					if it.id == "lbattle":
+						var sc0 := Vector2(r.end.x - 34.0, r.position.y + 34.0)
+						for sgn in [-1.0, 1.0]:
+							draw_line(sc0 + Vector2(-11.0 * sgn, -11.0), sc0 + Vector2(9.0 * sgn, 9.0), Color("#e6edf3"), 3.0)
+							draw_line(sc0 + Vector2(5.0 * sgn, 11.0), sc0 + Vector2(11.0 * sgn, 5.0), Color("#ffd76a"), 3.0)
+						if bat != null and bat.fr_in.size() > 0:
+							_badge(Vector2(r.end.x - 14.0, r.position.y + 14.0), str(bat.fr_in.size()))
 					if it.id == "lmail":
 						_tb_icon("tb_mail", Vector2(r.end.x - 34.0, r.position.y + 34.0), 26.0)
 						if _mail_n() > 0:
@@ -3028,6 +3061,8 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			acp_show()
 		"tb_mail", "lmail":
 			acct.open_mailbox()
+		"lbattle":
+			bat.open()
 		"tb_notice":
 			acct.show_notice()
 		"tb_set":
@@ -3036,7 +3071,7 @@ func lobby_press(it: Dictionary, sp: Vector2) -> void:
 			lob_scroll = 0.0
 		"tb_admin":
 			adm.open()
-		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset", "acp_admin":
+		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset", "acp_admin", "acp_srv":
 			acp_press(it.id)
 		"pdot":
 			promo_i = int(it.arg)
@@ -6082,7 +6117,7 @@ func _prof_info() -> Array:
 		var sw: String = {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨")
 		if TEST:
 			sw = "테스트 · 클라우드 꺼짐"
-		st = ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + sw
+		st = acct.srv_name() + " · " + sw
 		dot = {"ok": Color("#4fd17a"), "sync": Color("#ffd76a")}.get(acct.state, Color("#ff8a6b"))
 		if TEST:
 			dot = Color("#ff9a5a")
@@ -6130,6 +6165,8 @@ func _acp_geo() -> Dictionary:
 		H += (48.0 + 8.0) * (2 if acp_ver == false else 1)
 		if acct.is_admin():
 			H += 48.0 + 8.0
+		if acct.is_tester:
+			H += 48.0 + 8.0
 		H += 4.0 + 44.0
 	else:
 		if acp_msg != "":
@@ -6160,6 +6197,9 @@ func _build_acp() -> void:
 		y += 56.0
 		if acct.is_admin():
 			_add("acp_admin", Rect2(x, y, w, 48.0))
+			y += 56.0
+		if acct.is_tester:
+			_add("acp_srv", Rect2(x, y, w, 48.0))
 			y += 56.0
 		y += 4.0
 		_add("acp_out", Rect2(x, y, (w - 8.0) / 2.0, 44.0))
@@ -6223,7 +6263,7 @@ func _acp_draw(f: Font, hov) -> void:
 		_gbox(ar, Color("#1a2430"), 180.0, 12.0, Color("#2c3a49"))
 		var cw := (w - 28.0 - 110.0) / 2.0
 		draw_string(f, Vector2(x + 14.0, y + 26.0), "서버", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7f93a6"))
-		draw_string(fb(), Vector2(x + 14.0, y + 48.0), ("모바일" if acct.srv == "m" else "PC") + " 서버", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e6edf3"))
+		draw_string(fb(), Vector2(x + 14.0, y + 48.0), acct.srv_name() + "", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e6edf3"))
 		draw_string(f, Vector2(x + 14.0 + cw, y + 26.0), "저장", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#7f93a6"))
 		var P := _prof_info()
 		draw_circle(Vector2(x + 14.0 + cw + 5.0, y + 43.0), 4.5, P[3])
@@ -6249,6 +6289,10 @@ func _acp_draw(f: Font, hov) -> void:
 				al = 1
 			"acp_reset":
 				lab = "비밀번호 재설정 메일 받기"
+				ic = "key"
+				al = 1
+			"acp_srv":
+				lab = "🧪 서버 바꾸기 → " + ("정식 서버" if acct.srv.ends_with("T") else "테스트 서버")
 				ic = "key"
 				al = 1
 			"acp_admin":
@@ -6390,6 +6434,10 @@ func acp_press(id: String) -> void:
 		"acp_admin":
 			acp_open = false
 			adm.open()
+		"acp_srv":
+			acp_msg = "서버를 바꾸는 중…"
+			await acct.switch_srv()
+			acp_msg = acct.srv_name() + "로 바꿨어요"
 		"acp_reset":
 			acp_msg = "보내는 중…"
 			var j2: Dictionary = await acct.idt("sendOobCode", {"requestType": "PASSWORD_RESET", "email": str(acct.ses.get("email", ""))})
@@ -6754,7 +6802,7 @@ func _client0(f: Font) -> void:
 	draw_string(f, Vector2(tx, cr.position.y + 46.0), "청석 " + _cm(SV.cs) + " · 별석 " + str(SV.ss), HORIZONTAL_ALIGNMENT_LEFT, cr.end.x - tx - 8.0, 12, Color("#6a7480"))
 	var st := "로그인해 주세요"
 	if logged:
-		st = ("모바일" if acct.srv == "m" else "PC") + " 서버 · " + ("불러오는 중…" if booting() else {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨"))
+		st = acct.srv_name() + " · " + ("불러오는 중…" if booting() else {"ok": "저장됨", "sync": "저장 중…", "off": "오프라인", "err": "저장 실패", "conf": "확인 중"}.get(acct.state, "연결됨"))
 		if TEST:
 			st += " · 테스트 모드"
 	draw_string(f, Vector2(tx, cr.position.y + 66.0), st, HORIZONTAL_ALIGNMENT_LEFT, cr.end.x - tx - 8.0, 12, Color("#3a7bd5"))
@@ -6840,7 +6888,7 @@ func client_press(id: String) -> void:
 				acct.logout()
 			else:
 				acct.show_login("")
-		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset", "acp_admin":
+		"acp_bg", "acp_close", "acp_login", "acp_out", "acp_save", "acp_vsend", "acp_reset", "acp_admin", "acp_srv":
 			acp_press(id)
 
 func _client_input(e: InputEvent) -> void:
@@ -8183,6 +8231,8 @@ func _unhandled_input(e: InputEvent) -> void:
 		return
 	if acct != null and (acct.is_open() or acct.is_overlay()):
 		return
+	if bat != null and bat.is_open():
+		return
 	if conn_msg != "":
 		return
 	if scene == "client":
@@ -8458,6 +8508,9 @@ func go_back() -> void:
 		acct.close_overlay()
 		return
 	if adm != null and adm.is_open():
+		return
+	if bat != null and bat.is_open():
+		bat.close()
 		return
 	if acct != null and acct.is_open():
 		if acct.mode == "panel":
@@ -9264,6 +9317,27 @@ func _selftest() -> void:
 	await _wait(0.3)
 	await _shot("00_mailbox")
 	acct.close_overlay()
+	bat.open("mode")
+	await _wait(0.4)
+	await _shot("00_battle_mode")
+	SV.st = {"pl": 12, "w": 7, "l": 5, "best": 1834, "cap": 412}
+	bat.show_tab("rec")
+	await _wait(0.4)
+	await _shot("00_battle_rec")
+	bat.fr_in = [{"_id": "a1", "nick": "BANANA", "tag": "SR1"}]
+	bat.fr_ok = [{"_id": "a2", "nick": "MUSIALA", "tag": "42"}]
+	bat.fr_out = [{"_id": "a3", "nick": "NEWCASTLE", "tag": "NUFC"}]
+	bat.show_tab("rank")
+	for ch in bat.body.get_children():
+		ch.queue_free()
+	bat._draw_friends(bat.body)
+	await _wait(0.4)
+	await _shot("00_battle_friend")
+	bat.close()
+	bat.fr_in = []
+	bat.fr_ok = []
+	bat.fr_out = []
+	SV.erase("st")
 	acct.mails = []
 	acct.notice_new = false
 	scene = "client"
