@@ -103,7 +103,7 @@ func _b(p: Control, t: String, cb: Callable, kind: String = "w") -> Button:
 	var b := Button.new()
 	b.text = t
 	b.custom_minimum_size = Vector2(0, _fs(38))
-	var C := {"w": [Color.WHITE, Color("#d5dae0"), INK], "k": [INK, INK, Color.WHITE], "r": [Color("#d6303f"), Color("#d6303f"), Color.WHITE],
+	var C: Array = {"w": [Color.WHITE, Color("#d5dae0"), INK], "k": [INK, INK, Color.WHITE], "r": [Color("#d6303f"), Color("#d6303f"), Color.WHITE],
 		"g": [Color("#f2c14e"), Color("#e0ad3a"), Color("#2a1a00")], "on": [INK, INK, Color("#ffd76a")]}[kind]
 	var n: StyleBoxFlat = a._style(C[0], C[1], 8, 1)
 	n.content_margin_left = _fs(14)
@@ -558,7 +558,7 @@ func _log_tab() -> void:
 	for D in L:
 		var uid := str(D.get("uid", ""))
 		var got: bool = D.get("got", false)
-		var t := a.when(int(D.get("t", 0))) + "   " + str(D.get("nick", "")) + "#" + str(D.get("tag", "")) + "   ·   " + str(D.get("sum", "")) + "   ·   " + ("✓ 받음 " + a.when(int(D.get("gt", 0))) if got else "대기 중")
+		var t: String = a.when(int(D.get("t", 0))) + "   " + str(D.get("nick", "")) + "#" + str(D.get("tag", "")) + "   ·   " + str(D.get("sum", "")) + "   ·   " + ("✓ 받음 " + a.when(int(D.get("gt", 0))) if got else "대기 중")
 		var lb := _b(c, t, func():
 			show_tab("player")
 			_open_player(uid), "w")
