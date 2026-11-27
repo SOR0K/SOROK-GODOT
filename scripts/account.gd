@@ -532,11 +532,13 @@ func _err(v: Container, t: String) -> void:
 	err_l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	err_l.add_theme_color_override("font_color", Color("#d23c2c"))
 	err_l.add_theme_font_size_override("font_size", _fs(13))
+	err_l.visible = t != ""
 	v.add_child(err_l)
 
 func say(t: String) -> void:
 	if err_l != null:
 		err_l.text = t
+		err_l.visible = t != ""
 
 func _enter_key() -> void:
 	match mode:
@@ -595,8 +597,51 @@ func _remember(v: Container) -> void:
 		c.add_theme_color_override(k, Color("#3a424c"))
 	c.add_theme_font_size_override("font_size", _fs(13.5))
 	c.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	var sz := _fs(18)
+	c.add_theme_icon_override("checked", _chk_icon(sz, true))
+	c.add_theme_icon_override("unchecked", _chk_icon(sz, false))
+	c.add_theme_icon_override("checked_disabled", _chk_icon(sz, true))
+	c.add_theme_icon_override("unchecked_disabled", _chk_icon(sz, false))
+	c.add_theme_constant_override("h_separation", _fs(8))
+	for k in ["normal", "hover", "pressed", "hover_pressed"]:
+		c.add_theme_stylebox_override(k, StyleBoxEmpty.new())
 	c.toggled.connect(func(on): remember = on)
 	v.add_child(c)
+
+# 웹 체크박스처럼 네모 칸 + 체크 표시 (휴대폰에서도 크게)
+func _chk_icon(sz: int, on: bool) -> ImageTexture:
+	var im := Image.create_empty(sz, sz, false, Image.FORMAT_RGBA8)
+	var bg := Color("#1a1d22") if on else Color.WHITE
+	var bd := Color("#1a1d22") if on else Color("#9aa3ad")
+	var rr := sz * 0.2
+	var bw := maxf(1.5, sz * 0.09)
+	for y in sz:
+		for x in sz:
+			var px := Vector2(x + 0.5, y + 0.5)
+			var q := (px - Vector2(sz, sz) / 2.0).abs() - Vector2(sz, sz) / 2.0 + Vector2(rr, rr)
+			var d := Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length() + minf(maxf(q.x, q.y), 0.0) - rr
+			var a := clampf(0.5 - d, 0.0, 1.0)
+			if a <= 0.0:
+				continue
+			var c := bd if d > -bw else bg
+			im.set_pixel(x, y, Color(c, a))
+	if on:
+		var A := Vector2(sz * 0.24, sz * 0.52)
+		var B := Vector2(sz * 0.43, sz * 0.71)
+		var C := Vector2(sz * 0.77, sz * 0.31)
+		var lw := sz * 0.1
+		for y in sz:
+			for x in sz:
+				var px := Vector2(x + 0.5, y + 0.5)
+				var d := minf(_seg_d(px, A, B), _seg_d(px, B, C)) - lw
+				var a := clampf(0.5 - d, 0.0, 1.0)
+				if a > 0.0:
+					im.set_pixel(x, y, im.get_pixel(x, y).lerp(Color.WHITE, a))
+	return ImageTexture.create_from_image(im)
+
+func _seg_d(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var t := clampf((p - a).dot(b - a) / (b - a).length_squared(), 0.0, 1.0)
+	return p.distance_to(a + (b - a) * t)
 
 # 흰 정보 카드 목록 (.lninfo)
 func _info(v: Container, items: Array) -> void:
@@ -619,10 +664,11 @@ func _nick_row(v: Container, n: String, t: String) -> void:
 	v.add_child(h)
 	var a := _input_box(h, "n", "이름 (3~16자)", false, n)
 	a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_label(h, "#", 18, Color("#6a7480"), true)
+	var hs := _label(h, "#", 18, Color("#6a7480"), true)
+	hs.autowrap_mode = TextServer.AUTOWRAP_OFF
+	hs.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var b := _input_box(h, "t", DTAG, false, t)
 	b.custom_minimum_size = Vector2(_fs(84), _fs(46))
-	_label(v, "태그를 비우면 #" + DTAG + " · 모든 서버 공통", 11.5, Color("#6a7480"))
 
 func show_msg(t: String) -> void:
 	hide_ui()

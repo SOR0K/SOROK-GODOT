@@ -6471,6 +6471,19 @@ func _L_note(row: Dictionary, x0: float, y: float, W: float) -> float:
 # ═════════ SOROK CLIENT (웹 런처 화면: 왼쪽 계정 · 오른쪽 그림 + 플레이) ═════════
 var ln_on := false
 
+# 글자를 실제 화면 픽셀 크기로 만들어요 (휴대폰에서 UI를 키울 때 글자가 계단처럼 깨지지 않게)
+var _os_v := 0.0
+func _os_tick() -> void:
+	var vp := get_viewport()
+	var k := maxf(us, _cl_us() if scene == "client" or scene == "intro" else us)
+	var sc := vp.get_final_transform().get_scale().x * k
+	sc = snappedf(clampf(sc, 1.0, 4.0), 0.25)
+	if absf(sc - _os_v) < 0.01:
+		return
+	_os_v = sc
+	if "oversampling_override" in vp:
+		vp.set("oversampling_override", sc)
+
 func ln_side_px() -> float:
 	var vs := vsize()
 	return clampf(vs.x * 0.3, 340.0 * (1.6 if touch_mode else 1.0), 620.0 * (1.6 if touch_mode else 1.0))
@@ -6523,6 +6536,21 @@ func _ln_logo(p: Vector2, fs: int) -> void:
 	_spaced_l(p, "SOROK", fs, 0.14, Color("#ffd76a"), 0.0)
 
 func _spaced_l(p: Vector2, s: String, fs: int, ls: float, col: Color, grow: float) -> void:
+	# 글자 크기 보정 기능이 없는 버전이면 실제 크기로 직접 그려요 (큰 로고가 깨지지 않게)
+	if us != 1.0 and not ("oversampling_override" in get_viewport()):
+		draw_set_transform_matrix(inv)
+		var fz := int(round(fs * us))
+		var x2 := p.x * us
+		for ch in s:
+			var q := Vector2(x2, p.y * us)
+			if grow > 0.0:
+				for d in [Vector2(-grow, 0), Vector2(grow, 0), Vector2(0, -grow), Vector2(0, grow)]:
+					draw_string(fb(), q + d * us, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fz, col)
+			else:
+				draw_string(fb(), q, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fz, col)
+			x2 += (_tw(ch, fs, true) + fs * ls) * us
+		_ui_reset()
+		return
 	var x := p.x
 	for ch in s:
 		if grow > 0.0:
@@ -8470,6 +8498,7 @@ func _process(dt: float) -> void:
 		promo_t = t_real
 		promo_i += 1
 	_gnd_tick()
+	_os_tick()
 	if scene == "lobby" or scene == "intro" or scene == "client":
 		_box_tick()
 		queue_redraw()
